@@ -57,7 +57,7 @@ const SubtaskInputSchema = z.object({
   agent_id: z.string().optional(),
   status: z.enum(VALID_SUBTASK_STATUSES).optional(),
   blocked_by: z.array(z.string().uuid()).optional(),
-  context_snapshot: z.record(z.unknown()).optional(),
+  context_snapshot: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**
@@ -113,6 +113,7 @@ export async function postSubtask(c: Context): Promise<Response> {
         agent_id,
         description,
         status,
+        started_at,
         blocked_by,
         context_snapshot
       ) VALUES (
@@ -121,8 +122,9 @@ export async function postSubtask(c: Context): Promise<Response> {
         ${body.agent_id ?? null},
         ${body.description},
         ${body.status ?? "pending"},
+        ${body.status === "running" ? sql`NOW()` : null},
         ${body.blocked_by ?? []},
-        ${body.context_snapshot ? JSON.stringify(body.context_snapshot) : null}
+        ${body.context_snapshot ? sql.json(body.context_snapshot) : null}
       )
       RETURNING
         id,
@@ -383,7 +385,7 @@ export async function patchSubtask(c: Context): Promise<Response> {
     // Validate with Zod
     const PatchSubtaskSchema = z.object({
       status: z.enum(VALID_SUBTASK_STATUSES).optional(),
-      result: z.record(z.unknown()).optional(),
+      result: z.record(z.string(), z.unknown()).optional(),
       agent_id: z.string().optional(),
       blocked_by: z.array(z.string().uuid()).optional(),
     }).refine((data) => data.status || data.result || data.agent_id || data.blocked_by, {
@@ -424,7 +426,7 @@ export async function patchSubtask(c: Context): Promise<Response> {
         UPDATE subtasks
         SET
           status = ${body.status},
-          result = ${body.result ? JSON.stringify(body.result) : null},
+          result = ${body.result ? sql.json(body.result) : null},
           completed_at = NOW()
         WHERE id = ${subtaskId}
         RETURNING id, task_list_id, agent_type, agent_id, description, status,
@@ -454,7 +456,7 @@ export async function patchSubtask(c: Context): Promise<Response> {
       results = await sql<SubtaskRow[]>`
         UPDATE subtasks
         SET
-          result = ${JSON.stringify(body.result)}
+          result = ${sql.json(body.result)}
         WHERE id = ${subtaskId}
         RETURNING id, task_list_id, agent_type, agent_id, description, status,
           blocked_by, created_at, started_at, completed_at, context_snapshot, result
@@ -481,15 +483,44 @@ export async function patchSubtask(c: Context): Promise<Response> {
       id: subtask.id,
       task_list_id: subtask.task_list_id,
       agent_type: subtask.agent_type,
+      agent_id: subtask.agent_id,
       status: subtask.status,
+      description: subtask.description,
     });
     if (subtask.agent_type) {
       await publishEvent(`agents/${subtask.agent_type}`, `subtask.${body.status || "updated"}`, {
         id: subtask.id,
         task_list_id: subtask.task_list_id,
         agent_type: subtask.agent_type,
+        agent_id: subtask.agent_id,
         status: subtask.status,
+        description: subtask.description,
       });
+    }
+
+    // Emit agent.connected when subtask starts running
+    if (body.status === "running" && subtask.agent_type) {
+      await publishEvent("global", "agent.connected", {
+        agent_id: subtask.agent_id || subtask.id,
+        agent_type: subtask.agent_type,
+        subtask_id: subtask.id,
+        description: subtask.description,
+      });
+    }
+
+    // Emit agent.disconnected + inter-agent message when subtask completes/fails
+    if ((body.status === "completed" || body.status === "failed") && subtask.agent_type) {
+      await publishEvent("global", "agent.disconnected", {
+        agent_id: subtask.agent_id || subtask.id,
+        agent_type: subtask.agent_type,
+        subtask_id: subtask.id,
+        status: body.status,
+      });
+
+      // Auto-send inter-agent message with result for other agents to consume
+      broadcastAgentResult(sql, subtask, body.result).catch(err =>
+        console.error("[API] Inter-agent message error:", err)
+      );
     }
 
     // Update agent_contexts when subtask completes or fails (fire and forget)
@@ -519,60 +550,20 @@ export async function patchSubtask(c: Context): Promise<Response> {
 }
 
 /**
- * Update agent_contexts when a subtask completes or fails.
- * Records the final result and tools used during the agent's lifecycle.
+ * Clean up agent_contexts when a subtask completes or fails.
+ * Removes the row so completed agents do not appear as active.
  */
 async function updateAgentContextOnComplete(
   sql: ReturnType<typeof getDb>,
   subtask: SubtaskRow,
-  result?: Record<string, unknown>
+  _result?: Record<string, unknown>
 ): Promise<void> {
-  // Get tools used by this specific agent
-  interface ToolRow {
-    tool_name: string;
-  }
+  if (!subtask.agent_id) return;
 
-  const agentTools = await sql<ToolRow[]>`
-    SELECT DISTINCT tool_name
-    FROM actions
-    WHERE subtask_id = ${subtask.id}
-    ORDER BY tool_name
-  `;
-
-  const toolsUsed = agentTools.map(t => t.tool_name);
-
-  // Find project_id from chain
-  interface ChainRow {
-    project_id: string;
-  }
-
-  const chainResult = await sql<ChainRow[]>`
-    SELECT r.project_id
-    FROM task_lists t
-    JOIN requests r ON t.request_id = r.id
-    WHERE t.id = ${subtask.task_list_id}
-    LIMIT 1
-  `;
-
-  if (!chainResult[0]?.project_id || !subtask.agent_id) return;
-
-  const roleContext = {
-    subtask_id: subtask.id,
-    task_description: subtask.description,
-    status: subtask.status,
-    completed_at: subtask.completed_at,
-    result_summary: result ? JSON.stringify(result).slice(0, 500) : null,
-  };
-
+  // Delete agent context row - agent is done
   await sql`
-    UPDATE agent_contexts
-    SET
-      role_context = ${sql.json(roleContext)},
-      tools_used = ${toolsUsed},
-      progress_summary = ${'[' + subtask.status + '] ' + subtask.description},
-      last_updated = NOW()
-    WHERE project_id = ${chainResult[0].project_id}
-      AND agent_id = ${subtask.agent_id}
+    DELETE FROM agent_contexts
+    WHERE agent_id = ${subtask.agent_id}
   `;
 }
 
@@ -654,6 +645,70 @@ async function populateAgentContext(
     agent_type: subtask.agent_type,
     project_id,
     session_id,
+  });
+}
+
+/**
+ * Broadcast agent result as inter-agent message.
+ * When an agent completes, its result is shared with all other running agents
+ * of the same project so they can use the context.
+ */
+async function broadcastAgentResult(
+  sql: ReturnType<typeof getDb>,
+  subtask: SubtaskRow,
+  result?: Record<string, unknown>
+): Promise<void> {
+  // Find project_id and session_id from chain
+  interface ChainRow {
+    project_id: string;
+    session_id: string;
+  }
+
+  const chainResult = await sql<ChainRow[]>`
+    SELECT r.project_id, r.session_id
+    FROM task_lists t
+    JOIN requests r ON t.request_id = r.id
+    WHERE t.id = ${subtask.task_list_id}
+    LIMIT 1
+  `;
+
+  if (!chainResult[0]?.project_id) return;
+
+  const { project_id, session_id } = chainResult[0];
+
+  // Build message payload with agent result summary
+  const payload = {
+    source_agent: subtask.agent_type,
+    source_agent_id: subtask.agent_id,
+    subtask_id: subtask.id,
+    status: subtask.status,
+    description: subtask.description,
+    result_summary: result ? JSON.stringify(result).slice(0, 1000) : null,
+    session_id,
+    completed_at: subtask.completed_at,
+  };
+
+  // Insert broadcast message (to_agent_id = NULL means broadcast)
+  await sql`
+    INSERT INTO agent_messages (project_id, from_agent_id, to_agent_id, message_type, topic, payload, expires_at)
+    VALUES (
+      ${project_id},
+      ${subtask.agent_type || 'system'},
+      NULL,
+      'notification',
+      ${'agent.' + subtask.status},
+      ${sql.json(payload)},
+      NOW() + INTERVAL '1 hour'
+    )
+  `;
+
+  // Publish real-time event so dashboard and other agents see it
+  await publishEvent("global", "message.new", {
+    from_agent: subtask.agent_type,
+    to_agent: "broadcast",
+    topic: 'agent.' + subtask.status,
+    session_id,
+    description: subtask.description,
   });
 }
 

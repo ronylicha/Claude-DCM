@@ -29,7 +29,7 @@ const MessageInputSchema = z.object({
   topic: z.enum(VALID_TOPICS, {
     errorMap: () => ({ message: `topic must be one of: ${VALID_TOPICS.join(", ")}` }),
   }),
-  content: z.record(z.unknown()).or(z.string()), // Accept object or string
+  content: z.record(z.string(), z.unknown()).or(z.string()), // Accept object or string
   priority: z.number().int().min(0).max(10).default(0),
   ttl_seconds: z.number().int().min(1).max(86400).default(3600), // 1 second to 24 hours
   project_id: z.string().uuid().optional(),
@@ -109,7 +109,7 @@ export async function postMessage(c: Context): Promise<Response> {
         ${input.to_agent ?? null},
         ${input.topic},
         ${input.topic},
-        ${JSON.stringify(payload)}::jsonb,
+        ${sql.json(payload)},
         ${input.priority},
         ${expiresAt.toISOString()}
       )

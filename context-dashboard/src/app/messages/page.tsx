@@ -9,231 +9,196 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorDisplay } from "@/components/ErrorBoundary";
-import { DateRangeFilter, getDateRangeStart, type DateRange } from "@/components/filters/DateRangeFilter";
-import apiClient, { type InterAgentMessage, type InterAgentMessagesResponse } from "@/lib/api-client";
+import { KPICard } from "@/components/charts/KPICard";
+import apiClient, { type AgentContextsResponse, type AgentContext } from "@/lib/api-client";
 import {
-  MessageSquare,
-  ChevronDown,
-  ChevronRight,
+  BrainCircuit,
   Search,
   Filter,
   RefreshCw,
-  Info,
-  HelpCircle,
-  Bell,
-  MessageCircle,
   Clock,
   CheckCircle,
+  XCircle,
+  Activity,
+  Users,
+  Layers,
+  Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatDistanceToNow } from "date-fns";
 
-// Message type configuration with colors and icons
-const MESSAGE_TYPE_CONFIG: Record<
-  InterAgentMessage["message_type"],
-  { label: string; variant: "default" | "secondary" | "destructive" | "outline"; icon: typeof Info; bubbleColor: string }
-> = {
-  info: { label: "Info", variant: "secondary", icon: Info, bubbleColor: "bg-muted" },
-  request: { label: "Request", variant: "default", icon: HelpCircle, bubbleColor: "bg-primary/10" },
-  response: { label: "Response", variant: "outline", icon: MessageCircle, bubbleColor: "bg-green-500/10" },
-  notification: { label: "Notification", variant: "destructive", icon: Bell, bubbleColor: "bg-destructive/10" },
+// Agent type color mapping
+const AGENT_TYPE_COLORS: Record<string, { badge: string; dot: string }> = {
+  "frontend-react": { badge: "bg-blue-500/15 text-blue-600 border-blue-500/30", dot: "bg-blue-500" },
+  "react-refine": { badge: "bg-blue-400/15 text-blue-500 border-blue-400/30", dot: "bg-blue-400" },
+  "backend-laravel": { badge: "bg-red-500/15 text-red-600 border-red-500/30", dot: "bg-red-500" },
+  "laravel-api": { badge: "bg-red-400/15 text-red-500 border-red-400/30", dot: "bg-red-400" },
+  "qa-testing": { badge: "bg-green-500/15 text-green-600 border-green-500/30", dot: "bg-green-500" },
+  "project-supervisor": { badge: "bg-purple-500/15 text-purple-600 border-purple-500/30", dot: "bg-purple-500" },
+  "tech-lead": { badge: "bg-purple-400/15 text-purple-500 border-purple-400/30", dot: "bg-purple-400" },
+  "impact-analyzer": { badge: "bg-amber-500/15 text-amber-600 border-amber-500/30", dot: "bg-amber-500" },
+  "regression-guard": { badge: "bg-amber-400/15 text-amber-500 border-amber-400/30", dot: "bg-amber-400" },
+  "security-specialist": { badge: "bg-rose-500/15 text-rose-600 border-rose-500/30", dot: "bg-rose-500" },
+  "database-admin": { badge: "bg-orange-500/15 text-orange-600 border-orange-500/30", dot: "bg-orange-500" },
+  "designer-ui-ux": { badge: "bg-pink-500/15 text-pink-600 border-pink-500/30", dot: "bg-pink-500" },
+  "devops-infra": { badge: "bg-teal-500/15 text-teal-600 border-teal-500/30", dot: "bg-teal-500" },
+  "technical-writer": { badge: "bg-indigo-500/15 text-indigo-600 border-indigo-500/30", dot: "bg-indigo-500" },
+  "react-native-dev": { badge: "bg-cyan-500/15 text-cyan-600 border-cyan-500/30", dot: "bg-cyan-500" },
+  "react-native-ui": { badge: "bg-cyan-400/15 text-cyan-500 border-cyan-400/30", dot: "bg-cyan-400" },
+  "performance-engineer": { badge: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30", dot: "bg-emerald-500" },
 };
 
-// Generate a consistent color from agent name for the avatar
-function getAgentAvatarColor(agentId: string): string {
-  const colors = [
-    "bg-blue-500", "bg-purple-500", "bg-green-500", "bg-orange-500",
-    "bg-pink-500", "bg-cyan-500", "bg-amber-500", "bg-red-500",
-    "bg-indigo-500", "bg-teal-500", "bg-emerald-500", "bg-violet-500",
-  ];
-  let hash = 0;
-  for (let i = 0; i < agentId.length; i++) {
-    hash = agentId.charCodeAt(i) + ((hash << 5) - hash);
+const DEFAULT_AGENT_COLOR = { badge: "bg-gray-500/15 text-gray-600 border-gray-500/30", dot: "bg-gray-500" };
+
+function getAgentTypeColor(agentType: string) {
+  return AGENT_TYPE_COLORS[agentType] || DEFAULT_AGENT_COLOR;
+}
+
+// Status indicator configuration
+function getStatusConfig(status: string) {
+  switch (status) {
+    case "running":
+      return { dot: "bg-green-500 animate-pulse", label: "Running", textColor: "text-green-600" };
+    case "completed":
+      return { dot: "bg-blue-500", label: "Completed", textColor: "text-blue-600" };
+    case "failed":
+      return { dot: "bg-red-500", label: "Failed", textColor: "text-red-600" };
+    default:
+      return { dot: "bg-gray-400", label: status, textColor: "text-gray-500" };
   }
-  return colors[Math.abs(hash) % colors.length];
 }
 
-// Get initials from agent ID
-function getAgentInitials(agentId: string): string {
-  const parts = agentId.split("-").filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
+// Format relative time
+function formatRelativeTime(dateString: string): string {
+  try {
+    return formatDistanceToNow(new Date(dateString), { addSuffix: true });
+  } catch {
+    return dateString;
   }
-  return agentId.slice(0, 2).toUpperCase();
 }
 
-// Format relative time for messages
-function formatMessageTime(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMin / 60);
-
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return date.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-// Chat bubble component
-function ChatBubble({
-  message,
-  isExpanded,
-  onToggle,
+// Agent Context Card Component
+function AgentContextCard({
+  context,
   index,
 }: {
-  message: InterAgentMessage;
-  isExpanded: boolean;
-  onToggle: () => void;
+  context: AgentContext;
   index: number;
 }) {
-  const typeConfig = MESSAGE_TYPE_CONFIG[message.message_type];
-  const TypeIcon = typeConfig.icon;
-  const isRead = message.read_by.length > 0;
-  const hasPayload = Object.keys(message.payload).length > 0;
-
-  // Determine alignment: messages from sender go left, responses go right
-  const isResponse = message.message_type === "response";
-  const avatarAgent = isResponse ? message.to_agent_id : message.from_agent_id;
-  const avatarColor = getAgentAvatarColor(avatarAgent);
-  const initials = getAgentInitials(avatarAgent);
+  const typeColor = getAgentTypeColor(context.agent_type);
+  const statusConfig = getStatusConfig(context.role_context?.status || "unknown");
+  const toolsUsed = context.tools_used || [];
+  const progressSummary = context.progress_summary || "No progress summary available";
 
   return (
-    <div
-      className={cn(
-        "flex gap-3 max-w-[85%] animate-slide-in-right",
-        isResponse ? "ml-auto flex-row-reverse" : "mr-auto"
-      )}
-      style={{ animationDelay: `${index * 30}ms` }}
+    <Card
+      className="glass-card animate-fade-in hover:shadow-md transition-all duration-200"
+      style={{ animationDelay: `${index * 40}ms` }}
     >
-      {/* Avatar */}
-      <div
-        className={cn(
-          "h-9 w-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0",
-          avatarColor
-        )}
-        title={avatarAgent}
-      >
-        {initials}
-      </div>
-
-      {/* Bubble */}
-      <div className="flex-1 min-w-0">
-        {/* Agent names and direction */}
-        <div className={cn(
-          "flex items-center gap-1.5 mb-1 text-xs text-muted-foreground",
-          isResponse ? "justify-end" : "justify-start"
-        )}>
-          <span className="font-medium text-foreground">{message.from_agent_id}</span>
-          <span>-&gt;</span>
-          <span className="font-medium text-foreground">{message.to_agent_id}</span>
+      <CardContent className="pt-5 pb-4">
+        {/* Top row: agent type badge + status */}
+        <div className="flex items-start justify-between gap-3">
+          <Badge
+            variant="outline"
+            className={cn("text-xs font-medium px-2.5 py-0.5", typeColor.badge)}
+          >
+            {context.agent_type}
+          </Badge>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className={cn("h-2 w-2 rounded-full", statusConfig.dot)} />
+            <span className={cn("text-xs font-medium", statusConfig.textColor)}>
+              {statusConfig.label}
+            </span>
+          </div>
         </div>
 
-        {/* Message bubble */}
-        <div
-          className={cn(
-            "rounded-2xl px-4 py-3 cursor-pointer transition-all duration-200 hover:shadow-md",
-            typeConfig.bubbleColor,
-            isResponse ? "rounded-tr-sm" : "rounded-tl-sm",
-            isExpanded && "ring-1 ring-primary/20"
-          )}
-          onClick={onToggle}
-        >
-          {/* Type badge and topic */}
-          <div className="flex items-center gap-2 flex-wrap mb-1">
-            <Badge variant={typeConfig.variant} className="gap-1 text-[10px] py-0 h-5">
-              <TypeIcon className="h-2.5 w-2.5" />
-              {typeConfig.label}
-            </Badge>
-            <code className="text-xs text-primary font-medium">{message.topic}</code>
-            {!isRead && (
-              <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-            )}
-            {hasPayload && (
-              <span className="ml-auto text-muted-foreground">
-                {isExpanded ? (
-                  <ChevronDown className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronRight className="h-3.5 w-3.5" />
-                )}
-              </span>
+        {/* Agent ID */}
+        <div className="mt-3 flex items-center gap-2">
+          <code className="text-xs font-mono text-muted-foreground bg-muted/50 px-2 py-0.5 rounded truncate max-w-[280px]" title={context.agent_id}>
+            {context.agent_id}
+          </code>
+        </div>
+
+        {/* Progress Summary */}
+        <p className="mt-3 text-sm text-foreground/80 line-clamp-3 leading-relaxed">
+          {progressSummary}
+        </p>
+
+        {/* Task description if available */}
+        {context.role_context?.task_description && (
+          <p className="mt-2 text-xs text-muted-foreground italic line-clamp-2">
+            Task: {context.role_context.task_description}
+          </p>
+        )}
+
+        {/* Tools used badges */}
+        {toolsUsed.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {toolsUsed.slice(0, 6).map((tool) => (
+              <Badge
+                key={tool}
+                variant="secondary"
+                className="text-[10px] px-1.5 py-0 h-5 font-mono"
+              >
+                {tool}
+              </Badge>
+            ))}
+            {toolsUsed.length > 6 && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">
+                +{toolsUsed.length - 6}
+              </Badge>
             )}
           </div>
+        )}
 
-          {/* Expanded payload */}
-          {isExpanded && hasPayload && (
-            <div className="mt-2 animate-fade-in">
-              <pre className="text-xs bg-background/80 p-3 rounded-lg overflow-auto max-h-60 border border-border/50">
-                {JSON.stringify(message.payload, null, 2)}
-              </pre>
-              {message.read_by.length > 0 && (
-                <div className="mt-1.5 text-[10px] text-muted-foreground flex items-center gap-1">
-                  <CheckCircle className="h-2.5 w-2.5" />
-                  Read by: {message.read_by.join(", ")}
-                </div>
-              )}
-              {message.expires_at && (
-                <div className="mt-0.5 text-[10px] text-muted-foreground">
-                  Expires: {new Date(message.expires_at).toLocaleString()}
-                </div>
-              )}
-            </div>
-          )}
+        {/* Bottom row: timestamps */}
+        <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            Spawned {context.role_context?.spawned_at
+              ? formatRelativeTime(context.role_context.spawned_at)
+              : "unknown"}
+          </span>
+          <span className="flex items-center gap-1">
+            Updated {formatRelativeTime(context.last_updated)}
+          </span>
         </div>
-
-        {/* Timestamp */}
-        <div className={cn(
-          "flex items-center gap-1 mt-1 text-[10px] text-muted-foreground",
-          isResponse ? "justify-end" : "justify-start"
-        )}>
-          <Clock className="h-2.5 w-2.5" />
-          {formatMessageTime(message.created_at)}
-          {isRead && (
-            <CheckCircle className="h-2.5 w-2.5 text-green-500 ml-1" />
-          )}
-        </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
-// Message type filter component
-function MessageTypeFilter({
+// Status filter button group
+function StatusFilterBar({
   value,
   onChange,
 }: {
-  value: string | null;
-  onChange: (type: string | null) => void;
+  value: string;
+  onChange: (status: string) => void;
 }) {
-  const types = [
-    { value: null, label: "All" },
-    ...Object.entries(MESSAGE_TYPE_CONFIG).map(([key, config]) => ({
-      value: key,
-      label: config.label,
-    })),
+  const statuses = [
+    { value: "all", label: "All" },
+    { value: "running", label: "Running", color: "text-green-500" },
+    { value: "completed", label: "Completed", color: "text-blue-500" },
+    { value: "failed", label: "Failed", color: "text-red-500" },
   ];
 
   return (
     <div className="flex items-center gap-2">
       <Filter className="h-4 w-4 text-muted-foreground" />
       <div className="flex rounded-md border">
-        {types.map((type) => (
+        {statuses.map((status) => (
           <Button
-            key={type.label}
-            variant={value === type.value ? "default" : "ghost"}
+            key={status.value}
+            variant={value === status.value ? "default" : "ghost"}
             size="sm"
-            onClick={() => onChange(type.value)}
+            onClick={() => onChange(status.value)}
             className={cn(
               "rounded-none first:rounded-l-md last:rounded-r-md",
-              value === type.value && "pointer-events-none"
+              value === status.value && "pointer-events-none"
             )}
           >
-            {type.label}
+            <span className={status.color}>{status.label}</span>
           </Button>
         ))}
       </div>
@@ -241,128 +206,90 @@ function MessageTypeFilter({
   );
 }
 
-// Loading skeleton for chat
-function ChatSkeleton() {
+// Loading skeleton for context cards
+function ContextCardSkeleton() {
   return (
-    <div className="space-y-6 p-4">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div
-          key={i}
-          className={cn("flex gap-3", i % 2 === 0 ? "max-w-[75%]" : "max-w-[75%] ml-auto flex-row-reverse")}
-        >
-          <Skeleton className="h-9 w-9 rounded-full shrink-0" />
-          <div className="flex-1 space-y-1.5">
-            <Skeleton className="h-3 w-32" />
-            <Skeleton className={cn("h-16 rounded-2xl", i % 2 === 0 ? "rounded-tl-sm" : "rounded-tr-sm")} />
-            <Skeleton className="h-2.5 w-16" />
-          </div>
+    <Card className="glass-card">
+      <CardContent className="pt-5 pb-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="h-4 w-16" />
         </div>
-      ))}
-    </div>
+        <Skeleton className="h-4 w-48" />
+        <Skeleton className="h-12 w-full" />
+        <div className="flex gap-1.5">
+          <Skeleton className="h-5 w-14" />
+          <Skeleton className="h-5 w-14" />
+          <Skeleton className="h-5 w-14" />
+        </div>
+        <div className="flex justify-between pt-2">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
 export default function MessagesPage() {
   // Filter states
-  const [searchTopic, setSearchTopic] = useState("");
-  const [messageTypeFilter, setMessageTypeFilter] = useState<string | null>(null);
-  const [agentFilter, setAgentFilter] = useState<string>("");
-  const [dateRange, setDateRange] = useState<DateRange>("24h");
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [agentTypeFilter, setAgentTypeFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  // Fetch messages
+  // Fetch agent contexts
   const {
     data,
     isLoading,
     error,
     refetch,
-  } = useQuery<InterAgentMessagesResponse, Error>({
-    queryKey: ["inter-agent-messages"],
-    queryFn: () => apiClient.getInterAgentMessages("all"),
-    refetchInterval: 30000, // Refresh every 30 seconds
+  } = useQuery<AgentContextsResponse, Error>({
+    queryKey: ["agent-contexts"],
+    queryFn: () => apiClient.getAgentContexts(100, 0),
+    refetchInterval: 30000,
   });
 
-  // Extract unique agents for the filter dropdown
-  const uniqueAgents = useMemo(() => {
-    if (!data?.messages) return [];
-    const agents = new Set<string>();
-    data.messages.forEach((msg) => {
-      agents.add(msg.from_agent_id);
-      agents.add(msg.to_agent_id);
-    });
-    return Array.from(agents).sort();
-  }, [data?.messages]);
+  // Extract unique agent types for the dropdown
+  const agentTypes = useMemo(() => {
+    if (!data?.type_distribution) return [];
+    return data.type_distribution.map((td) => td.agent_type).sort();
+  }, [data?.type_distribution]);
 
-  // Extract unique topics for autocomplete
-  const uniqueTopics = useMemo(() => {
-    if (!data?.messages) return [];
-    const topics = new Set<string>();
-    data.messages.forEach((msg) => topics.add(msg.topic));
-    return Array.from(topics).sort();
-  }, [data?.messages]);
+  // Filter contexts
+  const filteredContexts = useMemo(() => {
+    if (!data?.contexts) return [];
 
-  // Filter messages
-  const filteredMessages = useMemo(() => {
-    if (!data?.messages) return [];
-    const dateStart = getDateRangeStart(dateRange);
+    return data.contexts.filter((ctx) => {
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matchesAgentId = ctx.agent_id.toLowerCase().includes(query);
+        const matchesSummary = (ctx.progress_summary || "").toLowerCase().includes(query);
+        const matchesType = ctx.agent_type.toLowerCase().includes(query);
+        if (!matchesAgentId && !matchesSummary && !matchesType) return false;
+      }
 
-    return data.messages.filter((msg) => {
-      // Date filter
-      if (new Date(msg.created_at) < dateStart) return false;
-
-      // Topic search
-      if (searchTopic && !msg.topic.toLowerCase().includes(searchTopic.toLowerCase())) {
+      // Agent type filter
+      if (agentTypeFilter !== "all" && ctx.agent_type !== agentTypeFilter) {
         return false;
       }
 
-      // Message type filter
-      if (messageTypeFilter && msg.message_type !== messageTypeFilter) {
+      // Status filter
+      if (statusFilter !== "all" && ctx.role_context?.status !== statusFilter) {
         return false;
-      }
-
-      // Agent filter (matches from or to)
-      if (agentFilter) {
-        const agentLower = agentFilter.toLowerCase();
-        if (
-          !msg.from_agent_id.toLowerCase().includes(agentLower) &&
-          !msg.to_agent_id.toLowerCase().includes(agentLower)
-        ) {
-          return false;
-        }
       }
 
       return true;
     });
-  }, [data?.messages, searchTopic, messageTypeFilter, agentFilter, dateRange]);
+  }, [data?.contexts, searchQuery, agentTypeFilter, statusFilter]);
 
-  // Toggle row expansion
-  const toggleRow = (id: string) => {
-    setExpandedRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  // Stats
-  const stats = useMemo(() => {
-    const messages = data?.messages || [];
-    return {
-      total: messages.length,
-      unread: messages.filter((m) => m.read_by.length === 0).length,
-      requests: messages.filter((m) => m.message_type === "request").length,
-      responses: messages.filter((m) => m.message_type === "response").length,
-    };
-  }, [data?.messages]);
+  // KPI values
+  const stats = data?.stats;
 
   return (
     <PageContainer
-      title="Messages"
-      description="Inter-agent message flow and communication"
+      title="Agent Contexts"
+      description="Context sharing data across all agents"
       actions={
         <Button
           variant="outline"
@@ -375,147 +302,139 @@ export default function MessagesPage() {
         </Button>
       }
     >
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4 stagger-children">
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Messages</CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold animate-count-up">{stats.total}</div>
-            <p className="text-xs text-muted-foreground">
-              {filteredMessages.length} matching filters
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Unread</CardTitle>
-            <Bell className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold animate-count-up">{stats.unread}</div>
-            <p className="text-xs text-muted-foreground">Pending review</p>
-          </CardContent>
-        </Card>
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Requests</CardTitle>
-            <HelpCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold animate-count-up">{stats.requests}</div>
-            <p className="text-xs text-muted-foreground">Agent requests</p>
-          </CardContent>
-        </Card>
-        <Card className="glass-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Responses</CardTitle>
-            <MessageCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold animate-count-up">{stats.responses}</div>
-            <p className="text-xs text-muted-foreground">Completed exchanges</p>
-          </CardContent>
-        </Card>
+      {/* KPI Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 stagger-children">
+        <KPICard
+          title="Total Contexts"
+          value={stats?.total ?? 0}
+          icon={<BrainCircuit className="h-4 w-4" />}
+          description={`${filteredContexts.length} matching filters`}
+          loading={isLoading}
+          className="glass-card"
+        />
+        <KPICard
+          title="Active Agents"
+          value={stats?.running ?? 0}
+          icon={<Activity className="h-4 w-4" />}
+          description="Currently running"
+          loading={isLoading}
+          className="glass-card"
+          trend={stats?.running ? { value: stats.running, label: "active" } : undefined}
+        />
+        <KPICard
+          title="Completed"
+          value={stats?.completed ?? 0}
+          icon={<CheckCircle className="h-4 w-4" />}
+          description="Successfully finished"
+          loading={isLoading}
+          className="glass-card"
+        />
+        <KPICard
+          title="Unique Types"
+          value={stats?.unique_types ?? 0}
+          icon={<Users className="h-4 w-4" />}
+          description="Different agent types"
+          loading={isLoading}
+          className="glass-card"
+        />
       </div>
 
       {/* Filters */}
-      <Card>
+      <Card className="glass-card animate-fade-in">
         <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Search className="h-4 w-4" />
+            Filters
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-4">
-            {/* Topic search */}
-            <div className="flex items-center gap-2">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by topic..."
-                value={searchTopic}
-                onChange={(e) => setSearchTopic(e.target.value)}
-                className="w-[200px]"
-                list="topic-suggestions"
-              />
-              <datalist id="topic-suggestions">
-                {uniqueTopics.slice(0, 10).map((topic) => (
-                  <option key={topic} value={topic} />
-                ))}
-              </datalist>
+          <div className="flex flex-wrap gap-4 items-end">
+            {/* Search */}
+            <div className="flex-1 min-w-[200px] max-w-[320px]">
+              <label className="text-xs text-muted-foreground mb-1 block">Search</label>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="agent ID, summary, or type..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
             </div>
 
-            {/* Agent filter */}
-            <div className="flex items-center gap-2">
-              <Input
-                placeholder="Filter by agent..."
-                value={agentFilter}
-                onChange={(e) => setAgentFilter(e.target.value)}
-                className="w-[180px]"
-                list="agent-suggestions"
-              />
-              <datalist id="agent-suggestions">
-                {uniqueAgents.slice(0, 20).map((agent) => (
-                  <option key={agent} value={agent} />
-                ))}
-              </datalist>
+            {/* Agent type dropdown */}
+            <div className="min-w-[180px]">
+              <label className="text-xs text-muted-foreground mb-1 block">Agent Type</label>
+              <select
+                value={agentTypeFilter}
+                onChange={(e) => setAgentTypeFilter(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="all">All Types ({agentTypes.length})</option>
+                {agentTypes.map((type) => {
+                  const dist = data?.type_distribution?.find((td) => td.agent_type === type);
+                  return (
+                    <option key={type} value={type}>
+                      {type} ({dist?.count ?? 0})
+                    </option>
+                  );
+                })}
+              </select>
             </div>
 
-            {/* Message type filter */}
-            <MessageTypeFilter
-              value={messageTypeFilter}
-              onChange={setMessageTypeFilter}
-            />
-
-            {/* Date range filter */}
-            <DateRangeFilter value={dateRange} onChange={setDateRange} />
+            {/* Status filter */}
+            <StatusFilterBar value={statusFilter} onChange={setStatusFilter} />
           </div>
         </CardContent>
       </Card>
 
-      {/* Chat-like Message Flow */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MessageSquare className="h-5 w-5" />
-            Message Flow
-            {filteredMessages.length > 0 && (
-              <Badge variant="secondary" className="ml-2">
-                {filteredMessages.length} messages
+      {/* Context Cards Grid */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Layers className="h-5 w-5" />
+            Agent Contexts
+            {filteredContexts.length > 0 && (
+              <Badge variant="secondary" className="ml-1">
+                {filteredContexts.length}
               </Badge>
             )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <ChatSkeleton />
-          ) : error ? (
-            <ErrorDisplay error={error} reset={() => refetch()} />
-          ) : filteredMessages.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium">No messages found</p>
-              <p className="text-sm">
-                {data?.messages?.length === 0
-                  ? "No inter-agent messages have been recorded yet."
+          </h3>
+        </div>
+
+        {isLoading ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <ContextCardSkeleton key={i} />
+            ))}
+          </div>
+        ) : error ? (
+          <ErrorDisplay error={error} reset={() => refetch()} />
+        ) : filteredContexts.length === 0 ? (
+          <Card className="glass-card">
+            <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <BrainCircuit className="h-14 w-14 mb-4 opacity-30" />
+              <p className="text-lg font-medium">No agent contexts found</p>
+              <p className="text-sm mt-1">
+                {data?.contexts?.length === 0
+                  ? "No agent context data has been recorded yet."
                   : "Try adjusting your filters to see more results."}
               </p>
-            </div>
-          ) : (
-            <div className="space-y-5 py-2">
-              {filteredMessages.map((message, index) => (
-                <ChatBubble
-                  key={message.id}
-                  message={message}
-                  isExpanded={expandedRows.has(message.id)}
-                  onToggle={() => toggleRow(message.id)}
-                  index={index}
-                />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {filteredContexts.map((context, index) => (
+              <AgentContextCard
+                key={context.id}
+                context={context}
+                index={index}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </PageContainer>
   );
 }

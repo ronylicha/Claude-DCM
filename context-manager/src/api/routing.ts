@@ -23,7 +23,8 @@ export interface ToolSuggestion {
  *   - keywords: comma-separated list of keywords
  *   - limit: max results (default: 10, max: 50)
  *   - min_score: minimum score threshold (default: 0.5)
- *   - tool_type: filter by tool type (optional)
+ *   - tool_type: include only this tool type (optional)
+ *   - exclude_types: comma-separated tool types to exclude (e.g., "builtin")
  *
  * @param c - Hono context
  */
@@ -54,11 +55,14 @@ export async function suggestRouting(c: Context): Promise<Response> {
     const limit = Math.min(parseInt(c.req.query("limit") ?? "10", 10), 50);
     const minScore = parseFloat(c.req.query("min_score") ?? "0.5");
     const toolType = c.req.query("tool_type");
+    const excludeTypesParam = c.req.query("exclude_types");
+    const excludeTypes = excludeTypesParam
+      ? excludeTypesParam.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean)
+      : [];
 
     const sql = getDb();
 
     // Query for matching tools with aggregated scores
-    // This mimics the behavior of routing-suggest.sh
     let results;
 
     if (toolType) {
@@ -74,6 +78,37 @@ export async function suggestRouting(c: Context): Promise<Response> {
           FROM keyword_tool_scores
           WHERE keyword = ANY(${keywords})
             AND tool_type = ${toolType}
+            AND score >= ${minScore}
+        )
+        SELECT
+          tool_name,
+          tool_type,
+          ROUND(AVG(score)::numeric, 3) as avg_score,
+          SUM(usage_count) as total_usage,
+          SUM(success_count) as total_success,
+          ARRAY_AGG(DISTINCT keyword) as matched_keywords,
+          COUNT(DISTINCT keyword) as keyword_match_count
+        FROM keyword_matches
+        GROUP BY tool_name, tool_type
+        ORDER BY
+          keyword_match_count DESC,
+          avg_score DESC,
+          total_usage DESC
+        LIMIT ${limit}
+      `;
+    } else if (excludeTypes.length > 0) {
+      results = await sql`
+        WITH keyword_matches AS (
+          SELECT
+            tool_name,
+            tool_type,
+            keyword,
+            score,
+            usage_count,
+            success_count
+          FROM keyword_tool_scores
+          WHERE keyword = ANY(${keywords})
+            AND tool_type != ALL(${excludeTypes})
             AND score >= ${minScore}
         )
         SELECT

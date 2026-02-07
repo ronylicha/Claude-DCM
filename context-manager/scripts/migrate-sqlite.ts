@@ -8,7 +8,7 @@ import { Database } from "bun:sqlite";
 import postgres from "postgres";
 
 const SQLITE_PATH = `${process.env["HOME"]}/.claude/routing.db`;
-const PG_URL = process.env["DATABASE_URL"] || "postgresql://dcm:changeme@localhost:5432/claude_context";
+const PG_URL = "postgresql://rlicha:21081986Rl%40@localhost:5432/claude_context";
 
 interface KeywordScore {
   keyword: string;

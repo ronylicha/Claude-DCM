@@ -302,7 +302,7 @@ export async function getActionsHourly(c: Context): Promise<Response> {
 export async function getActions(c: Context): Promise<Response> {
   try {
     const sql = getDb();
-    const limit = Math.min(parseInt(c.req.query("limit") ?? "100", 10), 100);
+    const limit = Math.min(parseInt(c.req.query("limit") ?? "100", 10), 5000);
     const offset = parseInt(c.req.query("offset") ?? "0", 10);
     const toolType = c.req.query("tool_type");
     const toolName = c.req.query("tool_name");
@@ -342,9 +342,13 @@ export async function getActions(c: Context): Promise<Response> {
       `;
     }
 
+    // Get total count for pagination
+    const totalResult = await sql`SELECT COUNT(*)::int as total FROM actions`;
+    const total = totalResult[0]?.total ?? actions.length;
+
     return c.json({
       actions,
-      count: actions.length,
+      count: total,
       limit,
       offset,
     });

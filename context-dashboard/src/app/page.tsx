@@ -8,7 +8,7 @@ import { PageContainer } from "@/components/PageContainer";
 import { ErrorDisplay } from "@/components/ErrorBoundary";
 import apiClient, {
   type HealthResponse,
-  type StatsResponse,
+  type DashboardKPIs,
   type ActiveSessionsResponse,
   type ActionsResponse,
 } from "@/lib/api-client";
@@ -21,10 +21,12 @@ import {
   CheckCircle,
   XCircle,
   FolderOpen,
-  TrendingUp,
-  TrendingDown,
-  Minus,
   Zap,
+  BarChart3,
+  Target,
+  Route,
+  Brain,
+  Percent,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -111,8 +113,7 @@ interface KPICardProps {
   icon: React.ReactNode;
   description?: string;
   loading?: boolean;
-  trend?: "up" | "down" | "neutral";
-  trendValue?: string;
+  accent?: string;
 }
 
 function KPICard({
@@ -121,18 +122,8 @@ function KPICard({
   icon,
   description,
   loading,
-  trend,
-  trendValue,
+  accent,
 }: KPICardProps) {
-  const TrendIcon =
-    trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : Minus;
-  const trendColor =
-    trend === "up"
-      ? "text-green-500"
-      : trend === "down"
-        ? "text-red-500"
-        : "text-muted-foreground";
-
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -147,19 +138,142 @@ function KPICard({
           </>
         ) : (
           <>
-            <div className="text-2xl font-bold">{value}</div>
-            <div className="flex items-center gap-1">
-              {description && (
-                <p className="text-xs text-muted-foreground">{description}</p>
-              )}
-              {trend && trendValue && (
-                <span className={`flex items-center text-xs ${trendColor}`}>
-                  <TrendIcon className="h-3 w-3 mr-0.5" />
-                  {trendValue}
-                </span>
-              )}
-            </div>
+            <div className={`text-2xl font-bold ${accent || ""}`}>{value}</div>
+            {description && (
+              <p className="text-xs text-muted-foreground">{description}</p>
+            )}
           </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SuccessRateBar({ rate, label }: { rate: number; label: string }) {
+  const color =
+    rate >= 90
+      ? "bg-green-500"
+      : rate >= 70
+        ? "bg-yellow-500"
+        : "bg-red-500";
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="font-medium">{rate}%</span>
+      </div>
+      <div className="h-2 rounded-full bg-muted overflow-hidden">
+        <div
+          className={`h-full rounded-full ${color} transition-all`}
+          style={{ width: `${Math.min(rate, 100)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function AgentDistributionCard({ kpis, loading }: { kpis?: DashboardKPIs; loading: boolean }) {
+  const topTypes = kpis?.agents.top_types ?? [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Brain className="h-5 w-5" />
+          Agent Distribution
+          {kpis && (
+            <Badge variant="secondary" className="ml-auto">
+              {kpis.agents.unique_types} types
+            </Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-6 w-full" />
+            ))}
+          </div>
+        ) : topTypes.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No agent context data yet.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {topTypes.map((t) => {
+              const maxCount = topTypes[0]?.count ?? 1;
+              const pct = Math.round((t.count / maxCount) * 100);
+              return (
+                <div key={t.agent_type} className="space-y-1">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium truncate max-w-[180px]">
+                      {t.agent_type}
+                    </span>
+                    <span className="text-muted-foreground">{t.count}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SystemHealthCard({ kpis, loading }: { kpis?: DashboardKPIs; loading: boolean }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Target className="h-5 w-5" />
+          System Metrics
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="space-y-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-8 w-full" />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <SuccessRateBar
+              rate={kpis?.actions_24h.success_rate ?? 0}
+              label="Actions Success Rate (24h)"
+            />
+            <SuccessRateBar
+              rate={kpis?.subtasks.completion_rate ?? 0}
+              label="Subtask Completion Rate"
+            />
+            <div className="grid grid-cols-2 gap-4 pt-2 border-t">
+              <div>
+                <p className="text-xs text-muted-foreground">Avg Actions/hr</p>
+                <p className="text-lg font-bold">{kpis?.actions_24h.avg_per_hour ?? 0}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Avg Tools/Session</p>
+                <p className="text-lg font-bold">{kpis?.sessions.avg_tools_per_session ?? 0}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Routing Keywords</p>
+                <p className="text-lg font-bold">{(kpis?.routing.keywords ?? 0).toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Routing Tools</p>
+                <p className="text-lg font-bold">{kpis?.routing.tools ?? 0}</p>
+              </div>
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -298,7 +412,7 @@ function ActiveAgentsCard() {
                     {agent.agent_type || "unknown"}
                   </Badge>
                   <span className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(new Date(agent.started_at), {
+                    {formatDistanceToNow(new Date(agent.started_at || agent.created_at), {
                       addSuffix: true,
                     })}
                   </span>
@@ -321,18 +435,15 @@ function ActiveAgentsCard() {
 }
 
 export default function DashboardPage() {
-  // Fetch real stats from API
   const {
-    data: stats,
-    isLoading: statsLoading,
-    error: statsError,
-  } = useQuery<StatsResponse, Error>({
-    queryKey: ["stats"],
-    queryFn: apiClient.getStats,
-    refetchInterval: 30000,
+    data: kpis,
+    isLoading: kpisLoading,
+  } = useQuery<DashboardKPIs, Error>({
+    queryKey: ["dashboard-kpis"],
+    queryFn: apiClient.getDashboardKPIs,
+    refetchInterval: 15000,
   });
 
-  // Fetch active sessions count
   const { data: activeSessions } = useQuery<ActiveSessionsResponse, Error>({
     queryKey: ["active-sessions"],
     queryFn: apiClient.getActiveSessions,
@@ -344,38 +455,87 @@ export default function DashboardPage() {
       title="Dashboard"
       description="Overview of the Context Manager system"
     >
+      {/* Row 1: Primary KPIs */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <HealthCard />
         <KPICard
-          title="Projects"
-          value={statsError ? "Error" : (stats?.projectCount ?? 0)}
-          icon={<FolderOpen className="h-4 w-4 text-muted-foreground" />}
-          description="Tracked projects"
-          loading={statsLoading}
+          title="Success Rate (24h)"
+          value={kpis ? `${kpis.actions_24h.success_rate}%` : "..."}
+          icon={<Percent className="h-4 w-4 text-muted-foreground" />}
+          description={kpis ? `${kpis.actions_24h.success}/${kpis.actions_24h.total} actions` : undefined}
+          loading={kpisLoading}
+          accent={
+            kpis
+              ? kpis.actions_24h.success_rate >= 90
+                ? "text-green-600"
+                : kpis.actions_24h.success_rate >= 70
+                  ? "text-yellow-600"
+                  : "text-red-600"
+              : undefined
+          }
         />
         <KPICard
-          title="Requests"
-          value={statsError ? "Error" : (stats?.requestCount ?? 0)}
-          icon={<Clock className="h-4 w-4 text-muted-foreground" />}
-          description="Total requests"
-          loading={statsLoading}
+          title="Actions/Hour"
+          value={kpis?.actions_24h.avg_per_hour ?? 0}
+          icon={<BarChart3 className="h-4 w-4 text-muted-foreground" />}
+          description={kpis ? `${kpis.actions_24h.unique_tools} unique tools` : undefined}
+          loading={kpisLoading}
         />
         <KPICard
           title="Active Agents"
           value={activeSessions?.count ?? 0}
           icon={<Users className="h-4 w-4 text-muted-foreground" />}
           description="Currently running"
-          loading={statsLoading}
+          loading={kpisLoading}
         />
         <KPICard
-          title="Actions"
-          value={statsError ? "Error" : (stats?.actionCount ?? 0)}
-          icon={<Wrench className="h-4 w-4 text-muted-foreground" />}
-          description="Tools executed"
-          loading={statsLoading}
+          title="Sessions"
+          value={kpis?.sessions.total ?? 0}
+          icon={<FolderOpen className="h-4 w-4 text-muted-foreground" />}
+          description={kpis ? `${kpis.sessions.active} active` : undefined}
+          loading={kpisLoading}
         />
       </div>
 
+      {/* Row 2: Secondary KPIs */}
+      <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <KPICard
+          title="Subtasks"
+          value={kpis?.subtasks.total ?? 0}
+          icon={<Wrench className="h-4 w-4 text-muted-foreground" />}
+          description={kpis ? `${kpis.subtasks.completed} completed, ${kpis.subtasks.running} running` : undefined}
+          loading={kpisLoading}
+        />
+        <KPICard
+          title="Agent Contexts"
+          value={kpis?.agents.contexts_total ?? 0}
+          icon={<Brain className="h-4 w-4 text-muted-foreground" />}
+          description={kpis ? `${kpis.agents.unique_types} agent types` : undefined}
+          loading={kpisLoading}
+        />
+        <KPICard
+          title="Routing Coverage"
+          value={kpis ? (kpis.routing.keywords).toLocaleString() : 0}
+          icon={<Route className="h-4 w-4 text-muted-foreground" />}
+          description={kpis ? `${kpis.routing.tools} tools, ${(kpis.routing.mappings).toLocaleString()} mappings` : undefined}
+          loading={kpisLoading}
+        />
+        <KPICard
+          title="Actions (24h)"
+          value={kpis?.actions_24h.total ?? 0}
+          icon={<Clock className="h-4 w-4 text-muted-foreground" />}
+          description={kpis ? `${kpis.actions_24h.active_sessions} sessions active` : undefined}
+          loading={kpisLoading}
+        />
+      </div>
+
+      {/* Row 3: Detailed panels */}
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <SystemHealthCard kpis={kpis} loading={kpisLoading} />
+        <AgentDistributionCard kpis={kpis} loading={kpisLoading} />
+      </div>
+
+      {/* Row 4: Activity panels */}
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <RecentActivityCard />
         <ActiveAgentsCard />

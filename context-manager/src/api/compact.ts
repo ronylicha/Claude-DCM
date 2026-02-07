@@ -80,11 +80,11 @@ export async function postCompactRestore(c: Context): Promise<Response> {
         await sql`
           UPDATE requests
           SET
-            metadata = metadata || ${JSON.stringify({
+            metadata = metadata || ${sql.json({
               compacted_at: new Date().toISOString(),
               compact_summary: input.compact_summary ?? null,
               compact_agent: input.agent_id,
-            })}::jsonb
+            })}
           WHERE session_id = ${input.session_id}
         `;
         sessionCompacted = true;
@@ -140,14 +140,14 @@ export async function postCompactRestore(c: Context): Promise<Response> {
           ${input.agent_id},
           'context.generated',
           'context.generated',
-          ${JSON.stringify({
+          ${sql.json({
             session_id: input.session_id,
             agent_id: input.agent_id,
             brief_id: contextBrief.id,
             token_count: contextBrief.token_count,
             truncated: contextBrief.truncated,
             sources_count: contextBrief.sources.length,
-          })}::jsonb,
+          })},
           5,
           ${new Date(Date.now() + 3600000).toISOString()}
         )

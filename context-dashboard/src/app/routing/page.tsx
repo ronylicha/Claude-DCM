@@ -33,40 +33,46 @@ import {
 } from "lucide-react";
 
 // Types for routing
+interface RoutingStatsTotals {
+  total_records: number;
+  unique_keywords: number;
+  unique_tools: number;
+  avg_score: number;
+  avg_usage: number;
+}
+
+interface RoutingTopTool {
+  tool_name: string;
+  tool_type: string;
+  total_usage?: number;
+  avg_score?: number;
+}
+
+interface RoutingTypeDistribution {
+  tool_type: string;
+  tool_count: number;
+}
+
 interface RoutingStats {
-  total_keywords: number;
-  total_mappings?: number;
-  accuracy?: number;
-  suggestions_today?: number;
-  top_tools: {
-    tool_name: string;
-    tool_type: string;
-    usage_count: number;
-    avg_score: number;
-    acceptance_rate?: number;
-  }[];
-  top_keywords?: {
-    keyword: string;
-    tool_name: string;
-    tool_type: string;
-    score: number;
-    usage_count: number;
-  }[];
-  recent_feedback_count: number;
+  totals: RoutingStatsTotals;
+  top_by_usage: RoutingTopTool[];
+  top_by_score: RoutingTopTool[];
+  type_distribution: RoutingTypeDistribution[];
 }
 
 interface RoutingSuggestion {
-  tool: string;
-  type: "agent" | "skill" | "command" | "workflow" | "plugin";
+  tool_name: string;
+  tool_type: "agent" | "skill" | "command" | "workflow" | "plugin";
   score: number;
-  matched_keywords: string[];
-  description?: string;
+  usage_count: number;
+  success_rate: number;
+  keyword_matches: string[];
 }
 
 interface RoutingSuggestResponse {
   keywords: string[];
   suggestions: RoutingSuggestion[];
-  processing_time_ms: number;
+  count: number;
 }
 
 interface RoutingFeedbackRequest {
@@ -88,7 +94,7 @@ async function fetchRoutingStats(): Promise<RoutingStats> {
 }
 
 async function fetchRoutingSuggestions(keywords: string): Promise<RoutingSuggestResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/routing/suggest?keywords=${encodeURIComponent(keywords)}`);
+  const res = await fetch(`${API_BASE_URL}/api/routing/suggest?keywords=${encodeURIComponent(keywords)}&exclude_types=builtin&min_score=0.3`);
   if (!res.ok) {
     throw new Error(`Failed to fetch suggestions: ${res.statusText}`);
   }
@@ -148,31 +154,30 @@ function StatsCards({ stats, isLoading }: { stats?: RoutingStats; isLoading: boo
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 stagger-children">
       <KPICard
         title="Total Keywords"
-        value={stats?.total_keywords ?? 0}
+        value={stats?.totals?.unique_keywords ?? 0}
         icon={<Hash className="h-4 w-4" />}
         description="Indexed for routing"
         loading={isLoading}
       />
       <KPICard
-        title="Total Mappings"
-        value={stats?.total_mappings ?? stats?.top_tools?.length ?? 0}
+        title="Total Tools"
+        value={stats?.totals?.unique_tools ?? 0}
         icon={<Route className="h-4 w-4" />}
-        description="Keyword-tool connections"
+        description="Available for routing"
         loading={isLoading}
       />
       <KPICard
-        title="Accuracy"
-        value={stats?.accuracy ? `${(stats.accuracy * 100).toFixed(1)}%` : "N/A"}
+        title="Average Score"
+        value={stats?.totals?.avg_score ? Number(stats.totals.avg_score).toFixed(2) : "N/A"}
         icon={<Target className="h-4 w-4" />}
-        description="Suggestion acceptance rate"
+        description="Overall suggestion quality"
         loading={isLoading}
-        trend={stats?.accuracy ? { value: 5, label: "this week" } : undefined}
       />
       <KPICard
-        title="Suggestions Today"
-        value={stats?.suggestions_today ?? 0}
+        title="Total Records"
+        value={stats?.totals?.total_records ?? 0}
         icon={<Zap className="h-4 w-4" />}
-        description="Routing requests"
+        description="Keyword-tool mappings"
         loading={isLoading}
       />
     </div>
@@ -181,7 +186,7 @@ function StatsCards({ stats, isLoading }: { stats?: RoutingStats; isLoading: boo
 
 // Top Keywords Table
 function TopKeywordsTable({ stats, isLoading }: { stats?: RoutingStats; isLoading: boolean }) {
-  const keywords = stats?.top_keywords ?? [];
+  const tools = stats?.top_by_score ?? [];
 
   if (isLoading) {
     return (
@@ -189,9 +194,9 @@ function TopKeywordsTable({ stats, isLoading }: { stats?: RoutingStats; isLoadin
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Hash className="h-5 w-5" />
-            Top Keywords
+            Top by Score
           </CardTitle>
-          <CardDescription>Most frequently matched keywords</CardDescription>
+          <CardDescription>Highest scoring tool-keyword pairs</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
@@ -204,19 +209,19 @@ function TopKeywordsTable({ stats, isLoading }: { stats?: RoutingStats; isLoadin
     );
   }
 
-  if (keywords.length === 0) {
+  if (tools.length === 0) {
     return (
       <Card className="glass-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Hash className="h-5 w-5" />
-            Top Keywords
+            Top by Score
           </CardTitle>
-          <CardDescription>Most frequently matched keywords</CardDescription>
+          <CardDescription>Highest scoring tool-keyword pairs</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground text-center py-8">
-            No keyword data available yet. Start using the routing system to see statistics.
+            No scoring data available yet. Start using the routing system to see statistics.
           </p>
         </CardContent>
       </Card>
@@ -228,37 +233,33 @@ function TopKeywordsTable({ stats, isLoading }: { stats?: RoutingStats; isLoadin
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Hash className="h-5 w-5" />
-          Top Keywords
+          Top by Score
         </CardTitle>
-        <CardDescription>Most frequently matched keywords</CardDescription>
+        <CardDescription>Highest scoring tool-keyword pairs</CardDescription>
       </CardHeader>
       <CardContent>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Keyword</TableHead>
               <TableHead>Tool</TableHead>
               <TableHead>Type</TableHead>
               <TableHead className="text-right">Score</TableHead>
-              <TableHead className="text-right">Usage</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {keywords.slice(0, 10).map((kw, idx) => (
+            {tools.slice(0, 10).map((tool, idx) => (
               <TableRow key={idx}>
-                <TableCell className="font-mono text-sm">{kw.keyword}</TableCell>
-                <TableCell className="font-medium">{kw.tool_name}</TableCell>
+                <TableCell className="font-medium">{tool.tool_name}</TableCell>
                 <TableCell>
-                  <Badge variant={getTypeBadgeVariant(kw.tool_type)} className="text-xs">
-                    {kw.tool_type}
+                  <Badge variant={getTypeBadgeVariant(tool.tool_type)} className="text-xs">
+                    {tool.tool_type}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  <span className={kw.score >= 0.8 ? "text-green-600" : kw.score >= 0.5 ? "text-yellow-600" : "text-muted-foreground"}>
-                    {(kw.score * 100).toFixed(0)}%
+                  <span className={(tool.avg_score ?? 0) >= 3 ? "text-green-600" : (tool.avg_score ?? 0) >= 2 ? "text-yellow-600" : "text-muted-foreground"}>
+                    {Number(tool.avg_score ?? 0).toFixed(2) ?? "N/A"}
                   </span>
                 </TableCell>
-                <TableCell className="text-right text-muted-foreground">{kw.usage_count}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -270,7 +271,7 @@ function TopKeywordsTable({ stats, isLoading }: { stats?: RoutingStats; isLoadin
 
 // Top Tools Table
 function TopToolsTable({ stats, isLoading }: { stats?: RoutingStats; isLoading: boolean }) {
-  const tools = stats?.top_tools ?? [];
+  const tools = stats?.top_by_usage ?? [];
 
   if (isLoading) {
     return (
@@ -278,9 +279,9 @@ function TopToolsTable({ stats, isLoading }: { stats?: RoutingStats; isLoading: 
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
-            Top Tools
+            Top Tools by Usage
           </CardTitle>
-          <CardDescription>Most suggested tools with scores</CardDescription>
+          <CardDescription>Most frequently suggested tools</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
@@ -299,9 +300,9 @@ function TopToolsTable({ stats, isLoading }: { stats?: RoutingStats; isLoading: 
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
-            Top Tools
+            Top Tools by Usage
           </CardTitle>
-          <CardDescription>Most suggested tools with scores</CardDescription>
+          <CardDescription>Most frequently suggested tools</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground text-center py-8">
@@ -317,9 +318,9 @@ function TopToolsTable({ stats, isLoading }: { stats?: RoutingStats; isLoading: 
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <TrendingUp className="h-5 w-5" />
-          Top Tools
+          Top Tools by Usage
         </CardTitle>
-        <CardDescription>Most suggested tools with scores</CardDescription>
+        <CardDescription>Most frequently suggested tools</CardDescription>
       </CardHeader>
       <CardContent>
         <Table>
@@ -327,9 +328,8 @@ function TopToolsTable({ stats, isLoading }: { stats?: RoutingStats; isLoading: 
             <TableRow>
               <TableHead>Tool</TableHead>
               <TableHead>Type</TableHead>
+              <TableHead className="text-right">Usage Count</TableHead>
               <TableHead className="text-right">Avg Score</TableHead>
-              <TableHead className="text-right">Usage</TableHead>
-              <TableHead className="text-right">Accept Rate</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -341,20 +341,11 @@ function TopToolsTable({ stats, isLoading }: { stats?: RoutingStats; isLoading: 
                     {tool.tool_type}
                   </Badge>
                 </TableCell>
+                <TableCell className="text-right text-muted-foreground">{tool.total_usage ?? 0}</TableCell>
                 <TableCell className="text-right">
-                  <span className={tool.avg_score >= 0.8 ? "text-green-600" : tool.avg_score >= 0.5 ? "text-yellow-600" : "text-muted-foreground"}>
-                    {(tool.avg_score * 100).toFixed(0)}%
+                  <span className={(tool.avg_score ?? 0) >= 3 ? "text-green-600" : (tool.avg_score ?? 0) >= 2 ? "text-yellow-600" : "text-muted-foreground"}>
+                    {Number(tool.avg_score ?? 0).toFixed(2) ?? "N/A"}
                   </span>
-                </TableCell>
-                <TableCell className="text-right text-muted-foreground">{tool.usage_count}</TableCell>
-                <TableCell className="text-right">
-                  {tool.acceptance_rate !== undefined ? (
-                    <span className={tool.acceptance_rate >= 0.7 ? "text-green-600" : "text-muted-foreground"}>
-                      {(tool.acceptance_rate * 100).toFixed(0)}%
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">-</span>
-                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -403,7 +394,7 @@ function RoutingTester() {
     feedbackMutation.mutate({
       keywords: suggestions.keywords,
       selected_tool: tool,
-      suggested_tools: suggestions.suggestions.map(s => s.tool),
+      suggested_tools: suggestions.suggestions.map(s => s.tool_name),
       accepted,
     });
   };
@@ -455,7 +446,7 @@ function RoutingTester() {
                   </Badge>
                 ))}
               </span>
-              <span>{suggestions.processing_time_ms}ms</span>
+              <span>{suggestions.count}ms</span>
             </div>
 
             <div className="space-y-2">
@@ -465,21 +456,16 @@ function RoutingTester() {
                   className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors animate-fade-in"
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full ${getTypeColor(suggestion.type)}`} />
+                    <div className={`w-2 h-2 rounded-full ${getTypeColor(suggestion.tool_type)}`} />
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">{suggestion.tool}</span>
-                        <Badge variant={getTypeBadgeVariant(suggestion.type)} className="text-xs">
-                          {suggestion.type}
+                        <span className="font-medium">{suggestion.tool_name}</span>
+                        <Badge variant={getTypeBadgeVariant(suggestion.tool_type)} className="text-xs">
+                          {suggestion.tool_type}
                         </Badge>
                       </div>
-                      {suggestion.description && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {suggestion.description}
-                        </p>
-                      )}
                       <div className="flex gap-1 mt-1">
-                        {suggestion.matched_keywords.map((kw, i) => (
+                        {suggestion.keyword_matches.map((kw, i) => (
                           <Badge key={i} variant="secondary" className="text-xs">
                             {kw}
                           </Badge>
@@ -489,8 +475,8 @@ function RoutingTester() {
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="text-right">
-                      <div className={`text-lg font-bold ${suggestion.score >= 0.8 ? "text-green-600" : suggestion.score >= 0.5 ? "text-yellow-600" : "text-muted-foreground"}`}>
-                        {(suggestion.score * 100).toFixed(0)}%
+                      <div className={`text-lg font-bold ${suggestion.score >= 3 ? "text-green-600" : suggestion.score >= 2 ? "text-yellow-600" : "text-muted-foreground"}`}>
+                        {Number(suggestion.score).toFixed(1)}%
                       </div>
                       <div className="text-xs text-muted-foreground">score</div>
                     </div>
@@ -499,7 +485,7 @@ function RoutingTester() {
                         size="sm"
                         variant="ghost"
                         className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-100"
-                        onClick={() => handleFeedback(suggestion.tool, true)}
+                        onClick={() => handleFeedback(suggestion.tool_name, true)}
                         disabled={feedbackMutation.isPending}
                         title="This suggestion is helpful"
                       >
@@ -509,7 +495,7 @@ function RoutingTester() {
                         size="sm"
                         variant="ghost"
                         className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-100"
-                        onClick={() => handleFeedback(suggestion.tool, false)}
+                        onClick={() => handleFeedback(suggestion.tool_name, false)}
                         disabled={feedbackMutation.isPending}
                         title="This suggestion is not helpful"
                       >
@@ -564,7 +550,7 @@ function FeedbackStatsCard({ stats, isLoading }: { stats?: RoutingStats; isLoadi
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Recent Feedback</span>
-              <span className="font-bold text-lg">{stats?.recent_feedback_count ?? 0}</span>
+              <span className="font-bold text-lg">{0}</span>
             </div>
             <div className="flex items-center gap-4 text-sm">
               <div className="flex items-center gap-1 text-green-600">

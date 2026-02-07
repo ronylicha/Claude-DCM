@@ -25,6 +25,7 @@ import apiClient, {
   type StatsResponse,
   type ActiveSessionsResponse,
   type ActionsHourlyResponse,
+  type ActionsResponse,
 } from "@/lib/api-client";
 import {
   useRealtimeMetrics,
@@ -477,6 +478,13 @@ export default function DashboardPage() {
       refetchInterval: 10000,
     });
 
+  // Fetch agent actions for Top 10 chart (use agent tool_type actions)
+  const { data: agentActionsData } = useQuery({
+    queryKey: ["agent-actions-top10"],
+    queryFn: () => apiClient.getActions(500, 0, "agent"),
+    refetchInterval: 60000,
+  });
+
   const { data: actionsHourlyData } = useQuery<ActionsHourlyResponse>({
     queryKey: ["actionsHourly"],
     queryFn: () => apiClient.getActionsHourly(),
@@ -502,19 +510,23 @@ export default function DashboardPage() {
     [actionsPerHour]
   );
 
-  // Top agents for bar chart
-  const topAgents = useMemo(
-    () =>
-      (activeSessionsData?.active_agents || [])
-        .slice(0, 10)
-        .map((agent, index) => ({
-          name: (agent.agent_type || "unknown")
-            .replace(/-/g, " ")
-            .slice(0, 15),
-          value: 10 - index,
-        })),
-    [activeSessionsData]
-  );
+  // Top agents by real action counts
+  const topAgents = useMemo(() => {
+    const agentActions = agentActionsData?.actions || [];
+    if (agentActions.length === 0) return [];
+    // Count actions per agent tool_name
+    const counts = new Map<string, number>();
+    for (const action of agentActions) {
+      counts.set(action.tool_name, (counts.get(action.tool_name) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([name, value]) => ({
+        name: name.length > 15 ? name.slice(0, 12) + "..." : name,
+        value,
+      }));
+  }, [agentActionsData]);
 
   // Merge API data with real-time metrics
   const displayStats = {
@@ -665,7 +677,7 @@ export default function DashboardPage() {
             <h3 className="text-base font-semibold mb-4">
               Top 10 Agents by Actions
             </h3>
-            {agentsLoading ? (
+            {agentsLoading && !agentActionsData ? (
               <Skeleton className="w-full" style={{ height: 280 }} />
             ) : topAgents.length === 0 ? (
               <div className="flex items-center justify-center h-[280px] text-muted-foreground">

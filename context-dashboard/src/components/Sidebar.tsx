@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Radio,
   Zap,
+  BrainCircuit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ const navigationGroups: NavGroup[] = [
       { name: "Projects", href: "/projects", icon: FolderKanban },
       { name: "Sessions", href: "/sessions", icon: Clock },
       { name: "Agents", href: "/agents", icon: Users },
+      { name: "Context", href: "/context", icon: BrainCircuit },
     ],
   },
   {

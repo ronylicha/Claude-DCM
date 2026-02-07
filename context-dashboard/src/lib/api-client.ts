@@ -224,10 +224,13 @@ export interface ActiveAgent {
   agent_type: string;
   agent_id: string;
   description: string;
-  started_at: string;
+  started_at: string | null;
+  created_at: string;
   project_path?: string;
+  project_name?: string;
   request_id?: string;
   session_id: string;
+  actions_count?: number;
 }
 
 export interface ActiveSessionsResponse {
@@ -359,6 +362,40 @@ export interface RoutingRule {
   created_at: string;
 }
 
+export interface DashboardKPIs {
+  actions_24h: {
+    total: number;
+    success: number;
+    success_rate: number;
+    unique_tools: number;
+    active_sessions: number;
+    avg_per_hour: number;
+  };
+  sessions: {
+    total: number;
+    active: number;
+    avg_tools_per_session: number;
+  };
+  agents: {
+    contexts_total: number;
+    unique_types: number;
+    top_types: Array<{ agent_type: string; count: number }>;
+  };
+  subtasks: {
+    total: number;
+    completed: number;
+    running: number;
+    failed: number;
+    completion_rate: number;
+  };
+  routing: {
+    keywords: number;
+    tools: number;
+    mappings: number;
+  };
+  timestamp: string;
+}
+
 export interface ActionsHourlyResponse {
   data: Array<{ hour: string; count: number }>;
   period: "24h";
@@ -371,6 +408,78 @@ export interface ToolsSummaryResponse {
   plugins: number;
   cached_at: string;
   from_cache?: boolean;
+}
+
+// Agent Contexts (agent_contexts table)
+export interface AgentContext {
+  id: string;
+  project_id: string;
+  agent_id: string;
+  agent_type: string;
+  role_context: {
+    status: string;
+    spawned_at: string;
+    subtask_id?: string;
+    completed_at?: string;
+    task_description?: string;
+    session_id?: string;
+    blocked_by?: string[];
+    task_list_id?: string;
+  };
+  skills_to_restore: string[] | null;
+  tools_used: string[];
+  progress_summary: string;
+  last_updated: string;
+}
+
+export interface AgentContextsResponse {
+  contexts: AgentContext[];
+  total: number;
+  stats: {
+    total: number;
+    unique_types: number;
+    running: number;
+    completed: number;
+    failed: number;
+  };
+  type_distribution: Array<{
+    agent_type: string;
+    count: number;
+    running: number;
+    completed: number;
+  }>;
+}
+
+export interface AgentContextsStatsResponse {
+  overview: {
+    total_contexts: number;
+    unique_agent_types: number;
+    unique_projects: number;
+    active_agents: number;
+    completed_agents: number;
+    failed_agents: number;
+    oldest_context: string | null;
+    newest_context: string | null;
+  };
+  top_types: Array<{
+    agent_type: string;
+    count: number;
+    running: number;
+  }>;
+  tools_used: Array<{
+    tool: string;
+    usage_count: number;
+  }>;
+  recent_activity: Array<{
+    id: string;
+    agent_id: string;
+    agent_type: string;
+    progress_summary: string;
+    status: string;
+    spawned_at: string;
+    last_updated: string;
+  }>;
+  timestamp: string;
 }
 
 // ============================================
@@ -434,6 +543,7 @@ export const apiClient = {
   // ==========================================
   getHealth: () => apiFetch<HealthResponse>("/health"),
   getStats: () => apiFetch<StatsResponse>("/stats"),
+  getDashboardKPIs: () => apiFetch<DashboardKPIs>("/api/dashboard/kpis"),
   getToolsSummary: () => apiFetch<ToolsSummaryResponse>("/stats/tools-summary"),
 
   // ==========================================
@@ -783,6 +893,14 @@ export const apiClient = {
   getSessionsByProject: (projectId: string) =>
     apiFetch<Session[]>(`/api/projects/${projectId}/sessions`),
   deleteSession: (id: string) => apiFetch<void>(`/api/sessions/${id}`, { method: "DELETE" }),
+
+  // ==========================================
+  // Agent Contexts - /api/agent-contexts
+  // ==========================================
+  getAgentContexts: (limit = 100, offset = 0) =>
+    apiFetch<AgentContextsResponse>(`/api/agent-contexts?limit=${limit}&offset=${offset}`),
+  getAgentContextStats: () =>
+    apiFetch<AgentContextsStatsResponse>(`/api/agent-contexts/stats`),
 
   // ==========================================
   // Auth - /api/auth

@@ -261,21 +261,26 @@ LEFT JOIN projects p ON r.project_id = p.id;
 -- Vue des agents actifs par projet
 CREATE OR REPLACE VIEW v_active_agents AS
 SELECT
+    s.id AS subtask_id,
     p.id AS project_id,
     p.name AS project_name,
+    p.path AS project_path,
     s.agent_type,
     s.agent_id,
     s.status,
-    s.description AS current_task,
+    s.description,
     s.started_at,
+    s.created_at,
+    r.session_id,
+    r.id AS request_id,
     COUNT(a.id) AS actions_count
 FROM subtasks s
 JOIN task_lists tl ON s.task_list_id = tl.id
 JOIN requests r ON tl.request_id = r.id
-JOIN projects p ON r.project_id = p.id
+LEFT JOIN projects p ON r.project_id = p.id
 LEFT JOIN actions a ON a.subtask_id = s.id
 WHERE s.status IN ('running', 'paused', 'blocked')
-GROUP BY p.id, p.name, s.agent_type, s.agent_id, s.status, s.description, s.started_at;
+GROUP BY s.id, p.id, p.name, p.path, s.agent_type, s.agent_id, s.status, s.description, s.started_at, s.created_at, r.session_id, r.id;
 
 -- Vue des messages non lus
 CREATE OR REPLACE VIEW v_unread_messages AS

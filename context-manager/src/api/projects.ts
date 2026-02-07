@@ -29,7 +29,7 @@ interface ProjectRow {
 const ProjectInputSchema = z.object({
   path: z.string().min(1, "path is required"),
   name: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**
@@ -62,7 +62,7 @@ export async function postProject(c: Context): Promise<Response> {
       VALUES (
         ${normalizedPath},
         ${body.name ?? null},
-        ${JSON.stringify(body.metadata ?? {})}
+        ${sql.json(body.metadata ?? {})}
       )
       ON CONFLICT (path) DO UPDATE SET
         name = COALESCE(EXCLUDED.name, projects.name),

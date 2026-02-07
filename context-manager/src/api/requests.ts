@@ -55,7 +55,7 @@ const RequestInputSchema = z.object({
   prompt: z.string().min(1, "prompt is required"),
   prompt_type: z.enum(VALID_PROMPT_TYPES).optional(),
   status: z.enum(VALID_REQUEST_STATUSES).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**
@@ -105,7 +105,7 @@ export async function postRequest(c: Context): Promise<Response> {
         ${body.prompt},
         ${body.prompt_type ?? null},
         ${body.status ?? "active"},
-        ${JSON.stringify(body.metadata ?? {})}
+        ${sql.json(body.metadata ?? {})}
       )
       RETURNING id, project_id, session_id, prompt, prompt_type, status, created_at, completed_at, metadata
     `;
@@ -298,7 +298,7 @@ export async function patchRequest(c: Context): Promise<Response> {
     // Validate with Zod
     const PatchRequestSchema = z.object({
       status: z.enum(VALID_REQUEST_STATUSES).optional(),
-      metadata: z.record(z.unknown()).optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
     }).refine((data) => data.status || data.metadata, {
       message: "No update fields provided",
     });
@@ -326,7 +326,7 @@ export async function patchRequest(c: Context): Promise<Response> {
         SET
           status = ${body.status},
           completed_at = NOW(),
-          metadata = metadata || ${JSON.stringify(body.metadata ?? {})}
+          metadata = metadata || ${sql.json(body.metadata ?? {})}
         WHERE id = ${requestId}
         RETURNING id, project_id, session_id, prompt, prompt_type, status, created_at, completed_at, metadata
       `;
@@ -335,7 +335,7 @@ export async function patchRequest(c: Context): Promise<Response> {
         UPDATE requests
         SET
           status = ${body.status},
-          metadata = metadata || ${JSON.stringify(body.metadata ?? {})}
+          metadata = metadata || ${sql.json(body.metadata ?? {})}
         WHERE id = ${requestId}
         RETURNING id, project_id, session_id, prompt, prompt_type, status, created_at, completed_at, metadata
       `;
@@ -343,7 +343,7 @@ export async function patchRequest(c: Context): Promise<Response> {
       results = await sql<RequestRow[]>`
         UPDATE requests
         SET
-          metadata = metadata || ${JSON.stringify(body.metadata)}
+          metadata = metadata || ${sql.json(body.metadata)}
         WHERE id = ${requestId}
         RETURNING id, project_id, session_id, prompt, prompt_type, status, created_at, completed_at, metadata
       `;

@@ -147,6 +147,130 @@ app.get("/stats", async (c) => {
 });
 
 // ============================================
+// Dashboard KPIs - Aggregated metrics
+// ============================================
+
+app.get("/api/dashboard/kpis", async (c) => {
+  try {
+    const sql = getDb();
+
+    const [
+      actionStats24h,
+      sessionStats,
+      agentContextStats,
+      subtaskStats,
+      routingStats,
+      actionsPerHour,
+      topAgentTypes,
+    ] = await Promise.all([
+      sql`
+        SELECT
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE exit_code = 0) as success,
+          COUNT(DISTINCT tool_name) as unique_tools,
+          COUNT(DISTINCT metadata->>'session_id') as active_sessions
+        FROM actions
+        WHERE created_at > NOW() - INTERVAL '24 hours'
+      `,
+      sql`
+        SELECT
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE ended_at IS NULL AND started_at > NOW() - INTERVAL '24 hours') as active,
+          ROUND(COALESCE(AVG(total_tools_used), 0)::numeric, 1) as avg_tools
+        FROM sessions
+      `,
+      sql`
+        SELECT
+          COUNT(*) as total,
+          COUNT(DISTINCT agent_type) as unique_types
+        FROM agent_contexts
+      `,
+      sql`
+        SELECT
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE status = 'completed') as completed,
+          COUNT(*) FILTER (WHERE status = 'running') as running,
+          COUNT(*) FILTER (WHERE status = 'failed') as failed
+        FROM subtasks
+      `,
+      sql`
+        SELECT
+          COUNT(DISTINCT keyword) as keywords,
+          COUNT(DISTINCT tool_name) as tools,
+          COUNT(*) as mappings
+        FROM keyword_tool_scores
+      `,
+      sql`
+        SELECT
+          ROUND(COUNT(*)::numeric / GREATEST(
+            EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) / 3600, 1
+          ), 1) as avg_per_hour
+        FROM actions
+        WHERE created_at > NOW() - INTERVAL '24 hours'
+      `,
+      sql`
+        SELECT agent_type, COUNT(*) as count
+        FROM agent_contexts
+        GROUP BY agent_type
+        ORDER BY count DESC
+        LIMIT 8
+      `,
+    ]);
+
+    const total24h = Number(actionStats24h[0]?.total ?? 0);
+    const success24h = Number(actionStats24h[0]?.success ?? 0);
+
+    return c.json({
+      actions_24h: {
+        total: total24h,
+        success: success24h,
+        success_rate: total24h > 0 ? Math.round((success24h / total24h) * 100) : 0,
+        unique_tools: Number(actionStats24h[0]?.unique_tools ?? 0),
+        active_sessions: Number(actionStats24h[0]?.active_sessions ?? 0),
+        avg_per_hour: Number(actionsPerHour[0]?.avg_per_hour ?? 0),
+      },
+      sessions: {
+        total: Number(sessionStats[0]?.total ?? 0),
+        active: Number(sessionStats[0]?.active ?? 0),
+        avg_tools_per_session: Number(sessionStats[0]?.avg_tools ?? 0),
+      },
+      agents: {
+        contexts_total: Number(agentContextStats[0]?.total ?? 0),
+        unique_types: Number(agentContextStats[0]?.unique_types ?? 0),
+        top_types: topAgentTypes.map((r: Record<string, unknown>) => ({
+          agent_type: r.agent_type as string,
+          count: Number(r.count),
+        })),
+      },
+      subtasks: {
+        total: Number(subtaskStats[0]?.total ?? 0),
+        completed: Number(subtaskStats[0]?.completed ?? 0),
+        running: Number(subtaskStats[0]?.running ?? 0),
+        failed: Number(subtaskStats[0]?.failed ?? 0),
+        completion_rate: Number(subtaskStats[0]?.total ?? 0) > 0
+          ? Math.round((Number(subtaskStats[0]?.completed ?? 0) / Number(subtaskStats[0]?.total ?? 0)) * 100)
+          : 0,
+      },
+      routing: {
+        keywords: Number(routingStats[0]?.keywords ?? 0),
+        tools: Number(routingStats[0]?.tools ?? 0),
+        mappings: Number(routingStats[0]?.mappings ?? 0),
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("[API] GET /api/dashboard/kpis error:", error);
+    return c.json(
+      {
+        error: "Failed to get dashboard KPIs",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
+  }
+});
+
+// ============================================
 // Projects API - Phase 3.1 IMPLEMENTED
 // ============================================
 
@@ -436,6 +560,162 @@ app.post("/api/compact/restore", postCompactRestore);
 // GET /api/compact/status/:session_id - Check if session is compacted
 app.get("/api/compact/status/:session_id", getCompactStatus);
 
+
+// ============================================
+// Agent Contexts API
+// ============================================
+
+// GET /api/agent-contexts - List all agent contexts with stats
+app.get("/api/agent-contexts", async (c) => {
+  try {
+    const sql = getDb();
+    const limit = Number(c.req.query("limit") ?? "100");
+    const offset = Number(c.req.query("offset") ?? "0");
+    const agentType = c.req.query("agent_type");
+    const status = c.req.query("status");
+
+    const contexts = agentType && status
+      ? await sql`
+          SELECT * FROM agent_contexts
+          WHERE agent_type = ${agentType}
+            AND role_context->>'status' = ${status}
+          ORDER BY last_updated DESC
+          LIMIT ${limit} OFFSET ${offset}`
+      : agentType
+      ? await sql`
+          SELECT * FROM agent_contexts
+          WHERE agent_type = ${agentType}
+          ORDER BY last_updated DESC
+          LIMIT ${limit} OFFSET ${offset}`
+      : status
+      ? await sql`
+          SELECT * FROM agent_contexts
+          WHERE role_context->>'status' = ${status}
+          ORDER BY last_updated DESC
+          LIMIT ${limit} OFFSET ${offset}`
+      : await sql`
+          SELECT * FROM agent_contexts
+          ORDER BY last_updated DESC
+          LIMIT ${limit} OFFSET ${offset}`;
+
+    const [{ total }] = await sql`SELECT COUNT(*) as total FROM agent_contexts`;
+
+    // Stats
+    const stats = await sql`
+      SELECT 
+        COUNT(*) as total,
+        COUNT(DISTINCT agent_type) as unique_types,
+        COUNT(*) FILTER (WHERE role_context->>'status' = 'running') as running,
+        COUNT(*) FILTER (WHERE role_context->>'status' = 'completed') as completed,
+        COUNT(*) FILTER (WHERE role_context->>'status' = 'failed') as failed
+      FROM agent_contexts`;
+
+    const typeDistribution = await sql`
+      SELECT agent_type, COUNT(*) as count,
+        COUNT(*) FILTER (WHERE role_context->>'status' = 'running') as running,
+        COUNT(*) FILTER (WHERE role_context->>'status' = 'completed') as completed
+      FROM agent_contexts
+      GROUP BY agent_type
+      ORDER BY count DESC
+      LIMIT 20`;
+
+    return c.json({
+      contexts,
+      total: Number(total),
+      limit,
+      offset,
+      stats: {
+        total: Number(stats[0].total),
+        unique_types: Number(stats[0].unique_types),
+        running: Number(stats[0].running),
+        completed: Number(stats[0].completed),
+        failed: Number(stats[0].failed),
+      },
+      type_distribution: typeDistribution.map(t => ({
+        agent_type: t.agent_type,
+        count: Number(t.count),
+        running: Number(t.running),
+        completed: Number(t.completed),
+      })),
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("[API] GET /api/agent-contexts error:", error);
+    return c.json({ error: "Failed to get agent contexts" }, 500);
+  }
+});
+
+// GET /api/agent-contexts/stats - Context KPIs
+app.get("/api/agent-contexts/stats", async (c) => {
+  try {
+    const sql = getDb();
+
+    const [overview] = await sql`
+      SELECT
+        COUNT(*) as total_contexts,
+        COUNT(DISTINCT agent_type) as unique_agent_types,
+        COUNT(DISTINCT project_id) as unique_projects,
+        COUNT(*) FILTER (WHERE role_context->>'status' = 'running') as active_agents,
+        COUNT(*) FILTER (WHERE role_context->>'status' = 'completed') as completed_agents,
+        COUNT(*) FILTER (WHERE role_context->>'status' = 'failed') as failed_agents,
+        MIN(last_updated) as oldest_context,
+        MAX(last_updated) as newest_context
+      FROM agent_contexts`;
+
+    const topTypes = await sql`
+      SELECT agent_type, COUNT(*) as count,
+        COUNT(*) FILTER (WHERE role_context->>'status' = 'running') as running
+      FROM agent_contexts
+      GROUP BY agent_type
+      ORDER BY count DESC
+      LIMIT 15`;
+
+    const recentActivity = await sql`
+      SELECT id, agent_id, agent_type, progress_summary,
+        role_context->>'status' as status,
+        role_context->>'spawned_at' as spawned_at,
+        last_updated
+      FROM agent_contexts
+      ORDER BY last_updated DESC
+      LIMIT 10`;
+
+    const toolsUsed = await sql`
+      SELECT unnest(tools_used) as tool, COUNT(*) as usage_count
+      FROM agent_contexts
+      WHERE tools_used IS NOT NULL AND array_length(tools_used, 1) > 0
+      GROUP BY tool
+      ORDER BY usage_count DESC
+      LIMIT 20`;
+
+    return c.json({
+      overview: {
+        total_contexts: Number(overview.total_contexts),
+        unique_agent_types: Number(overview.unique_agent_types),
+        unique_projects: Number(overview.unique_projects),
+        active_agents: Number(overview.active_agents),
+        completed_agents: Number(overview.completed_agents),
+        failed_agents: Number(overview.failed_agents),
+        oldest_context: overview.oldest_context,
+        newest_context: overview.newest_context,
+      },
+      top_types: topTypes.map(t => ({
+        agent_type: t.agent_type,
+        count: Number(t.count),
+        running: Number(t.running),
+      })),
+      recent_activity: recentActivity,
+      tools_used: toolsUsed.map(t => ({
+        tool: t.tool,
+        usage_count: Number(t.usage_count),
+      })),
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("[API] GET /api/agent-contexts/stats error:", error);
+    return c.json({ error: "Failed to get context stats" }, 500);
+  }
+});
+
 // ============================================
 // Sessions API - Phase 6 IMPLEMENTED
 // ============================================
@@ -452,6 +732,28 @@ app.delete("/api/sessions/:id", deleteSession);
 // ============================================
 
 app.post("/api/messages", postMessage);
+
+// GET /api/messages - Get all messages (for dashboard)
+app.get("/api/messages", async (c) => {
+  try {
+    const sql = getDb();
+    const limit = Number(c.req.query("limit") ?? "100");
+    const offset = Number(c.req.query("offset") ?? "0");
+    const messages = await sql`
+      SELECT id, project_id, from_agent_id, to_agent_id,
+        message_type, topic, payload, priority,
+        read_by, created_at, expires_at
+      FROM agent_messages
+      ORDER BY created_at DESC
+      LIMIT ${limit} OFFSET ${offset}`;
+    const [{ total }] = await sql`SELECT COUNT(*) as total FROM agent_messages`;
+    return c.json({ messages, count: Number(total), limit, offset });
+  } catch (error) {
+    console.error("[API] GET /api/messages error:", error);
+    return c.json({ error: "Failed to get messages" }, 500);
+  }
+});
+
 app.get("/api/messages/:agent_id", getMessages);
 
 // ============================================
@@ -469,10 +771,10 @@ app.post("/api/unsubscribe", postUnsubscribe);
 // ============================================
 
 app.post("/api/blocking", postBlocking);
+app.get("/api/blocking/check", checkBlocking);
 app.get("/api/blocking/:agent_id", getBlocking);
 app.delete("/api/blocking/:blocked_id", deleteBlocking);
 app.post("/api/unblock", postUnblock);
-app.get("/api/blocking/check", checkBlocking);
 
 // ============================================
 // Cleanup Stats API - Phase 4 IMPLEMENTED

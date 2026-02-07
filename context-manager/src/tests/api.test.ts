@@ -330,7 +330,7 @@ describe("DCM API Integration Tests", () => {
         prompt_type: "invalid_type",
       });
       expect(status).toBe(400);
-      expect(data["error"]).toContain("Invalid prompt_type");
+      expect(data["error"]).toContain("Validation failed");
     });
 
     it("POST /api/requests with nonexistent project returns 404", async () => {
@@ -379,7 +379,7 @@ describe("DCM API Integration Tests", () => {
         status: "invalid_status",
       });
       expect(status).toBe(400);
-      expect(data["error"]).toContain("Invalid status");
+      expect(data["error"]).toContain("Validation failed");
     });
   });
 
@@ -428,7 +428,7 @@ describe("DCM API Integration Tests", () => {
         status: "invalid",
       });
       expect(status).toBe(400);
-      expect(data["error"]).toContain("Invalid status");
+      expect(data["error"]).toContain("Validation failed");
     });
 
     it("POST /api/tasks with nonexistent request returns 404", async () => {
@@ -535,7 +535,7 @@ describe("DCM API Integration Tests", () => {
         status: "invalid",
       });
       expect(status).toBe(400);
-      expect(data["error"]).toContain("Invalid status");
+      expect(data["error"]).toContain("Validation failed");
     });
 
     it("POST /api/subtasks with nonexistent task returns 404", async () => {
@@ -646,7 +646,7 @@ describe("DCM API Integration Tests", () => {
         tool_type: "invalid_type",
       });
       expect(status).toBe(400);
-      expect(data["error"]).toContain("Invalid tool_type");
+      expect(data["error"]).toContain("Validation failed");
     });
 
     it("GET /api/actions lists actions", async () => {

@@ -71,23 +71,37 @@ function getStatusBadgeVariant(
   }
 }
 
+// Relative time formatter
+function relativeTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return "just started";
+  const diff = Math.max(0, Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000));
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
 // Active Agent Card Component
 function ActiveAgentCard({
   agent,
+  index,
 }: {
   agent: ActiveSessionsResponse["active_agents"][0];
+  index: number;
 }) {
   const category = getAgentCategory(agent.agent_type || "");
-  const startTime = new Date(agent.started_at);
-  const duration = Math.round(
-    (Date.now() - startTime.getTime()) / 1000 / 60
-  );
+  // Use started_at if available, fallback to created_at
+  const timeRef = agent.started_at || agent.created_at;
+  const duration = relativeTime(timeRef);
 
   return (
     <Card className="border-l-4" style={{ borderLeftColor: "hsl(var(--primary))" }}>
       <CardContent className="pt-4">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2">
+            <span className="flex items-center justify-center h-5 w-5 rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+              {index}
+            </span>
             <div className={`h-2 w-2 rounded-full ${category.bgColor} animate-pulse`} />
             <span className={`font-medium ${category.color}`}>
               {agent.agent_type || "unknown"}
@@ -98,12 +112,12 @@ function ActiveAgentCard({
           </Badge>
         </div>
         <p className="mt-2 text-sm text-muted-foreground line-clamp-2">
-          {agent.description}
+          {agent.description || "No description"}
         </p>
         <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <Clock className="h-3 w-3" />
-            {duration}m ago
+            {duration}
           </span>
           {agent.session_id && (
             <span className="truncate max-w-[150px]" title={agent.session_id}>
@@ -475,8 +489,8 @@ export default function AgentsPage() {
           </div>
         ) : activeSessions?.active_agents && activeSessions.active_agents.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {activeSessions.active_agents.map((agent) => (
-              <ActiveAgentCard key={agent.subtask_id} agent={agent} />
+            {activeSessions.active_agents.map((agent, idx) => (
+              <ActiveAgentCard key={agent.subtask_id || idx} agent={agent} index={idx + 1} />
             ))}
           </div>
         ) : (

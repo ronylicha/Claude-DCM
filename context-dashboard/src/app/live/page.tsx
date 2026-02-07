@@ -10,6 +10,7 @@ import {
   type WSEvent,
   type EventType,
 } from "@/hooks/useWebSocket";
+import apiClient from "@/lib/api-client";
 import {
   Activity,
   Users,
@@ -669,7 +670,41 @@ export default function LivePage() {
   const isConnected = connected || metricsConnected;
   const connectionError = !isConnected ? error || metricsError : null;
 
-  // Track agents from incoming events
+  // Fetch active agents from API on mount and periodically
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchActiveAgents() {
+      try {
+        const resp = await apiClient.getActiveSessions();
+        if (cancelled) return;
+        if (resp.active_agents && resp.active_agents.length > 0) {
+          setAgents((prev) => {
+            const next = new Map(prev);
+            for (const agent of resp.active_agents) {
+              const agentId = agent.agent_id || agent.subtask_id;
+              if (!next.has(agentId)) {
+                next.set(agentId, {
+                  id: agentId,
+                  type: agent.agent_type,
+                  sessionId: agent.session_id,
+                  active: true,
+                  lastSeen: Date.now(),
+                });
+              }
+            }
+            return next;
+          });
+        }
+      } catch {
+        // Non-blocking: API might be down
+      }
+    }
+    fetchActiveAgents();
+    const interval = setInterval(fetchActiveAgents, 15000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  // Track agents from incoming WebSocket events
   useEffect(() => {
     if (events.length === 0) return;
     const latest = events[0];

@@ -15,6 +15,7 @@ export type EventType =
   | "subtask.updated"
   | "subtask.completed"
   | "subtask.failed"
+  | "subtask.running"
   | "message.new"
   | "message.read"
   | "message.expired"

@@ -36,17 +36,38 @@ import {
 } from "lucide-react";
 
 // Tool types for filtering
-const TOOL_TYPES = ["all", "builtin", "agent", "skill", "command", "mcp"] as const;
+const TOOL_TYPES = ["no-builtin", "agent", "skill", "command", "mcp", "builtin", "all"] as const;
 type ToolType = (typeof TOOL_TYPES)[number];
 
-// Tool type colors for badges
-const TOOL_TYPE_COLORS: Record<string, string> = {
-  builtin: "bg-blue-500",
-  agent: "bg-purple-500",
-  skill: "bg-green-500",
+// Tab labels for display
+const TAB_LABELS: Record<string, string> = {
+  "no-builtin": "Smart Tools",
+  agent: "Agents",
+  skill: "Skills",
+  command: "Commands",
+  mcp: "MCP",
+  builtin: "Builtins",
+  all: "All",
+};
+
+// Tool type hex colors for charts (SVG fill)
+const TOOL_TYPE_HEX: Record<string, string> = {
+  builtin: "#64748b",
+  agent: "#7c3aed",
+  skill: "#10b981",
+  command: "#f59e0b",
+  mcp: "#06b6d4",
+  unknown: "#6b7280",
+};
+
+// Tool type Tailwind classes for badges
+const TOOL_TYPE_BADGE: Record<string, string> = {
+  builtin: "bg-slate-500",
+  agent: "bg-violet-600",
+  skill: "bg-emerald-500",
   command: "bg-amber-500",
   mcp: "bg-cyan-500",
-  default: "bg-gray-500",
+  unknown: "bg-gray-500",
 };
 
 // Helper to format duration
@@ -57,9 +78,23 @@ function formatDuration(ms: number | null): string {
   return `${(ms / 60000).toFixed(1)}min`;
 }
 
-// Helper to get badge color for tool type
-function getToolTypeColor(type: string): string {
-  return TOOL_TYPE_COLORS[type.toLowerCase()] || TOOL_TYPE_COLORS.default;
+// Helper to get hex color for charts
+function getToolHexColor(type: string): string {
+  return TOOL_TYPE_HEX[type.toLowerCase()] || TOOL_TYPE_HEX.unknown;
+}
+
+// Helper to get badge class for UI badges
+function getToolBadgeClass(type: string): string {
+  return TOOL_TYPE_BADGE[type.toLowerCase()] || TOOL_TYPE_BADGE.unknown;
+}
+
+// Helper to filter stats by selected type
+function filterStatsByType(stats: ToolStats[], selectedType: ToolType): ToolStats[] {
+  if (selectedType === "all") return stats;
+  if (selectedType === "no-builtin") {
+    return stats.filter((s) => s.type.toLowerCase() !== "builtin");
+  }
+  return stats.filter((s) => s.type.toLowerCase() === selectedType);
 }
 
 // Tool stats aggregated from actions
@@ -81,7 +116,7 @@ function aggregateToolStats(actions: Action[]): ToolStats[] {
   for (const action of actions) {
     const key = action.tool_name;
     const existing = statsMap.get(key);
-    const isSuccess = action.success;
+    const isSuccess = action.exit_code === 0;
     const duration = action.duration_ms ?? 0;
 
     if (existing) {
@@ -129,7 +164,7 @@ function TopToolsChart({
   const chartData = stats.slice(0, 10).map((tool) => ({
     name: tool.name.length > 15 ? tool.name.slice(0, 12) + "..." : tool.name,
     value: tool.usageCount,
-    color: getToolTypeColor(tool.type),
+    color: getToolHexColor(tool.type),
   }));
 
   return (
@@ -161,7 +196,7 @@ function ToolTypeDistribution({
   const chartData = Array.from(typeCount.entries()).map(([name, value]) => ({
     name,
     value,
-    color: getToolTypeColor(name),
+    color: getToolHexColor(name),
   }));
 
   return (
@@ -189,6 +224,8 @@ function ToolsTable({
 }) {
   const filteredStats = selectedType === "all"
     ? stats
+    : selectedType === "no-builtin"
+    ? stats.filter((s) => s.type.toLowerCase() !== "builtin")
     : stats.filter((s) => s.type.toLowerCase() === selectedType);
 
   if (loading) {
@@ -227,7 +264,7 @@ function ToolsTable({
           <TableRow key={tool.name}>
             <TableCell className="font-medium">{tool.name}</TableCell>
             <TableCell>
-              <Badge className={`${getToolTypeColor(tool.type)} text-white`}>
+              <Badge className={`${getToolBadgeClass(tool.type)} text-white`}>
                 {tool.type}
               </Badge>
             </TableCell>
@@ -274,8 +311,8 @@ export default function ToolsPage() {
     error: actionsError,
     refetch: refetchActions,
   } = useQuery<ActionsResponse, Error>({
-    queryKey: ["actions", 500, 0],
-    queryFn: () => apiClient.getActions(500, 0),
+    queryKey: ["actions", 2000, 0],
+    queryFn: () => apiClient.getActions(2000, 0),
     refetchInterval: 60000,
   });
 
@@ -298,16 +335,24 @@ export default function ToolsPage() {
     return aggregateToolStats(actions);
   }, [actions]);
 
-  // Calculate KPI values
+  // Filter stats based on selected type
+  const filteredToolStats = useMemo(() => {
+    return filterStatsByType(toolStats, selectedType);
+  }, [toolStats, selectedType]);
+
+  // Calculate KPI values - use ALL tools for totals, filtered for rates
   const kpiStats = useMemo(() => {
     const totalActions = actionsData?.count ?? 0;
-    const uniqueTools = toolStats.length;
+    const uniqueTools = toolStats.length; // Always total unique, not filtered
     const totalSuccess = toolStats.reduce((acc, t) => acc + t.successCount, 0);
     const totalUsage = toolStats.reduce((acc, t) => acc + t.usageCount, 0);
     const overallSuccessRate = totalUsage > 0 ? (totalSuccess / totalUsage) * 100 : 0;
-    const avgDuration = toolStats.length > 0
-      ? toolStats.reduce((acc, t) => acc + t.avgDuration * t.usageCount, 0) / totalUsage
-      : 0;
+    // Only compute avg duration from actions that actually have duration
+    const toolsWithDuration = toolStats.filter((t) => t.totalDuration > 0);
+    const durationUsage = toolsWithDuration.reduce((acc, t) => acc + t.usageCount, 0);
+    const avgDuration = durationUsage > 0
+      ? toolsWithDuration.reduce((acc, t) => acc + t.totalDuration, 0) / durationUsage
+      : null; // null = no data
 
     return {
       totalActions,
@@ -384,7 +429,7 @@ export default function ToolsPage() {
         />
         <KPICard
           title="Avg Duration"
-          value={formatDuration(kpiStats.avgDuration)}
+          value={kpiStats.avgDuration !== null ? formatDuration(kpiStats.avgDuration) : "N/A"}
           icon={<Clock className="h-4 w-4" />}
           description="Average execution time"
           loading={isLoading}
@@ -393,8 +438,8 @@ export default function ToolsPage() {
 
       {/* Charts Row */}
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <TopToolsChart stats={toolStats} loading={isLoading} />
-        <ToolTypeDistribution stats={toolStats} loading={isLoading} />
+        <TopToolsChart stats={filteredToolStats} loading={isLoading} />
+        <ToolTypeDistribution stats={filteredToolStats} loading={isLoading} />
       </div>
 
       {/* Tools Table with Filters */}
@@ -406,10 +451,10 @@ export default function ToolsPage() {
               All Tools
             </CardTitle>
             <Tabs value={selectedType} onValueChange={(v) => setSelectedType(v as ToolType)}>
-              <TabsList variant="line">
+              <TabsList >
                 {TOOL_TYPES.map((type) => (
-                  <TabsTrigger key={type} value={type} className="capitalize">
-                    {type}
+                  <TabsTrigger key={type} value={type}>
+                    {TAB_LABELS[type] || type}
                   </TabsTrigger>
                 ))}
               </TabsList>
