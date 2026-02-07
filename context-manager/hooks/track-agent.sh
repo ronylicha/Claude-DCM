@@ -75,13 +75,17 @@ if [[ -z "$task_id" ]]; then
         project_id=$(echo "$project_result" | jq -r '.id // .project.id // empty' 2>/dev/null || echo "")
     fi
 
+    # project_id is required by the API - skip if we couldn't get one
+    if [[ -z "$project_id" ]]; then
+        exit 0
+    fi
+
     # Create a request for this session
     request_body=$(jq -n \
         --arg session_id "$session_id" \
         --arg prompt "Auto-tracked session" \
-        --arg prompt_type "auto" \
         --arg project_id "$project_id" \
-        '{session_id: $session_id, prompt: $prompt, prompt_type: $prompt_type} + (if $project_id != "" then {project_id: $project_id} else {} end)')
+        '{session_id: $session_id, prompt: $prompt, prompt_type: "other", project_id: $project_id}')
 
     request_result=$(curl -s -X POST "${API_URL}/api/requests" \
         -H "Content-Type: application/json" \
