@@ -165,7 +165,7 @@ export async function postAction(c: Context): Promise<Response> {
         ${body.file_paths || []},
         ${body.exit_code ?? 0},
         ${body.duration_ms || null},
-        ${JSON.stringify({
+        ${sql.json({
           session_id: body.session_id,
           project_path: body.project_path,
           compressed_input: !!compressedInput,
@@ -183,6 +183,53 @@ export async function postAction(c: Context): Promise<Response> {
       await updateKeywordScores(keywords, body.tool_name, body.tool_type, success);
     }
 
+    // Auto-upsert session when session_id is present
+    if (body.session_id) {
+      try {
+        // Find or create project if project_path is provided
+        let projectId: string | null = null;
+        if (body.project_path) {
+          const [project] = await sql`
+            INSERT INTO projects (path, name)
+            VALUES (${body.project_path}, ${body.project_path.split("/").pop() || "unknown"})
+            ON CONFLICT (path) DO UPDATE SET updated_at = NOW()
+            RETURNING id
+          `;
+          projectId = project?.id ?? null;
+        }
+
+        // Upsert session with counter increment
+        await sql`
+          INSERT INTO sessions (id, project_id, started_at, total_tools_used, total_success, total_errors)
+          VALUES (
+            ${body.session_id},
+            ${projectId},
+            NOW(),
+            1,
+            ${success ? 1 : 0},
+            ${success ? 0 : 1}
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            project_id = COALESCE(EXCLUDED.project_id, sessions.project_id),
+            total_tools_used = sessions.total_tools_used + 1,
+            total_success = sessions.total_success + ${success ? 1 : 0},
+            total_errors = sessions.total_errors + ${success ? 0 : 1}
+        `;
+      } catch (sessionErr) {
+        // Non-blocking: session tracking failure should not break action recording
+        console.error("[API] Session auto-upsert error:", sessionErr);
+      }
+    }
+
+    // Publish real-time event via PostgreSQL NOTIFY
+    await publishEvent("global", "action.created", {
+      id: action.id,
+      tool_name: action.tool_name,
+      tool_type: action.tool_type,
+      exit_code: action.exit_code,
+      session_id: body.session_id,
+    });
+
     return c.json({
       success: true,
       action: {
@@ -192,6 +239,7 @@ export async function postAction(c: Context): Promise<Response> {
         exit_code: action.exit_code,
         duration_ms: action.duration_ms,
         created_at: action.created_at,
+        session_id: body.session_id,
         keywords_extracted: keywords.length,
       },
     }, 201);
@@ -263,7 +311,7 @@ export async function getActions(c: Context): Promise<Response> {
 
     if (toolType && toolName) {
       actions = await sql`
-        SELECT id, tool_name, tool_type, exit_code, duration_ms, file_paths, created_at
+        SELECT id, tool_name, tool_type, exit_code, duration_ms, file_paths, created_at, metadata->>'session_id' as session_id
         FROM actions
         WHERE tool_type = ${toolType} AND tool_name = ${toolName}
         ORDER BY created_at DESC
@@ -271,7 +319,7 @@ export async function getActions(c: Context): Promise<Response> {
       `;
     } else if (toolType) {
       actions = await sql`
-        SELECT id, tool_name, tool_type, exit_code, duration_ms, file_paths, created_at
+        SELECT id, tool_name, tool_type, exit_code, duration_ms, file_paths, created_at, metadata->>'session_id' as session_id
         FROM actions
         WHERE tool_type = ${toolType}
         ORDER BY created_at DESC
@@ -279,7 +327,7 @@ export async function getActions(c: Context): Promise<Response> {
       `;
     } else if (toolName) {
       actions = await sql`
-        SELECT id, tool_name, tool_type, exit_code, duration_ms, file_paths, created_at
+        SELECT id, tool_name, tool_type, exit_code, duration_ms, file_paths, created_at, metadata->>'session_id' as session_id
         FROM actions
         WHERE tool_name = ${toolName}
         ORDER BY created_at DESC
@@ -287,7 +335,7 @@ export async function getActions(c: Context): Promise<Response> {
       `;
     } else {
       actions = await sql`
-        SELECT id, tool_name, tool_type, exit_code, duration_ms, file_paths, created_at
+        SELECT id, tool_name, tool_type, exit_code, duration_ms, file_paths, created_at, metadata->>'session_id' as session_id
         FROM actions
         ORDER BY created_at DESC
         LIMIT ${limit} OFFSET ${offset}

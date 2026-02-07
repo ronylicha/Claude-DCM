@@ -23,9 +23,9 @@ WORKING_DIR=$(echo "$RAW_INPUT" | jq -r '.cwd // empty' 2>/dev/null)
 # Detect tool type
 detect_type() {
     case "$1" in
-        Bash|Read|Write|Edit|MultiEdit|Glob|Grep|NotebookEdit|WebFetch|WebSearch|EnterPlanMode|ExitPlanMode|AskUserQuestion)
+        Bash|Read|Write|Edit|MultiEdit|Glob|Grep|NotebookEdit|WebFetch|WebSearch|EnterPlanMode|ExitPlanMode|AskUserQuestion|TaskCreate|TaskUpdate|TaskGet|TaskList|TaskOutput|TaskStop|ToolSearch)
             echo "builtin" ;;
-        Task|TaskCreate|TaskUpdate|TaskGet|TaskList|TaskOutput|TaskStop)
+        Task)
             echo "agent" ;;
         Skill)
             echo "skill" ;;

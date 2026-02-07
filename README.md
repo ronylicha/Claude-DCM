@@ -1,61 +1,67 @@
 # DCM - Distributed Context Manager
 
-Centralized context management service for Claude Code multi-agent architecture. Provides REST API, real-time WebSocket events, intelligent routing, and a premium monitoring dashboard.
+Centralized context management for Claude Code multi-agent architecture. Tracks every tool invocation, agent delegation, and session in real-time with a premium monitoring dashboard.
 
 ## Architecture
 
 ```
-                    +-------------------+
-                    |    PostgreSQL 16   |
-                    |   claude_context   |
-                    +--------+----------+
-                             |
-              +--------------+--------------+
-              |                             |
-     +--------v--------+          +--------v--------+
-     |    DCM API       |          |   DCM WebSocket  |
-     |  Bun + Hono      |          |  Bun + ws        |
-     |  Port 3847       |          |  Port 3849       |
-     +--------+---------+          +--------+---------+
-              |                             |
-              |    LISTEN/NOTIFY            |
-              +-----------------------------+
-              |
-     +--------v--------+
-     |  DCM Dashboard   |
-     |  Next.js 16      |
-     |  Port 3848       |
-     +-----------------+
+                         ┌──────────────────┐
+                         │  PostgreSQL 16    │
+                         │  claude_context   │
+                         │  12 tables        │
+                         └────────┬─────────┘
+                                  │
+                    LISTEN/NOTIFY │ bridge
+                  ┌───────────────┼───────────────┐
+                  │               │               │
+         ┌────────▼───────┐ ┌────▼────────┐ ┌────▼────────────┐
+         │   DCM API       │ │  DCM WS     │ │  DCM Dashboard   │
+         │   Bun + Hono    │ │  Bun + ws   │ │  Next.js 16      │
+         │   Port 3847     │ │  Port 3849  │ │  Port 3848       │
+         │   50+ endpoints │ │  Real-time  │ │  Glassmorphism   │
+         └────────┬────────┘ └─────────────┘ └──────────────────┘
+                  │
+    ┌─────────────┼─────────────┐
+    │             │             │
+┌───▼───┐   ┌────▼────┐   ┌───▼────┐
+│ Hooks │   │  SDK    │   │ cURL   │
+│ (bash)│   │  (TS)   │   │        │
+└───────┘   └─────────┘   └────────┘
 ```
-
-### Components
 
 | Component | Stack | Port | Description |
 |-----------|-------|------|-------------|
-| **DCM API** | Bun, Hono, PostgreSQL | 3847 | REST API with 50+ endpoints |
-| **DCM WebSocket** | Bun, ws | 3849 | Real-time events via LISTEN/NOTIFY |
-| **DCM Dashboard** | Next.js 16, React 19, Recharts, shadcn/ui | 3848 | Premium monitoring UI |
-| **PostgreSQL** | PostgreSQL 16 | 5432 | Persistent storage |
+| **DCM API** | Bun, Hono, postgres.js, Zod | 3847 | REST API - 50+ endpoints, CRUD, routing intelligence |
+| **DCM WebSocket** | Bun, ws, LISTEN/NOTIFY | 3849 | Real-time events, HMAC auth, auto-reconnect |
+| **DCM Dashboard** | Next.js 16, React 19, Recharts, shadcn/ui | 3848 | Premium monitoring with glassmorphism UI |
+| **PostgreSQL** | PostgreSQL 16 | 5432 | 12 tables, 4 views, 15+ indexes, JSONB metadata |
 
 ## Quick Start
 
 ### Docker (recommended)
 
 ```bash
-# Clone
 git clone git@github.com:ronylicha/Claude-DCM.git
 cd Claude-DCM
 
 # Configure
 cp context-manager/.env.example .env
-# Edit .env with your DB_PASSWORD and WS_AUTH_SECRET
+# Edit .env: set DB_PASSWORD and WS_AUTH_SECRET
 
-# Start all services
+# Start all 4 services
 docker compose up -d
 
 # Verify
 curl http://localhost:3847/health
 open http://localhost:3848
+```
+
+### One-Command Installer
+
+```bash
+cd context-manager
+chmod +x install.sh
+./install.sh
 ```
 
 ### Manual Installation
@@ -69,8 +75,7 @@ psql claude_context < context-manager/src/db/schema.sql
 
 # 2. API Server
 cd context-manager
-cp .env.example .env
-# Edit .env with your credentials
+cp .env.example .env    # Edit with your credentials
 bun install
 bun run src/server.ts
 
@@ -81,116 +86,56 @@ bun run src/websocket-server.ts
 # 4. Dashboard (separate terminal)
 cd context-dashboard
 cp .env.example .env.local
-npm install
-npm run build
-npm start
+npm install && npm run build && npm start
 ```
 
-### One-Command Installer
+## How It Works
 
-```bash
-cd context-manager
-chmod +x install.sh
-./install.sh
+### Data Flow
+
+Every tool Claude Code uses is automatically tracked:
+
+```
+Claude Code Session
+  │
+  ├─ Read, Write, Bash, Grep...     ──→ track-action.sh ──→ POST /api/actions
+  │                                       │
+  │                                       ├─ Store action in PostgreSQL
+  │                                       ├─ Auto-create/update session
+  │                                       ├─ Auto-create project
+  │                                       ├─ Extract keywords → routing scores
+  │                                       └─ NOTIFY → WebSocket → Dashboard
+  │
+  └─ Task (agent delegation)         ──→ track-agent.sh  ──→ POST /api/subtasks
+                                          │
+                                          ├─ Auto-create request→task chain
+                                          ├─ Create subtask (agent_type, status)
+                                          └─ NOTIFY → WebSocket → Dashboard
 ```
 
-This sets up PostgreSQL, installs dependencies, configures systemd services, and starts everything.
+### Database Schema
 
-## API Overview
-
-Full specification: [`context-manager/openapi.yaml`](context-manager/openapi.yaml)
-
-### Core Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | System health + feature phases |
-| GET | `/api/stats` | Global statistics |
-| GET | `/api/projects` | List projects |
-| POST | `/api/projects` | Create project |
-| GET | `/api/sessions/active` | Active sessions with agents |
-| POST | `/api/requests` | Track user request |
-| POST | `/api/tasks` | Create task/wave |
-| POST | `/api/subtasks` | Create subtask |
-| POST | `/api/actions` | Log tool action |
-| POST | `/api/messages` | Send inter-agent message |
-| GET | `/api/messages/poll` | Poll messages for agent |
-| POST | `/api/routing/suggest` | Get tool suggestions |
-| POST | `/api/routing/feedback` | Submit routing feedback |
-| GET | `/api/context/:sessionId` | Generate context brief |
-| POST | `/api/auth/token` | Generate HMAC WebSocket token |
-| DELETE | `/api/projects/:id` | Delete project |
-| DELETE | `/api/sessions/:id` | Delete session |
-
-### WebSocket Protocol
-
-Connect to `ws://localhost:3849` with optional HMAC token authentication.
-
-```javascript
-// Subscribe to channels
-ws.send(JSON.stringify({
-  type: "subscribe",
-  channels: ["global", "session:abc123"]
-}));
-
-// Receive events
-ws.onmessage = (msg) => {
-  const event = JSON.parse(msg.data);
-  // { event: "task.completed", channel: "global", data: {...}, timestamp: 123 }
-};
+```
+projects ──→ requests ──→ task_lists ──→ subtasks ──→ actions
+    │                                                    │
+    └── sessions (auto-created)        keyword_tool_scores (routing)
+                                       agent_messages (pub/sub)
+                                       agent_contexts (compact/restore)
 ```
 
-**Event Types:**
-- `task.created`, `task.updated`, `task.completed`, `task.failed`
-- `subtask.created`, `subtask.updated`, `subtask.completed`, `subtask.failed`
-- `message.new`, `message.read`, `message.expired`
-- `agent.connected`, `agent.disconnected`, `agent.heartbeat`, `agent.blocked`, `agent.unblocked`
-- `session.created`, `session.ended`
-- `metric.update`, `system.error`
-
-**Authentication (production):**
-```bash
-# Generate token
-TOKEN=$(curl -s -X POST http://localhost:3847/api/auth/token \
-  -H "Content-Type: application/json" \
-  -d '{"agent_id": "my-agent"}' | jq -r .token)
-
-# Connect with token
-wscat -c "ws://localhost:3849?token=$TOKEN"
-```
-
-## Dashboard
-
-The dashboard provides real-time monitoring with a premium glassmorphism UI.
-
-### Pages
-
-| Page | Description |
-|------|-------------|
-| **Dashboard** | Health gauge, KPI cards with sparklines, area/bar charts, live activity feed |
-| **Live Activity** | Real-time event stream, semi-circle gauges, agent topology grid |
-| **Sessions** | Session list with filters, sort, search |
-| **Sessions Detail** | Timeline view with request cards and task items |
-| **Projects** | Project list with KPIs, search, delete |
-| **Projects Detail** | Project-specific sessions and metrics |
-| **Agents** | Agent statistics, active agents, type distribution |
-| **Agents Detail** | Per-agent task history and metrics |
-| **Tools** | Tool usage analytics, type distribution, success rates |
-| **Routing** | Keyword-tool mappings, routing tester with feedback |
-| **Messages** | Inter-agent message history with expandable payloads |
-
-### Design System
-
-- **Glassmorphism** cards with backdrop blur
-- **8 CSS animations**: fade-in, slide-in, scale-in, pulse-glow, shimmer, count-up, float, stagger
-- **Dark mode** with oklch color system
-- **Responsive** grid layouts (sm/md/lg breakpoints)
-- **Semantic status** indicators with glow effects
-- Built on **shadcn/ui** + Radix UI + Tailwind CSS 4
+| Table | Purpose |
+|-------|---------|
+| `projects` | Project registry by filesystem path |
+| `requests` | User prompts with session tracking |
+| `task_lists` | Waves/groups of objectives |
+| `subtasks` | Agent delegation with status tracking |
+| `actions` | Every tool invocation (compressed I/O) |
+| `sessions` | Session lifecycle with counters |
+| `keyword_tool_scores` | Routing intelligence weights |
+| `agent_messages` | Inter-agent pub/sub messaging |
+| `agent_contexts` | Context snapshots for compact/restore |
 
 ## Claude Code Integration
-
-### Hooks Setup
 
 Add to `~/.claude/settings.json`:
 
@@ -211,7 +156,77 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-### Client SDK
+Hooks are fire-and-forget (2s timeout) and never block Claude Code.
+
+## API Overview
+
+Full specification: [`context-manager/openapi.yaml`](context-manager/openapi.yaml) | Detailed docs: [`docs/API.md`](docs/API.md)
+
+### Core Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Service health + feature phases |
+| `GET` | `/api/stats` | Global statistics |
+| **Projects** | | |
+| `POST` | `/api/projects` | Create/upsert project |
+| `GET` | `/api/projects` | List projects |
+| `GET` | `/api/projects/by-path` | Lookup by filesystem path |
+| **Sessions** | | |
+| `GET` | `/api/sessions` | List sessions (with counters) |
+| `GET` | `/api/sessions/stats` | Session statistics |
+| **Tracking** | | |
+| `POST` | `/api/actions` | Log tool action (auto-creates session) |
+| `GET` | `/api/actions` | List actions with filters |
+| `GET` | `/api/actions/hourly` | 24h hourly distribution |
+| **Hierarchy** | | |
+| `POST` | `/api/requests` | Create user request |
+| `POST` | `/api/tasks` | Create task/wave |
+| `POST` | `/api/subtasks` | Create subtask (agent delegation) |
+| `GET` | `/api/hierarchy/:project_id` | Full project hierarchy |
+| **Routing** | | |
+| `GET` | `/api/routing/suggest` | Keyword-based tool suggestions |
+| `POST` | `/api/routing/feedback` | Submit routing feedback |
+| **Messaging** | | |
+| `POST` | `/api/messages` | Send inter-agent message |
+| `GET` | `/api/messages/:agent_id` | Poll messages for agent |
+| **Context** | | |
+| `GET` | `/api/context/:agent_id` | Generate context brief |
+| `POST` | `/api/compact/restore` | Restore after compact |
+| **Auth** | | |
+| `POST` | `/api/auth/token` | Generate HMAC WebSocket token |
+
+### WebSocket Protocol
+
+```javascript
+// Connect
+const ws = new WebSocket("ws://localhost:3849");
+
+// Subscribe to channels
+ws.send(JSON.stringify({
+  type: "subscribe",
+  channels: ["global", "agents/backend-laravel"]
+}));
+
+// Receive real-time events
+ws.onmessage = (msg) => {
+  const event = JSON.parse(msg.data);
+  // { event: "action.created", channel: "global", data: {...}, timestamp: 123 }
+};
+```
+
+**Event Types:** `action.created`, `task.created/updated/completed/failed`, `subtask.created/updated/completed/failed`, `session.created/ended`, `message.new`, `agent.connected/disconnected`, `metric.update`
+
+**Authentication (production):**
+```bash
+TOKEN=$(curl -s -X POST http://localhost:3847/api/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id": "my-agent"}' | jq -r .token)
+
+wscat -c "ws://localhost:3849?token=$TOKEN"
+```
+
+## Client SDK
 
 ```typescript
 import { DCMClient } from "./context-manager/src/sdk/client";
@@ -219,20 +234,42 @@ import { DCMWebSocketClient } from "./context-manager/src/sdk/ws-client";
 
 // REST client
 const client = new DCMClient("http://localhost:3847");
-const health = await client.getHealth();
-const projects = await client.listProjects();
+await client.recordAction({
+  tool_name: "Read", tool_type: "builtin",
+  session_id: "my-session", exit_code: 0
+});
+const suggestions = await client.suggestTool(["react", "component"]);
 
-// WebSocket client (auto-reconnect)
+// WebSocket client (auto-reconnect, exponential backoff)
 const ws = new DCMWebSocketClient("ws://localhost:3849", {
   channels: ["global"],
   onEvent: (event) => console.log(event),
 });
 await ws.connect();
+ws.onEvent("action.created", (data) => console.log(data.tool_name));
 ```
 
-## Configuration
+## Dashboard
 
-### Environment Variables
+Premium monitoring UI at `http://localhost:3848` with real-time updates via WebSocket.
+
+| Page | Features |
+|------|----------|
+| **Dashboard** | Health gauge, KPI cards with sparklines, area/bar charts, live activity feed |
+| **Live Activity** | Real-time event stream, semi-circle gauges, agent topology grid |
+| **Sessions** | Session list with filters, sort, search, tool counters |
+| **Session Detail** | Timeline view with request cards and task items |
+| **Projects** | Project list with KPIs, search, delete |
+| **Project Detail** | Project-specific sessions and metrics |
+| **Agents** | Agent statistics, active agents, type distribution |
+| **Agent Detail** | Per-agent task history and metrics |
+| **Tools** | Tool usage analytics, type distribution, success rates |
+| **Routing** | Keyword-tool mappings, routing tester with live feedback |
+| **Messages** | Inter-agent message history with expandable payloads |
+
+**Design System:** Glassmorphism cards, 8 CSS animations, dark mode (oklch), responsive grids, shadcn/ui + Radix UI + Tailwind CSS 4
+
+## Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -243,62 +280,42 @@ await ws.connect();
 | `DB_PASSWORD` | *required* | Database password |
 | `PORT` | `3847` | API server port |
 | `WS_PORT` | `3849` | WebSocket server port |
-| `WS_AUTH_SECRET` | - | HMAC secret for WS auth |
+| `WS_AUTH_SECRET` | - | HMAC secret for WS auth (required in production) |
 | `DASHBOARD_PORT` | `3848` | Dashboard port |
 | `DCM_HOST` | `127.0.0.1` | External host for dashboard API URLs |
-| `NODE_ENV` | `production` | Environment |
-
-### Systemd Services
-
-Service files are provided for systemd deployment:
-
-```bash
-# Copy service files
-sudo cp context-manager/context-manager-api.service /etc/systemd/system/
-sudo cp context-manager/context-manager-ws.service /etc/systemd/system/
-sudo cp context-dashboard/context-dashboard.service /etc/systemd/system/
-
-# Enable and start
-sudo systemctl daemon-reload
-sudo systemctl enable --now context-manager-api context-manager-ws context-dashboard
-```
-
-## Database Schema
-
-PostgreSQL with 12 tables:
-
-- `projects` - Project registry (by cwd path)
-- `requests` - User prompts/requests
-- `tasks` - Task/wave tracking
-- `subtasks` - Subtask delegation tracking
-- `actions` - Tool execution logging
-- `messages` - Inter-agent pub/sub messages
-- `subscriptions` - Topic subscriptions
-- `blocking_queue` - Agent blocking coordination
-- `sessions` - Session metadata
-- `context_snapshots` - Context preservation
-- `keyword_tool_scores` - Routing intelligence weights
-- `routing_feedback` - User feedback on suggestions
+| `NODE_ENV` | `production` | Environment (dev mode allows bare WS auth) |
 
 ## Architecture Decisions
 
 | ADR | Decision | Rationale |
 |-----|----------|-----------|
-| ADR-001 | PostgreSQL LISTEN/NOTIFY over polling | Near-zero latency, no polling overhead |
-| ADR-002 | HMAC-SHA256 for WS auth | No external dependencies, stateless tokens |
-| ADR-003 | Single npm package for SDK | Simpler distribution and versioning |
-| ADR-004 | Bun-first, Node.js compatible | Performance + broad compatibility |
-| ADR-005 | At-least-once delivery (3 retries, 5s ack) | Reliability without complexity of exactly-once |
-| ADR-006 | Dev mode allows bare agent_id | Easier development, strict auth in production |
+| 001 | PostgreSQL LISTEN/NOTIFY over polling | Near-zero latency, no polling overhead |
+| 002 | HMAC-SHA256 for WS auth | Stateless tokens, no external dependencies |
+| 003 | Single npm package for SDK | Simpler distribution and versioning |
+| 004 | Bun-first, Node.js compatible | Performance + broad compatibility |
+| 005 | At-least-once delivery (3 retries, 5s ack) | Reliability without exactly-once complexity |
+| 006 | Dev mode allows bare agent_id | Easier development, strict auth in production |
+| 007 | JSONB for metadata columns | Flexible schema, indexed queries |
+| 008 | Separate WS server process | Independent scaling, cleaner architecture |
 
 ## Tests
 
 ```bash
 cd context-manager
-bun test                    # Run all tests
+bun test                    # Run all (123 tests)
 bun test src/tests/api      # API tests (101 tests)
 bun test src/tests/ws       # WebSocket tests (22 tests)
 ```
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design, data flow, database schema, ADRs |
+| [`docs/API.md`](docs/API.md) | Full API reference with examples |
+| [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | Claude Code hooks setup, SDK usage |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Docker, systemd, manual deployment guides |
+| [`context-manager/openapi.yaml`](context-manager/openapi.yaml) | OpenAPI 3.0 specification |
 
 ## License
 
