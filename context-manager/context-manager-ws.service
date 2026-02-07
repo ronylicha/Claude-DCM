@@ -1,0 +1,48 @@
+[Unit]
+Description=Context Manager WebSocket Server
+Documentation=file:///home/rony/.claude/services/context-manager/README.md
+After=network.target context-manager-api.service
+BindsTo=context-manager-api.service
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+User=rony
+Group=rony
+WorkingDirectory=/home/rony/.claude/services/context-manager
+
+# Environment from .env file
+EnvironmentFile=/home/rony/.claude/services/context-manager/.env
+
+# Main process
+ExecStart=/home/rony/.nvm/versions/node/v22.17.0/bin/bun run src/websocket-server.ts
+
+# Graceful shutdown
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=context-manager-ws
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/rony/.claude/services/context-manager
+PrivateTmp=true
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=128M
+MemoryHigh=96M
+
+[Install]
+WantedBy=multi-user.target

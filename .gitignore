@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+.next/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Build artifacts
+*.tsbuildinfo
+dist/
+
+# Lockfiles (regenerated per platform)
+bun.lock
+package-lock.json
+
+# Database
+*.db
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp

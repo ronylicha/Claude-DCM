@@ -1,0 +1,1232 @@
+openapi: 3.0.3
+info:
+  title: Distributed Context Manager API
+  description: |
+    API REST pour la gestion de contexte distribué de Claude Code multi-agent.
+
+    ## Fonctionnalités
+    - Gestion de projets et sessions
+    - Hiérarchie Project > Request > Task > Subtask
+    - Tracking d'utilisation des outils
+    - Routage intelligent avec apprentissage
+    - Pub/Sub inter-agents
+    - Génération de contexte pour agents
+
+    ## Authentification
+    Actuellement sans authentification (usage local).
+
+  version: 1.5.0
+  contact:
+    name: DCM Support
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://127.0.0.1:3847
+    description: Serveur local
+
+tags:
+  - name: Health
+    description: Endpoints de santé et statistiques
+  - name: Projects
+    description: Gestion des projets
+  - name: Requests
+    description: Requêtes utilisateur (sessions)
+  - name: Tasks
+    description: Listes de tâches par wave
+  - name: Subtasks
+    description: Tâches individuelles assignées aux agents
+  - name: Actions
+    description: Tracking d'utilisation des outils
+  - name: Routing
+    description: Routage intelligent
+  - name: Hierarchy
+    description: Vues hiérarchiques
+  - name: Messages
+    description: Communication pub/sub inter-agents
+  - name: Subscriptions
+    description: Gestion des abonnements
+  - name: Blocking
+    description: Coordination inter-agents
+  - name: Context
+    description: Génération de contexte pour agents
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Vérifie l'état de santé du service et de la base de données
+      responses:
+        '200':
+          description: Service en bonne santé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: healthy
+                timestamp: "2024-01-30T12:00:00.000Z"
+                version: "1.5.0"
+                database:
+                  healthy: true
+                  latencyMs: 2
+                features:
+                  phase1: database
+                  phase2: routing
+                  phase3: hierarchy
+                  phase4: pubsub
+                  phase5: context
+        '503':
+          description: Service dégradé
+
+  /stats:
+    get:
+      tags: [Health]
+      summary: Statistiques globales
+      description: Retourne les statistiques globales du système
+      responses:
+        '200':
+          description: Statistiques
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+
+  /api/projects:
+    get:
+      tags: [Projects]
+      summary: Lister les projets
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Liste des projets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+                  total:
+                    type: integer
+
+    post:
+      tags: [Projects]
+      summary: Créer un projet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProject'
+            example:
+              path: /home/user/my-project
+              name: My Project
+              metadata:
+                framework: laravel
+      responses:
+        '201':
+          description: Projet créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+
+  /api/projects/{id}:
+    get:
+      tags: [Projects]
+      summary: Détail d'un projet
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Projet trouvé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          description: Projet non trouvé
+
+  /api/projects/by-path:
+    get:
+      tags: [Projects]
+      summary: Projet par chemin
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Projet trouvé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+
+  /api/requests:
+    get:
+      tags: [Requests]
+      summary: Lister les requêtes
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, running, completed, failed]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Liste des requêtes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Request'
+                  total:
+                    type: integer
+
+    post:
+      tags: [Requests]
+      summary: Créer une requête
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRequest'
+            example:
+              project_id: 550e8400-e29b-41d4-a716-446655440000
+              session_id: session-123
+              prompt: Implémenter OAuth2 avec Google
+              prompt_type: feature
+      responses:
+        '201':
+          description: Requête créée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Request'
+
+  /api/requests/{id}:
+    get:
+      tags: [Requests]
+      summary: Détail d'une requête
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Requête trouvée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Request'
+
+    patch:
+      tags: [Requests]
+      summary: Mettre à jour une requête
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [pending, running, completed, failed]
+                metadata:
+                  type: object
+      responses:
+        '200':
+          description: Requête mise à jour
+
+  /api/tasks:
+    get:
+      tags: [Tasks]
+      summary: Lister les tâches
+      parameters:
+        - name: request_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Liste des tâches
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+
+    post:
+      tags: [Tasks]
+      summary: Créer une tâche
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTask'
+      responses:
+        '201':
+          description: Tâche créée
+
+  /api/tasks/{id}:
+    get:
+      tags: [Tasks]
+      summary: Détail d'une tâche
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Tâche trouvée
+
+    patch:
+      tags: [Tasks]
+      summary: Mettre à jour une tâche
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+      responses:
+        '200':
+          description: Tâche mise à jour
+
+  /api/subtasks:
+    get:
+      tags: [Subtasks]
+      summary: Lister les sous-tâches
+      parameters:
+        - name: task_list_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: agent_type
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Liste des sous-tâches
+
+    post:
+      tags: [Subtasks]
+      summary: Créer une sous-tâche
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubtask'
+            example:
+              task_list_id: 550e8400-e29b-41d4-a716-446655440000
+              agent_type: backend-laravel
+              description: Créer migration oauth_tokens
+              blocked_by: []
+      responses:
+        '201':
+          description: Sous-tâche créée
+
+  /api/subtasks/{id}:
+    get:
+      tags: [Subtasks]
+      summary: Détail d'une sous-tâche
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Sous-tâche trouvée
+
+    patch:
+      tags: [Subtasks]
+      summary: Mettre à jour une sous-tâche
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [pending, running, completed, failed]
+                agent_id:
+                  type: string
+                result:
+                  type: object
+            example:
+              status: completed
+              result:
+                files_created: 1
+                migration_name: create_oauth_tokens
+      responses:
+        '200':
+          description: Sous-tâche mise à jour
+
+  /api/actions:
+    get:
+      tags: [Actions]
+      summary: Lister les actions
+      parameters:
+        - name: tool_name
+          in: query
+          schema:
+            type: string
+        - name: tool_type
+          in: query
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Liste des actions
+
+    post:
+      tags: [Actions]
+      summary: Enregistrer une action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAction'
+            example:
+              tool_name: Edit
+              tool_type: builtin
+              project_path: /home/user/project
+              session_id: session-123
+              input: "{...}"
+              output: "File updated"
+              exit_code: 0
+              duration_ms: 150
+      responses:
+        '201':
+          description: Action enregistrée
+
+  /api/routing/suggest:
+    get:
+      tags: [Routing]
+      summary: Suggestion d'outil
+      description: Suggère un outil basé sur les mots-clés de la requête
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Requête en langage naturel
+      responses:
+        '200':
+          description: Suggestion
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoutingSuggestion'
+              example:
+                suggestion:
+                  tool_name: performance-audit
+                  tool_type: workflow
+                  confidence: 0.85
+                  reason: Match keywords [optimiser, performance]
+                alternatives:
+                  - tool_name: performance-engineer
+                    tool_type: agent
+                    confidence: 0.72
+
+  /api/routing/stats:
+    get:
+      tags: [Routing]
+      summary: Statistiques de routage
+      responses:
+        '200':
+          description: Statistiques
+
+  /api/routing/feedback:
+    post:
+      tags: [Routing]
+      summary: Feedback utilisateur
+      description: Permet d'améliorer le routage via feedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [keywords, suggested_tool, accepted]
+              properties:
+                keywords:
+                  type: array
+                  items:
+                    type: string
+                suggested_tool:
+                  type: string
+                chosen_tool:
+                  type: string
+                accepted:
+                  type: boolean
+      responses:
+        '200':
+          description: Feedback enregistré
+
+  /api/hierarchy/{project_id}:
+    get:
+      tags: [Hierarchy]
+      summary: Vue hiérarchique complète
+      description: Retourne l'arbre complet Project > Requests > Tasks > Subtasks
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Hiérarchie complète
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HierarchyResponse'
+
+  /api/active-sessions:
+    get:
+      tags: [Hierarchy]
+      summary: Sessions actives
+      responses:
+        '200':
+          description: Liste des agents actifs
+
+  /api/messages:
+    post:
+      tags: [Messages]
+      summary: Publier un message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMessage'
+            example:
+              channel: tasks.completed
+              sender_id: backend-laravel
+              payload:
+                task_id: 550e8400-e29b-41d4-a716-446655440000
+                status: completed
+      responses:
+        '201':
+          description: Message publié
+
+  /api/messages/{agent_id}:
+    get:
+      tags: [Messages]
+      summary: Messages pour un agent
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: channel
+          in: query
+          schema:
+            type: string
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Liste des messages
+
+  /api/subscribe:
+    post:
+      tags: [Subscriptions]
+      summary: S'abonner à un canal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, channel]
+              properties:
+                agent_id:
+                  type: string
+                channel:
+                  type: string
+      responses:
+        '201':
+          description: Abonnement créé
+
+  /api/subscriptions:
+    get:
+      tags: [Subscriptions]
+      summary: Toutes les souscriptions
+      responses:
+        '200':
+          description: Liste des souscriptions
+
+  /api/subscriptions/{agent_id}:
+    get:
+      tags: [Subscriptions]
+      summary: Souscriptions d'un agent
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Souscriptions de l'agent
+
+  /api/unsubscribe:
+    post:
+      tags: [Subscriptions]
+      summary: Se désabonner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, channel]
+              properties:
+                agent_id:
+                  type: string
+                channel:
+                  type: string
+      responses:
+        '200':
+          description: Désabonnement effectué
+
+  /api/blocking:
+    post:
+      tags: [Blocking]
+      summary: Bloquer un agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [blocker_id, blocked_id]
+              properties:
+                blocker_id:
+                  type: string
+                blocked_id:
+                  type: string
+                reason:
+                  type: string
+      responses:
+        '201':
+          description: Blocage créé
+
+  /api/blocking/{agent_id}:
+    get:
+      tags: [Blocking]
+      summary: Agents bloqués par
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Liste des blocages
+
+  /api/blocking/check:
+    get:
+      tags: [Blocking]
+      summary: Vérifier si bloqué
+      parameters:
+        - name: blocker_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: blocked_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Résultat de la vérification
+
+  /api/unblock:
+    post:
+      tags: [Blocking]
+      summary: Débloquer un agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [blocker_id, blocked_id]
+              properties:
+                blocker_id:
+                  type: string
+                blocked_id:
+                  type: string
+      responses:
+        '200':
+          description: Déblocage effectué
+
+  /api/context/{agent_id}:
+    get:
+      tags: [Context]
+      summary: Contexte pour un agent
+      description: Retourne le contexte formaté pour un agent spécifique
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          schema:
+            type: string
+        - name: agent_type
+          in: query
+          schema:
+            type: string
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [brief, raw]
+            default: brief
+        - name: max_tokens
+          in: query
+          schema:
+            type: integer
+            default: 2000
+        - name: include_completed
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: include_messages
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Contexte généré
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContextResponse'
+
+  /api/context/generate:
+    post:
+      tags: [Context]
+      summary: Générer un brief
+      description: Génère un brief de contexte à la demande
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, session_id]
+              properties:
+                agent_id:
+                  type: string
+                agent_type:
+                  type: string
+                session_id:
+                  type: string
+                max_tokens:
+                  type: integer
+                  default: 2000
+      responses:
+        '200':
+          description: Brief généré
+
+  /api/compact/restore:
+    post:
+      tags: [Context]
+      summary: Restaurer après compact
+      description: Restaure le contexte après une opération de compact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, agent_id]
+              properties:
+                session_id:
+                  type: string
+                agent_id:
+                  type: string
+                agent_type:
+                  type: string
+                compact_summary:
+                  type: string
+                max_tokens:
+                  type: integer
+                  default: 4000
+            example:
+              session_id: session-123
+              agent_id: backend-laravel
+              agent_type: developer
+              compact_summary: "Session compactée. 15 tâches complétées, 3 en cours."
+              max_tokens: 4000
+      responses:
+        '200':
+          description: Contexte restauré
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompactRestoreResponse'
+
+  /api/compact/status/{session_id}:
+    get:
+      tags: [Context]
+      summary: Statut compact
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Statut de la session
+
+  /api/cleanup/stats:
+    get:
+      tags: [Health]
+      summary: Statistiques de nettoyage
+      responses:
+        '200':
+          description: Stats de cleanup
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        database:
+          type: object
+          properties:
+            healthy:
+              type: boolean
+            latencyMs:
+              type: number
+        features:
+          type: object
+
+    StatsResponse:
+      type: object
+      properties:
+        totalSessions:
+          type: integer
+        activeAgents:
+          type: integer
+        toolsUsed:
+          type: integer
+        totalMessages:
+          type: integer
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        path:
+          type: string
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+
+    CreateProject:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+        name:
+          type: string
+        metadata:
+          type: object
+
+    Request:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+        prompt:
+          type: string
+        prompt_type:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        metadata:
+          type: object
+
+    CreateRequest:
+      type: object
+      required: [project_id, session_id, prompt]
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+        prompt:
+          type: string
+        prompt_type:
+          type: string
+        metadata:
+          type: object
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        wave_number:
+          type: integer
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    CreateTask:
+      type: object
+      required: [request_id, wave_number]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        wave_number:
+          type: integer
+
+    Subtask:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_list_id:
+          type: string
+          format: uuid
+        agent_type:
+          type: string
+        agent_id:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        blocked_by:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        result:
+          type: object
+          nullable: true
+
+    CreateSubtask:
+      type: object
+      required: [task_list_id, description]
+      properties:
+        task_list_id:
+          type: string
+          format: uuid
+        agent_type:
+          type: string
+        description:
+          type: string
+        blocked_by:
+          type: array
+          items:
+            type: string
+
+    CreateAction:
+      type: object
+      required: [tool_name, tool_type, project_path]
+      properties:
+        tool_name:
+          type: string
+        tool_type:
+          type: string
+          enum: [builtin, mcp, command, agent, skill]
+        project_path:
+          type: string
+        session_id:
+          type: string
+        input:
+          type: string
+        output:
+          type: string
+        exit_code:
+          type: integer
+        duration_ms:
+          type: integer
+        file_paths:
+          type: array
+          items:
+            type: string
+
+    RoutingSuggestion:
+      type: object
+      properties:
+        suggestion:
+          type: object
+          properties:
+            tool_name:
+              type: string
+            tool_type:
+              type: string
+            confidence:
+              type: number
+            reason:
+              type: string
+        alternatives:
+          type: array
+          items:
+            type: object
+            properties:
+              tool_name:
+                type: string
+              tool_type:
+                type: string
+              confidence:
+                type: number
+
+    CreateMessage:
+      type: object
+      required: [channel, sender_id, payload]
+      properties:
+        channel:
+          type: string
+        sender_id:
+          type: string
+        payload:
+          type: object
+
+    HierarchyResponse:
+      type: object
+      properties:
+        hierarchy:
+          type: object
+          properties:
+            id:
+              type: string
+            path:
+              type: string
+            name:
+              type: string
+            requests:
+              type: array
+              items:
+                type: object
+        stats:
+          type: object
+        counts:
+          type: object
+          properties:
+            requests:
+              type: integer
+            tasks:
+              type: integer
+            subtasks:
+              type: integer
+
+    ContextResponse:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        session_id:
+          type: string
+        format:
+          type: string
+        brief:
+          type: string
+        data:
+          type: object
+        generated_at:
+          type: string
+          format: date-time
+        token_estimate:
+          type: integer
+
+    CompactRestoreResponse:
+      type: object
+      properties:
+        restored:
+          type: boolean
+        context_brief:
+          type: string
+        data:
+          type: object
+        token_estimate:
+          type: integer

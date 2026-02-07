@@ -1,0 +1,77 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: claude_context
+      POSTGRES_USER: ${DB_USER:-dcm}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./src/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dcm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  dcm-api:
+    build: .
+    command: bun run src/server.ts
+    ports:
+      - "${PORT:-3847}:3847"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: claude_context
+      DB_USER: ${DB_USER:-dcm}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+      HOST: 0.0.0.0
+      PORT: 3847
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  dcm-ws:
+    build: .
+    command: bun run src/websocket-server.ts
+    ports:
+      - "${WS_PORT:-3849}:3849"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: claude_context
+      DB_USER: ${DB_USER:-dcm}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+      HOST: 0.0.0.0
+      WS_PORT: 3849
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  dcm-dashboard:
+    build:
+      context: ../context-dashboard
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://${DCM_HOST:-127.0.0.1}:${PORT:-3847}
+        NEXT_PUBLIC_WS_URL: ws://${DCM_HOST:-127.0.0.1}:${WS_PORT:-3849}
+    ports:
+      - "${DASHBOARD_PORT:-3848}:3848"
+    environment:
+      NODE_ENV: production
+      PORT: 3848
+    depends_on:
+      - dcm-api
+      - dcm-ws
+    restart: unless-stopped
+
+volumes:
+  pgdata:

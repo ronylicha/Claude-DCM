@@ -1,0 +1,40 @@
+[Unit]
+Description=Claude Context Dashboard - Next.js Frontend
+Documentation=file:///home/rony/.claude/services/context-dashboard/README.md
+After=network.target context-manager.service
+Wants=context-manager.service
+
+[Service]
+Type=simple
+User=rony
+Group=rony
+WorkingDirectory=/home/rony/.claude/services/context-dashboard
+
+ExecStart=/home/rony/.nvm/versions/node/v22.17.0/bin/bun run start
+ExecStop=/bin/kill -TERM $MAINPID
+
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=context-dashboard
+
+# Environment variables
+Environment=NODE_ENV=production
+Environment=PORT=3848
+Environment=NEXT_PUBLIC_API_URL=http://127.0.0.1:3847
+Environment=NEXT_PUBLIC_WS_URL=ws://127.0.0.1:3849
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/rony/.claude/services/context-dashboard
+PrivateTmp=true
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

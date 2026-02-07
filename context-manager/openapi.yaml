@@ -1,0 +1,2683 @@
+openapi: 3.0.3
+info:
+  title: Distributed Context Manager (DCM) API
+  description: |
+    Centralized context management service for Claude Code multi-agent architecture.
+    Provides REST API endpoints for project management, task orchestration, inter-agent
+    messaging (pub/sub), intelligent routing, context generation, and session management.
+
+    The DCM also runs a WebSocket server on a separate port (default 3849) for real-time
+    event delivery. See the WebSocket section at the bottom for protocol details.
+  version: 2.0.0
+  contact:
+    name: DCM Maintainers
+  license:
+    name: MIT
+
+servers:
+  - url: http://127.0.0.1:3847
+    description: Local development API server
+  - url: http://127.0.0.1:3849
+    description: Local development WebSocket server (health/stats only)
+
+tags:
+  - name: Health
+    description: Health checks and global statistics
+  - name: Projects
+    description: Project management (identified by filesystem path)
+  - name: Requests
+    description: User requests / prompts with lifecycle tracking
+  - name: Tasks
+    description: Task lists (waves of objectives within a request)
+  - name: Subtasks
+    description: Individual subtasks assigned to agents
+  - name: Actions
+    description: Tool usage tracking and keyword extraction
+  - name: Routing
+    description: Intelligent tool suggestion based on keyword scores
+  - name: Hierarchy
+    description: Full hierarchical views of project data
+  - name: Sessions
+    description: Claude Code session management
+  - name: Messages
+    description: Inter-agent pub/sub messaging
+  - name: Subscriptions
+    description: Topic subscription management
+  - name: Blocking
+    description: Agent blocking / coordination
+  - name: Context
+    description: Agent context generation and retrieval
+  - name: Compact
+    description: Context restoration after compact operations
+  - name: Cleanup
+    description: Message cleanup statistics
+  - name: Tools
+    description: Skills, commands, workflows, and plugins summary
+  - name: Auth
+    description: WebSocket authentication token generation
+
+# ============================================================================
+# Paths
+# ============================================================================
+
+paths:
+  # --------------------------------------------------------------------------
+  # Health & Stats
+  # --------------------------------------------------------------------------
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns service health status including database connectivity.
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: Service is unhealthy (database down)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /stats:
+    get:
+      tags: [Health]
+      summary: Global statistics
+      description: Returns aggregate counts of projects, requests, actions, and messages.
+      operationId: getStats
+      responses:
+        "200":
+          description: Statistics retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projectCount:
+                    type: integer
+                  requestCount:
+                    type: integer
+                  actionCount:
+                    type: integer
+                  messageCount:
+                    type: integer
+                  timestamp:
+                    type: string
+                    format: date-time
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Projects
+  # --------------------------------------------------------------------------
+
+  /api/projects:
+    post:
+      tags: [Projects]
+      summary: Create or upsert a project
+      description: |
+        Creates a new project identified by its filesystem path.
+        If a project with the same path already exists, updates its name and merges metadata.
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "201":
+          description: Project created or updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  project:
+                    $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      tags: [Projects]
+      summary: List projects
+      description: Returns a paginated list of all projects ordered by last update.
+      operationId: listProjects
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Projects list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Project"
+                  count:
+                    type: integer
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/projects/by-path:
+    get:
+      tags: [Projects]
+      summary: Get project by filesystem path
+      operationId: getProjectByPath
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Filesystem path of the project
+      responses:
+        "200":
+          description: Project found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project:
+                    $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/projects/{id}:
+    get:
+      tags: [Projects]
+      summary: Get project by ID
+      description: Returns project details including associated requests and statistics.
+      operationId: getProjectById
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project with requests and stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project:
+                    allOf:
+                      - $ref: "#/components/schemas/Project"
+                      - type: object
+                        properties:
+                          requests:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/Request"
+                          stats:
+                            $ref: "#/components/schemas/ProjectStats"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Requests
+  # --------------------------------------------------------------------------
+
+  /api/requests:
+    post:
+      tags: [Requests]
+      summary: Create a user request
+      operationId: createRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestInput"
+      responses:
+        "201":
+          description: Request created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  request:
+                    $ref: "#/components/schemas/Request"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      tags: [Requests]
+      summary: List requests
+      operationId: listRequests
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: project_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: session_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, completed, failed, cancelled]
+      responses:
+        "200":
+          description: Requests list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Request"
+                  count:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/requests/{id}:
+    get:
+      tags: [Requests]
+      summary: Get request by ID
+      description: Returns request details including associated task lists.
+      operationId: getRequestById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Request with tasks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    allOf:
+                      - $ref: "#/components/schemas/Request"
+                      - type: object
+                        properties:
+                          tasks:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/Task"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      tags: [Requests]
+      summary: Update request status
+      operationId: updateRequest
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [active, completed, failed, cancelled]
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: Request updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  request:
+                    $ref: "#/components/schemas/Request"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Tasks
+  # --------------------------------------------------------------------------
+
+  /api/tasks:
+    post:
+      tags: [Tasks]
+      summary: Create a task (wave)
+      description: |
+        Creates a new task list (wave) for a request. If wave_number is omitted,
+        it is auto-incremented from the last wave.
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskInput"
+      responses:
+        "201":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  task:
+                    $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      tags: [Tasks]
+      summary: List tasks
+      operationId: listTasks
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: request_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, running, completed, failed, blocked]
+      responses:
+        "200":
+          description: Tasks list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Task"
+                  count:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/tasks/{id}:
+    get:
+      tags: [Tasks]
+      summary: Get task by ID
+      description: Returns task details including associated subtasks.
+      operationId: getTaskById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Task with subtasks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task:
+                    allOf:
+                      - $ref: "#/components/schemas/Task"
+                      - type: object
+                        properties:
+                          subtasks:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/Subtask"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      tags: [Tasks]
+      summary: Update task status
+      operationId: updateTask
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [pending, running, completed, failed, blocked]
+                name:
+                  type: string
+      responses:
+        "200":
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  task:
+                    $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Subtasks
+  # --------------------------------------------------------------------------
+
+  /api/subtasks:
+    post:
+      tags: [Subtasks]
+      summary: Create a subtask
+      operationId: createSubtask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubtaskInput"
+      responses:
+        "201":
+          description: Subtask created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  subtask:
+                    $ref: "#/components/schemas/Subtask"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      tags: [Subtasks]
+      summary: List subtasks
+      operationId: listSubtasks
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: task_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by task list ID
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, running, paused, blocked, completed, failed]
+        - name: agent_type
+          in: query
+          schema:
+            type: string
+          description: Filter by agent type (e.g. backend-laravel)
+      responses:
+        "200":
+          description: Subtasks list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subtasks:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Subtask"
+                  count:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/subtasks/{id}:
+    get:
+      tags: [Subtasks]
+      summary: Get subtask by ID
+      description: Returns subtask details including associated actions.
+      operationId: getSubtaskById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Subtask with actions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subtask:
+                    allOf:
+                      - $ref: "#/components/schemas/Subtask"
+                      - type: object
+                        properties:
+                          actions:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/Action"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      tags: [Subtasks]
+      summary: Update subtask status or result
+      operationId: updateSubtask
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [pending, running, paused, blocked, completed, failed]
+                result:
+                  type: object
+                  additionalProperties: true
+                agent_id:
+                  type: string
+                blocked_by:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        "200":
+          description: Subtask updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  subtask:
+                    $ref: "#/components/schemas/Subtask"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Actions
+  # --------------------------------------------------------------------------
+
+  /api/actions:
+    post:
+      tags: [Actions]
+      summary: Record a tool action
+      description: |
+        Records a tool invocation with input/output, exit code, duration, and file paths.
+        Extracts keywords from input for intelligent routing.
+        Large inputs/outputs (>1KB) are gzip-compressed before storage.
+      operationId: createAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActionInput"
+      responses:
+        "201":
+          description: Action recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  action:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      tool_name:
+                        type: string
+                      tool_type:
+                        type: string
+                      exit_code:
+                        type: integer
+                      duration_ms:
+                        type: integer
+                        nullable: true
+                      created_at:
+                        type: string
+                        format: date-time
+                      keywords_extracted:
+                        type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      tags: [Actions]
+      summary: List recent actions
+      operationId: listActions
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: tool_type
+          in: query
+          schema:
+            type: string
+            enum: [builtin, agent, skill, command, mcp]
+        - name: tool_name
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Actions list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  actions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Action"
+                  count:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/actions/hourly:
+    get:
+      tags: [Actions]
+      summary: Hourly action counts (last 24h)
+      operationId: getActionsHourly
+      responses:
+        "200":
+          description: Hourly breakdown
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        hour:
+                          type: string
+                          format: date-time
+                        count:
+                          type: integer
+                  period:
+                    type: string
+                    example: "24h"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Routing
+  # --------------------------------------------------------------------------
+
+  /api/routing/suggest:
+    get:
+      tags: [Routing]
+      summary: Suggest tools for keywords
+      description: |
+        Returns tool suggestions ranked by keyword match count, average score,
+        and total usage. Provides both structured JSON and a legacy pipe-delimited
+        compat_output for shell scripts.
+      operationId: suggestRouting
+      parameters:
+        - name: keywords
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Comma-separated list of keywords
+          example: "migration,oauth,database"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 50
+        - name: min_score
+          in: query
+          schema:
+            type: number
+            default: 0.5
+        - name: tool_type
+          in: query
+          schema:
+            type: string
+            enum: [builtin, agent, skill, command, mcp]
+      responses:
+        "200":
+          description: Tool suggestions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keywords:
+                    type: array
+                    items:
+                      type: string
+                  suggestions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ToolSuggestion"
+                  count:
+                    type: integer
+                  compat_output:
+                    type: string
+                    description: Pipe-delimited output for shell scripts
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/routing/stats:
+    get:
+      tags: [Routing]
+      summary: Routing statistics
+      operationId: getRoutingStats
+      responses:
+        "200":
+          description: Routing statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totals:
+                    type: object
+                    properties:
+                      total_records:
+                        type: integer
+                      unique_keywords:
+                        type: integer
+                      unique_tools:
+                        type: integer
+                      avg_score:
+                        type: number
+                      avg_usage:
+                        type: number
+                  top_by_score:
+                    type: array
+                    items:
+                      type: object
+                  top_by_usage:
+                    type: array
+                    items:
+                      type: object
+                  type_distribution:
+                    type: array
+                    items:
+                      type: object
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/routing/feedback:
+    post:
+      tags: [Routing]
+      summary: Submit routing feedback
+      description: Adjusts keyword-tool scores based on whether the user chose the suggested tool.
+      operationId: postRoutingFeedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tool_name, keywords]
+              properties:
+                tool_name:
+                  type: string
+                keywords:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                chosen:
+                  type: boolean
+                  description: true if user chose this tool, false if rejected
+      responses:
+        "200":
+          description: Feedback processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  adjustment:
+                    type: number
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Hierarchy
+  # --------------------------------------------------------------------------
+
+  /api/hierarchy/{project_id}:
+    get:
+      tags: [Hierarchy]
+      summary: Full hierarchical view of a project
+      description: |
+        Returns the complete project -> requests -> tasks -> subtasks tree
+        along with project statistics and counts.
+      operationId: getHierarchy
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Hierarchical view
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hierarchy:
+                    type: object
+                    description: Nested project with requests, tasks, and subtasks
+                  stats:
+                    $ref: "#/components/schemas/ProjectStats"
+                  counts:
+                    type: object
+                    properties:
+                      requests:
+                        type: integer
+                      tasks:
+                        type: integer
+                      subtasks:
+                        type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/active-sessions:
+    get:
+      tags: [Hierarchy]
+      summary: List active agents
+      description: Returns agents currently running or blocked, from the v_active_agents view.
+      operationId: getActiveSessions
+      responses:
+        "200":
+          description: Active agents list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active_agents:
+                    type: array
+                    items:
+                      type: object
+                  count:
+                    type: integer
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Sessions
+  # --------------------------------------------------------------------------
+
+  /api/sessions:
+    post:
+      tags: [Sessions]
+      summary: Create a session
+      operationId: createSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionInput"
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Session already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      tags: [Sessions]
+      summary: List sessions
+      operationId: listSessions
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: active_only
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+          description: If "true", return only sessions without ended_at
+      responses:
+        "200":
+          description: Sessions list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Session"
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/sessions/stats:
+    get:
+      tags: [Sessions]
+      summary: Session statistics
+      operationId: getSessionsStats
+      responses:
+        "200":
+          description: Session statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  overview:
+                    type: object
+                    properties:
+                      total_sessions:
+                        type: integer
+                      active_sessions:
+                        type: integer
+                      total_tools:
+                        type: integer
+                      total_success:
+                        type: integer
+                      total_errors:
+                        type: integer
+                      avg_tools_per_session:
+                        type: number
+                      oldest_session:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      newest_session:
+                        type: string
+                        format: date-time
+                        nullable: true
+                  by_project:
+                    type: array
+                    items:
+                      type: object
+                  timestamp:
+                    type: string
+                    format: date-time
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/sessions/{id}:
+    get:
+      tags: [Sessions]
+      summary: Get session by ID
+      operationId: getSessionById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session with requests
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Session"
+                  - type: object
+                    properties:
+                      requests:
+                        type: array
+                        items:
+                          type: object
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      tags: [Sessions]
+      summary: Update a session
+      operationId: updateSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ended_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                total_tools_used:
+                  type: integer
+                total_success:
+                  type: integer
+                total_errors:
+                  type: integer
+      responses:
+        "200":
+          description: Session updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Messages (Pub/Sub)
+  # --------------------------------------------------------------------------
+
+  /api/messages:
+    post:
+      tags: [Messages]
+      summary: Publish a message
+      description: |
+        Publishes a message from one agent to another (or broadcast if to_agent is null).
+        Validates topic against allowed values.
+      operationId: postMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageInput"
+      responses:
+        "201":
+          description: Message published
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      from_agent:
+                        type: string
+                      to_agent:
+                        type: string
+                        nullable: true
+                      topic:
+                        type: string
+                      priority:
+                        type: integer
+                      created_at:
+                        type: string
+                        format: date-time
+                      expires_at:
+                        type: string
+                        format: date-time
+                      is_broadcast:
+                        type: boolean
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/messages/{agent_id}:
+    get:
+      tags: [Messages]
+      summary: Get messages for an agent
+      description: |
+        Returns non-expired messages addressed to this agent (and optionally broadcasts).
+        Automatically marks retrieved messages as read.
+      operationId: getMessages
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Only return messages created after this timestamp
+        - name: topic
+          in: query
+          schema:
+            type: string
+        - name: include_broadcasts
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+            default: "true"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+      responses:
+        "200":
+          description: Messages for agent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_id:
+                    type: string
+                  messages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        from_agent:
+                          type: string
+                        to_agent:
+                          type: string
+                          nullable: true
+                        topic:
+                          type: string
+                        content:
+                          type: object
+                        priority:
+                          type: integer
+                        is_broadcast:
+                          type: boolean
+                        already_read:
+                          type: boolean
+                        created_at:
+                          type: string
+                          format: date-time
+                        expires_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                  count:
+                    type: integer
+                  unread_remaining:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Subscriptions
+  # --------------------------------------------------------------------------
+
+  /api/subscribe:
+    post:
+      tags: [Subscriptions]
+      summary: Subscribe to a topic
+      operationId: subscribe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, topic]
+              properties:
+                agent_id:
+                  type: string
+                topic:
+                  type: string
+                  enum: &validTopics
+                    - task.created
+                    - task.completed
+                    - task.failed
+                    - context.request
+                    - context.response
+                    - alert.blocking
+                    - agent.heartbeat
+                    - workflow.progress
+                callback_url:
+                  type: string
+                  format: uri
+      responses:
+        "201":
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  subscription:
+                    $ref: "#/components/schemas/Subscription"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/subscriptions:
+    get:
+      tags: [Subscriptions]
+      summary: List subscriptions
+      operationId: listSubscriptions
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - name: topic
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Subscriptions list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscriptions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Subscription"
+                  count:
+                    type: integer
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/subscriptions/{agent_id}:
+    get:
+      tags: [Subscriptions]
+      summary: Get subscriptions for an agent
+      operationId: getAgentSubscriptions
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent subscriptions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_id:
+                    type: string
+                  subscriptions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Subscription"
+                  topics:
+                    type: array
+                    items:
+                      type: string
+                  count:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/subscriptions/{id}:
+    delete:
+      tags: [Subscriptions]
+      summary: Delete a subscription by ID
+      operationId: deleteSubscription
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Subscription deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  deleted:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      agent_id:
+                        type: string
+                      topic:
+                        type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/unsubscribe:
+    post:
+      tags: [Subscriptions]
+      summary: Unsubscribe by agent and topic
+      operationId: unsubscribe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, topic]
+              properties:
+                agent_id:
+                  type: string
+                topic:
+                  type: string
+      responses:
+        "200":
+          description: Unsubscribed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  deleted:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      agent_id:
+                        type: string
+                      topic:
+                        type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Blocking
+  # --------------------------------------------------------------------------
+
+  /api/blocking:
+    post:
+      tags: [Blocking]
+      summary: Block an agent
+      description: Creates a blocking relationship. An agent cannot block itself.
+      operationId: blockAgent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [blocked_by, blocked_agent]
+              properties:
+                blocked_by:
+                  type: string
+                  description: Agent doing the blocking
+                blocked_agent:
+                  type: string
+                  description: Agent being blocked
+                reason:
+                  type: string
+                  maxLength: 500
+      responses:
+        "201":
+          description: Agent blocked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  blocking:
+                    $ref: "#/components/schemas/BlockingRecord"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/blocking/{agent_id}:
+    get:
+      tags: [Blocking]
+      summary: Get blocking relationships for an agent
+      operationId: getBlocking
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Blocking relationships
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_id:
+                    type: string
+                  is_blocked:
+                    type: boolean
+                  blocked_by:
+                    type: array
+                    items:
+                      type: object
+                  is_blocking:
+                    type: boolean
+                  blocking:
+                    type: array
+                    items:
+                      type: object
+                  summary:
+                    type: object
+                    properties:
+                      blocked_by_count:
+                        type: integer
+                      blocking_count:
+                        type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/blocking/{blocked_id}:
+    delete:
+      tags: [Blocking]
+      summary: Remove a blocking record by ID
+      operationId: deleteBlocking
+      parameters:
+        - name: blocked_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Blocking removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  unblocked:
+                    $ref: "#/components/schemas/BlockingRecord"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/unblock:
+    post:
+      tags: [Blocking]
+      summary: Unblock by agent pair
+      operationId: unblockAgent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [blocked_by, blocked_agent]
+              properties:
+                blocked_by:
+                  type: string
+                blocked_agent:
+                  type: string
+      responses:
+        "200":
+          description: Agent unblocked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  unblocked:
+                    $ref: "#/components/schemas/BlockingRecord"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/blocking/check:
+    get:
+      tags: [Blocking]
+      summary: Check if a specific agent pair has a block
+      operationId: checkBlocking
+      parameters:
+        - name: blocker
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: blocked
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Blocking check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  blocker:
+                    type: string
+                  blocked:
+                    type: string
+                  is_blocked:
+                    type: boolean
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Context
+  # --------------------------------------------------------------------------
+
+  /api/context/{agent_id}:
+    get:
+      tags: [Context]
+      summary: Get context for an agent
+      description: |
+        Returns either a formatted markdown brief (format=brief) or raw context
+        data (format=raw) for injection into an agent's prompt.
+      operationId: getContext
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          schema:
+            type: string
+        - name: agent_type
+          in: query
+          schema:
+            type: string
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [brief, raw]
+            default: brief
+        - name: max_tokens
+          in: query
+          schema:
+            type: integer
+            minimum: 100
+            maximum: 8000
+            default: 2000
+        - name: include_history
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+            default: "true"
+        - name: include_messages
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+            default: "true"
+        - name: include_blocking
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+            default: "true"
+        - name: history_limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+      responses:
+        "200":
+          description: Agent context
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_id:
+                    type: string
+                  session_id:
+                    type: string
+                    nullable: true
+                  agent_type:
+                    type: string
+                  brief:
+                    type: object
+                    description: Present when format=brief
+                    properties:
+                      id:
+                        type: string
+                      content:
+                        type: string
+                      token_count:
+                        type: integer
+                      truncated:
+                        type: boolean
+                      generated_at:
+                        type: string
+                        format: date-time
+                  data:
+                    type: object
+                    description: Present when format=raw
+                  sources:
+                    type: array
+                    items:
+                      type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/context/generate:
+    post:
+      tags: [Context]
+      summary: Generate context brief on demand
+      operationId: generateContext
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, session_id]
+              properties:
+                agent_id:
+                  type: string
+                session_id:
+                  type: string
+                agent_type:
+                  type: string
+                max_tokens:
+                  type: integer
+                  default: 2000
+                include_history:
+                  type: boolean
+                  default: true
+                history_limit:
+                  type: integer
+                  default: 10
+                include_messages:
+                  type: boolean
+                  default: true
+                include_blocking:
+                  type: boolean
+                  default: true
+                project_id:
+                  type: string
+                  format: uuid
+      responses:
+        "201":
+          description: Context brief generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  brief:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      agent_id:
+                        type: string
+                      agent_type:
+                        type: string
+                      session_id:
+                        type: string
+                      content:
+                        type: string
+                      token_count:
+                        type: integer
+                      truncated:
+                        type: boolean
+                      generated_at:
+                        type: string
+                        format: date-time
+                  sources:
+                    type: array
+                    items:
+                      type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Compact
+  # --------------------------------------------------------------------------
+
+  /api/compact/restore:
+    post:
+      tags: [Compact]
+      summary: Restore context after compact
+      description: |
+        Called by context-keeper agent after a compact event.
+        Marks the session as compacted, generates a context brief,
+        and optionally appends the previous compact summary.
+      operationId: compactRestore
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, agent_id]
+              properties:
+                session_id:
+                  type: string
+                agent_id:
+                  type: string
+                agent_type:
+                  type: string
+                  default: developer
+                compact_summary:
+                  type: string
+                  description: Summary of the previous context before compact
+                max_tokens:
+                  type: integer
+                  minimum: 100
+                  maximum: 8000
+                  default: 2000
+      responses:
+        "200":
+          description: Context restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  brief:
+                    type: string
+                    description: Formatted markdown brief
+                  sources:
+                    type: array
+                    items:
+                      type: string
+                  session_compacted:
+                    type: boolean
+                  restored_at:
+                    type: string
+                    format: date-time
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/compact/status/{session_id}:
+    get:
+      tags: [Compact]
+      summary: Check compact status of a session
+      operationId: getCompactStatus
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Compact status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  exists:
+                    type: boolean
+                  compacted:
+                    type: boolean
+                  compacted_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  compact_summary:
+                    type: string
+                    nullable: true
+                  compact_agent:
+                    type: string
+                    nullable: true
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Cleanup
+  # --------------------------------------------------------------------------
+
+  /api/cleanup/stats:
+    get:
+      tags: [Cleanup]
+      summary: Cleanup statistics
+      operationId: getCleanupStats
+      responses:
+        "200":
+          description: Cleanup stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  last_cleanup:
+                    type: object
+                    nullable: true
+                  messages:
+                    type: object
+                  timestamp:
+                    type: string
+                    format: date-time
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Tools Summary
+  # --------------------------------------------------------------------------
+
+  /stats/tools-summary:
+    get:
+      tags: [Tools]
+      summary: Count skills, commands, workflows, and plugins
+      description: Returns cached counts (5-minute TTL) of tools installed in ~/.claude/.
+      operationId: getToolsSummary
+      responses:
+        "200":
+          description: Tools summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skills:
+                    type: integer
+                  commands:
+                    type: integer
+                  workflows:
+                    type: integer
+                  plugins:
+                    type: integer
+                  cached_at:
+                    type: string
+                    format: date-time
+                  from_cache:
+                    type: boolean
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # --------------------------------------------------------------------------
+  # Auth
+  # --------------------------------------------------------------------------
+
+  /api/auth/token:
+    post:
+      tags: [Auth]
+      summary: Generate WebSocket auth token
+      description: |
+        Generates an HMAC-SHA256 signed token for WebSocket authentication.
+        Token is valid for 1 hour.
+      operationId: generateAuthToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id]
+              properties:
+                agent_id:
+                  type: string
+                session_id:
+                  type: string
+      responses:
+        "200":
+          description: Token generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: "Format: base64url(payload).hex(signature)"
+                  expires_in:
+                    type: integer
+                    description: Token TTL in seconds
+                    example: 3600
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+# ============================================================================
+# Components
+# ============================================================================
+
+components:
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 100
+        maximum: 1000
+      description: Maximum number of results to return
+    Offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        default: 0
+      description: Pagination offset
+    ProjectId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Project UUID
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        database:
+          type: object
+          properties:
+            healthy:
+              type: boolean
+            latencyMs:
+              type: integer
+            error:
+              type: string
+        features:
+          type: object
+          additionalProperties:
+            type: string
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        path:
+          type: string
+        name:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+
+    ProjectInput:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+          description: Filesystem path (trailing slashes are normalized)
+        name:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    ProjectStats:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        project_name:
+          type: string
+        path:
+          type: string
+        total_requests:
+          type: integer
+        total_subtasks:
+          type: integer
+        total_actions:
+          type: integer
+        successful_actions:
+          type: integer
+        avg_duration_ms:
+          type: number
+        last_activity:
+          type: string
+          format: date-time
+          nullable: true
+
+    Request:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+        prompt:
+          type: string
+        prompt_type:
+          type: string
+          nullable: true
+          enum: [feature, debug, explain, search, refactor, test, review, other, null]
+        status:
+          type: string
+          enum: [active, completed, failed, cancelled]
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+
+    RequestInput:
+      type: object
+      required: [project_id, session_id, prompt]
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+        prompt:
+          type: string
+        prompt_type:
+          type: string
+          enum: [feature, debug, explain, search, refactor, test, review, other]
+        status:
+          type: string
+          enum: [active, completed, failed, cancelled]
+          default: active
+        metadata:
+          type: object
+          additionalProperties: true
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          nullable: true
+        wave_number:
+          type: integer
+        status:
+          type: string
+          enum: [pending, running, completed, failed, blocked]
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    TaskInput:
+      type: object
+      required: [request_id]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        wave_number:
+          type: integer
+          description: Auto-incremented if omitted
+        status:
+          type: string
+          enum: [pending, running, completed, failed, blocked]
+          default: pending
+
+    Subtask:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_list_id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+          description: Alias for task_list_id
+        agent_type:
+          type: string
+          nullable: true
+        agent_id:
+          type: string
+          nullable: true
+        description:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, paused, blocked, completed, failed]
+        blocked_by:
+          type: array
+          items:
+            type: string
+            format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        context_snapshot:
+          type: object
+          nullable: true
+        result:
+          type: object
+          nullable: true
+
+    SubtaskInput:
+      type: object
+      required: [task_id, description]
+      properties:
+        task_id:
+          type: string
+          format: uuid
+          description: Maps to task_list_id in the database
+        description:
+          type: string
+        agent_type:
+          type: string
+        agent_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, paused, blocked, completed, failed]
+          default: pending
+        blocked_by:
+          type: array
+          items:
+            type: string
+            format: uuid
+        context_snapshot:
+          type: object
+
+    Action:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tool_name:
+          type: string
+        tool_type:
+          type: string
+          enum: [builtin, agent, skill, command, mcp]
+        exit_code:
+          type: integer
+        duration_ms:
+          type: integer
+          nullable: true
+        file_paths:
+          type: array
+          items:
+            type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    ActionInput:
+      type: object
+      required: [tool_name, tool_type]
+      properties:
+        tool_name:
+          type: string
+        tool_type:
+          type: string
+          enum: [builtin, agent, skill, command, mcp]
+        input:
+          type: string
+        output:
+          type: string
+        exit_code:
+          type: integer
+          default: 0
+        duration_ms:
+          type: integer
+        file_paths:
+          type: array
+          items:
+            type: string
+        subtask_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+        project_path:
+          type: string
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        total_tools_used:
+          type: integer
+        total_success:
+          type: integer
+        total_errors:
+          type: integer
+
+    SessionInput:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+          format: uuid
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        total_tools_used:
+          type: integer
+          default: 0
+        total_success:
+          type: integer
+          default: 0
+        total_errors:
+          type: integer
+          default: 0
+
+    MessageInput:
+      type: object
+      required: [from_agent, topic, content]
+      properties:
+        from_agent:
+          type: string
+        to_agent:
+          type: string
+          nullable: true
+          description: "null for broadcast"
+        topic:
+          type: string
+          enum: *validTopics
+        content:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: string
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 10
+          default: 0
+        ttl_seconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          default: 3600
+        project_id:
+          type: string
+          format: uuid
+
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+        topic:
+          type: string
+        callback_url:
+          type: string
+          format: uri
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BlockingRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        blocked_by:
+          type: string
+        blocked_agent:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    ToolSuggestion:
+      type: object
+      properties:
+        tool_name:
+          type: string
+        tool_type:
+          type: string
+        score:
+          type: number
+        usage_count:
+          type: integer
+        success_rate:
+          type: integer
+          description: Percentage (0-100)
+        keyword_matches:
+          type: array
+          items:
+            type: string
