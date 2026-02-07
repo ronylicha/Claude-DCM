@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 # track-session.sh - Hook for tracking Claude Code session start
 # Creates: project -> session -> request -> task (for subtasks)
-#
-# Environment variables from Claude Code:
-#   SESSION_ID   - Current session ID
-#   PROJECT_DIR  - Current project path (cwd)
+# Reads session data from stdin JSON (Claude Code SessionStart hook format)
 
-set -euo pipefail
+set -uo pipefail
 
 # Configuration
 API_URL="${CONTEXT_MANAGER_URL:-http://127.0.0.1:3847}"
 CACHE_DIR="/tmp/.claude-context"
 
-# Get session info
-session_id="${SESSION_ID:-}"
-project_path="${PROJECT_DIR:-$(pwd)}"
+# Read hook data from stdin (Claude Code passes JSON via stdin)
+RAW_INPUT=$(cat 2>/dev/null || echo "")
+[[ -z "$RAW_INPUT" ]] && exit 0
+
+# Extract fields from JSON
+session_id=$(echo "$RAW_INPUT" | jq -r '.session_id // empty' 2>/dev/null)
+project_path=$(echo "$RAW_INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+
+# Fallback for project_path
+if [[ -z "$project_path" ]]; then
+    project_path=$(pwd)
+fi
 
 # Exit silently if no session
 if [[ -z "$session_id" ]]; then
@@ -43,15 +49,15 @@ api_post() {
 
 # Step 1: Create or get project
 project_name=$(basename "$project_path")
-project_result=$(api_post "/api/projects" "{
-    \"path\": \"$project_path\",
-    \"name\": \"$project_name\"
-}")
+project_result=$(api_post "/api/projects" "$(jq -n \
+    --arg path "$project_path" \
+    --arg name "$project_name" \
+    '{path: $path, name: $name}')")
 
-project_id=$(echo "$project_result" | jq -r '.project.id // empty' 2>/dev/null || echo "")
+project_id=$(echo "$project_result" | jq -r '.project.id // .id // empty' 2>/dev/null || echo "")
 
 if [[ -z "$project_id" ]]; then
-    # Try to get existing project
+    # Try to get existing project by path
     project_result=$(curl -s "${API_URL}/api/projects/by-path?path=$(echo "$project_path" | jq -sRr @uri)" \
         --connect-timeout 2 --max-time 5 2>/dev/null || echo "{}")
     project_id=$(echo "$project_result" | jq -r '.project.id // empty' 2>/dev/null || echo "")
@@ -63,47 +69,40 @@ if [[ -z "$project_id" ]]; then
 fi
 
 # Step 2: Create session
-session_result=$(api_post "/api/sessions" "{
-    \"id\": \"$session_id\",
-    \"project_id\": \"$project_id\"
-}")
+api_post "/api/sessions" "$(jq -n \
+    --arg id "$session_id" \
+    --arg project_id "$project_id" \
+    '{id: $id, project_id: $project_id}')" >/dev/null 2>&1 || true
 
 # Step 3: Create initial request for this session
-request_result=$(api_post "/api/requests" "{
-    \"project_id\": \"$project_id\",
-    \"session_id\": \"$session_id\",
-    \"prompt\": \"Session started\",
-    \"prompt_type\": \"other\",
-    \"status\": \"active\"
-}")
+request_result=$(api_post "/api/requests" "$(jq -n \
+    --arg project_id "$project_id" \
+    --arg session_id "$session_id" \
+    '{project_id: $project_id, session_id: $session_id, prompt: "Session started", prompt_type: "other", status: "active"}')")
 
-request_id=$(echo "$request_result" | jq -r '.request.id // empty' 2>/dev/null || echo "")
+request_id=$(echo "$request_result" | jq -r '.request.id // .id // empty' 2>/dev/null || echo "")
 
 if [[ -z "$request_id" ]]; then
     exit 0
 fi
 
 # Step 4: Create initial task (wave 0) for agent subtasks
-task_result=$(api_post "/api/tasks" "{
-    \"request_id\": \"$request_id\",
-    \"name\": \"Agent Tasks\",
-    \"wave_number\": 0,
-    \"status\": \"running\"
-}")
+task_result=$(api_post "/api/tasks" "$(jq -n \
+    --arg request_id "$request_id" \
+    '{request_id: $request_id, name: "Agent Tasks", wave_number: 0, status: "running"}')")
 
-task_id=$(echo "$task_result" | jq -r '.task.id // empty' 2>/dev/null || echo "")
+task_id=$(echo "$task_result" | jq -r '.task.id // .id // empty' 2>/dev/null || echo "")
 
 # Cache the IDs for track-agent.sh to use
 if [[ -n "$task_id" ]]; then
-    cat > "$cache_file" <<EOF
-{
-    "session_id": "$session_id",
-    "project_id": "$project_id",
-    "request_id": "$request_id",
-    "task_id": "$task_id",
-    "created_at": "$(date -Iseconds)"
-}
-EOF
+    jq -n \
+        --arg session_id "$session_id" \
+        --arg project_id "$project_id" \
+        --arg request_id "$request_id" \
+        --arg task_id "$task_id" \
+        --arg created_at "$(date -Iseconds)" \
+        '{session_id: $session_id, project_id: $project_id, request_id: $request_id, task_id: $task_id, created_at: $created_at}' \
+        > "$cache_file" 2>/dev/null || true
 fi
 
 exit 0

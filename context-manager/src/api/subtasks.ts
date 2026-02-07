@@ -160,6 +160,13 @@ export async function postSubtask(c: Context): Promise<Response> {
       });
     }
 
+    // Auto-populate agent_contexts table (fire and forget)
+    if (subtask.agent_type && subtask.agent_id) {
+      populateAgentContext(sql, subtask).catch(err =>
+        console.error("[API] Agent context auto-population error:", err)
+      );
+    }
+
     return c.json({
       success: true,
       subtask: {
@@ -485,6 +492,13 @@ export async function patchSubtask(c: Context): Promise<Response> {
       });
     }
 
+    // Update agent_contexts when subtask completes or fails (fire and forget)
+    if (subtask.agent_id && (body.status === "completed" || body.status === "failed")) {
+      updateAgentContextOnComplete(sql, subtask, body.result).catch(err =>
+        console.error("[API] Agent context update error:", err)
+      );
+    }
+
     return c.json({
       success: true,
       subtask: {
@@ -502,6 +516,145 @@ export async function patchSubtask(c: Context): Promise<Response> {
       500
     );
   }
+}
+
+/**
+ * Update agent_contexts when a subtask completes or fails.
+ * Records the final result and tools used during the agent's lifecycle.
+ */
+async function updateAgentContextOnComplete(
+  sql: ReturnType<typeof getDb>,
+  subtask: SubtaskRow,
+  result?: Record<string, unknown>
+): Promise<void> {
+  // Get tools used by this specific agent
+  interface ToolRow {
+    tool_name: string;
+  }
+
+  const agentTools = await sql<ToolRow[]>`
+    SELECT DISTINCT tool_name
+    FROM actions
+    WHERE subtask_id = ${subtask.id}
+    ORDER BY tool_name
+  `;
+
+  const toolsUsed = agentTools.map(t => t.tool_name);
+
+  // Find project_id from chain
+  interface ChainRow {
+    project_id: string;
+  }
+
+  const chainResult = await sql<ChainRow[]>`
+    SELECT r.project_id
+    FROM task_lists t
+    JOIN requests r ON t.request_id = r.id
+    WHERE t.id = ${subtask.task_list_id}
+    LIMIT 1
+  `;
+
+  if (!chainResult[0]?.project_id || !subtask.agent_id) return;
+
+  const roleContext = {
+    subtask_id: subtask.id,
+    task_description: subtask.description,
+    status: subtask.status,
+    completed_at: subtask.completed_at,
+    result_summary: result ? JSON.stringify(result).slice(0, 500) : null,
+  };
+
+  await sql`
+    UPDATE agent_contexts
+    SET
+      role_context = ${sql.json(roleContext)},
+      tools_used = ${toolsUsed},
+      progress_summary = ${'[' + subtask.status + '] ' + subtask.description},
+      last_updated = NOW()
+    WHERE project_id = ${chainResult[0].project_id}
+      AND agent_id = ${subtask.agent_id}
+  `;
+}
+
+/**
+ * Auto-populate agent_contexts when a subtask is created.
+ * Upserts context data for the agent so it can be retrieved via GET /api/context/:agent_id.
+ * Runs as fire-and-forget to not block subtask creation.
+ */
+async function populateAgentContext(
+  sql: ReturnType<typeof getDb>,
+  subtask: SubtaskRow
+): Promise<void> {
+  // Find project_id and session_id from the task chain
+  interface ChainRow {
+    project_id: string;
+    session_id: string;
+  }
+
+  const chainResult = await sql<ChainRow[]>`
+    SELECT r.project_id, r.session_id
+    FROM task_lists t
+    JOIN requests r ON t.request_id = r.id
+    WHERE t.id = ${subtask.task_list_id}
+    LIMIT 1
+  `;
+
+  if (!chainResult[0]?.project_id) return;
+
+  const { project_id, session_id } = chainResult[0];
+
+  // Gather recent tools used in this session for context
+  interface ToolRow {
+    tool_name: string;
+  }
+
+  const recentTools = await sql<ToolRow[]>`
+    SELECT DISTINCT tool_name
+    FROM actions
+    WHERE metadata->>'session_id' = ${session_id}
+    ORDER BY tool_name
+    LIMIT 20
+  `;
+
+  const toolsUsed = recentTools.map(t => t.tool_name);
+
+  // Build role context with session info
+  const roleContext = {
+    session_id,
+    subtask_id: subtask.id,
+    task_list_id: subtask.task_list_id,
+    task_description: subtask.description,
+    status: subtask.status,
+    spawned_at: subtask.created_at,
+    blocked_by: subtask.blocked_by ?? [],
+  };
+
+  // Upsert agent_contexts (UNIQUE on project_id, agent_id)
+  await sql`
+    INSERT INTO agent_contexts (project_id, agent_id, agent_type, role_context, tools_used, progress_summary)
+    VALUES (
+      ${project_id},
+      ${subtask.agent_id},
+      ${subtask.agent_type},
+      ${sql.json(roleContext)},
+      ${toolsUsed},
+      ${subtask.description}
+    )
+    ON CONFLICT (project_id, agent_id) DO UPDATE SET
+      agent_type = EXCLUDED.agent_type,
+      role_context = EXCLUDED.role_context,
+      tools_used = EXCLUDED.tools_used,
+      progress_summary = EXCLUDED.progress_summary,
+      last_updated = NOW()
+  `;
+
+  // Publish event for dashboard
+  await publishEvent("global", "agent_context.created", {
+    agent_id: subtask.agent_id,
+    agent_type: subtask.agent_type,
+    project_id,
+    session_id,
+  });
 }
 
 /**
