@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-label="Cross-agent sharing">
+  <defs>
+    <style>
+      .title { font: 700 28px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .label { font: 600 16px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .sub { font: 400 14px "Inter", "Segoe UI", Arial, sans-serif; fill: #334155; }
+      .box { fill: #f8fafc; stroke: #94a3b8; stroke-width: 2; rx: 12; }
+      .line { stroke: #64748b; stroke-width: 2; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#64748b" />
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="420" fill="#ffffff"/>
+  <text x="40" y="48" class="title">Cross-Agent Sharing</text>
+
+  <rect x="60" y="120" width="240" height="70" class="box"/>
+  <text x="180" y="155" text-anchor="middle" class="label">Subagent</text>
+
+  <rect x="340" y="120" width="260" height="70" class="box"/>
+  <text x="470" y="145" text-anchor="middle" class="label">save-agent-result.sh</text>
+  <text x="470" y="168" text-anchor="middle" class="sub">POST /api/messages</text>
+
+  <rect x="640" y="120" width="200" height="70" class="box"/>
+  <text x="740" y="155" text-anchor="middle" class="label">DCM API</text>
+
+  <rect x="880" y="90" width="260" height="70" class="box"/>
+  <text x="1010" y="125" text-anchor="middle" class="label">PostgreSQL</text>
+  <text x="1010" y="148" text-anchor="middle" class="sub">store message</text>
+
+  <rect x="880" y="190" width="260" height="70" class="box"/>
+  <text x="1010" y="225" text-anchor="middle" class="label">WebSocket</text>
+  <text x="1010" y="248" text-anchor="middle" class="sub">broadcast event</text>
+
+  <rect x="640" y="260" width="200" height="70" class="box"/>
+  <text x="740" y="295" text-anchor="middle" class="label">Other agents</text>
+  <text x="740" y="318" text-anchor="middle" class="sub">subscribe + fetch</text>
+
+  <line x1="300" y1="155" x2="340" y2="155" class="line"/>
+  <line x1="600" y1="155" x2="640" y2="155" class="line"/>
+  <line x1="840" y1="155" x2="880" y2="125" class="line"/>
+  <line x1="840" y1="155" x2="880" y2="225" class="line"/>
+  <line x1="1010" y1="260" x2="740" y2="260" class="line"/>
+</svg>
