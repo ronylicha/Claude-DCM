@@ -3,9 +3,13 @@
  * Uses HMAC-SHA256 tokens for agent authentication
  */
 import { config } from "../config";
+import { createHmac, timingSafeEqual } from "crypto";
 
-const AUTH_SECRET = process.env["WS_AUTH_SECRET"] || "dcm-dev-secret-change-me";
 const TOKEN_TTL_MS = 3600000; // 1 hour
+
+// Shared validation patterns for consistency
+export const AGENT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+export const SESSION_ID_PATTERN = /^[a-zA-Z0-9_-]{1,128}$/;
 
 interface TokenPayload {
   agent_id: string;
@@ -15,9 +19,45 @@ interface TokenPayload {
 }
 
 /**
+ * Get the AUTH_SECRET with validation
+ * Throws error if not set (validation handled by config.ts for consistency)
+ */
+function getAuthSecret(): string {
+  const secret = process.env["WS_AUTH_SECRET"];
+  if (!secret) {
+    throw new Error("WS_AUTH_SECRET environment variable is not set. Configure it before using authentication.");
+  }
+  return secret;
+}
+
+/**
+ * Validate agent_id format
+ */
+export function isValidAgentId(agentId: string | undefined | null): boolean {
+  return !!agentId && AGENT_ID_PATTERN.test(agentId);
+}
+
+/**
+ * Validate session_id format
+ */
+export function isValidSessionId(sessionId: string | undefined | null): boolean {
+  return !!sessionId && SESSION_ID_PATTERN.test(sessionId);
+}
+
+/**
  * Generate an auth token for an agent
  */
 export function generateToken(agentId: string, sessionId?: string): string {
+  // Validate agent_id format (alphanumeric, hyphens, underscores, 1-64 chars)
+  if (!isValidAgentId(agentId)) {
+    throw new Error("Invalid agent_id format");
+  }
+  
+  // Validate session_id format if provided
+  if (sessionId && !isValidSessionId(sessionId)) {
+    throw new Error("Invalid session_id format");
+  }
+  
   const payload: TokenPayload = {
     agent_id: agentId,
     session_id: sessionId,
@@ -25,9 +65,11 @@ export function generateToken(agentId: string, sessionId?: string): string {
     expires_at: Date.now() + TOKEN_TTL_MS,
   };
   const data = JSON.stringify(payload);
-  const hasher = new Bun.CryptoHasher("sha256");
-  hasher.update(AUTH_SECRET + data);
-  const signature = hasher.digest("hex");
+  // Use proper HMAC instead of string concatenation
+  const authSecret = getAuthSecret();
+  const signature = createHmac("sha256", authSecret)
+    .update(data)
+    .digest("hex");
   // Token format: base64(payload).signature
   const encoded = Buffer.from(data).toString("base64url");
   return `${encoded}.${signature}`;
@@ -42,14 +84,31 @@ export function validateToken(token: string): TokenPayload | null {
     if (!encoded || !signature) return null;
 
     const data = Buffer.from(encoded, "base64url").toString();
-    const hasher = new Bun.CryptoHasher("sha256");
-    hasher.update(AUTH_SECRET + data);
-    const expectedSig = hasher.digest("hex");
+    // Use proper HMAC instead of string concatenation
+    const authSecret = getAuthSecret();
+    const expectedSig = createHmac("sha256", authSecret)
+      .update(data)
+      .digest("hex");
 
-    if (signature !== expectedSig) return null;
+    // Use constant-time comparison to prevent timing attacks
+    const sigBuffer = Buffer.from(signature, "hex");
+    const expectedBuffer = Buffer.from(expectedSig, "hex");
+    
+    if (sigBuffer.length !== expectedBuffer.length) return null;
+    if (!timingSafeEqual(sigBuffer, expectedBuffer)) return null;
 
     const payload: TokenPayload = JSON.parse(data);
     if (payload.expires_at < Date.now()) return null;
+
+    // Validate agent_id format
+    if (!isValidAgentId(payload.agent_id)) {
+      return null;
+    }
+    
+    // Validate session_id format if present
+    if (payload.session_id && !isValidSessionId(payload.session_id)) {
+      return null;
+    }
 
     return payload;
   } catch {

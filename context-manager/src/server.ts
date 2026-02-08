@@ -45,7 +45,9 @@ import { postSession, getSessions, getSessionById, patchSession, getSessionsStat
 // Phase 7 - Tools Summary
 import { getToolsSummary } from "./api/tools-summary";
 // Phase 8 - WebSocket Auth
-import { generateToken } from "./websocket/auth";
+import { generateToken, isValidAgentId, isValidSessionId } from "./websocket/auth";
+// Rate limiting
+import { rateLimit, rateLimitPresets } from "./middleware/rate-limit";
 
 // Validate configuration at startup
 validateConfig();
@@ -53,8 +55,44 @@ validateConfig();
 // Create Hono app
 const app = new Hono();
 
-// Middleware
-app.use("*", cors());
+// Middleware - Configure CORS based on environment
+const allowedOrigins = process.env["ALLOWED_ORIGINS"]?.split(",") || [
+  "http://localhost:3848",  // Dashboard in development
+  "http://127.0.0.1:3848",  // Dashboard alternative
+];
+
+// In production, only allow configured origins. In dev, be more permissive but still log warnings
+const corsConfig = {
+  origin: (origin: string | undefined) => {
+    // Allow requests with no origin (e.g., mobile apps, curl, Postman)
+    if (origin === undefined) return origin;
+    
+    // Reject empty string origins
+    if (origin === "") {
+      console.warn("[CORS] Rejected empty origin");
+      return null;
+    }
+    
+    // Check against allowed origins
+    if (allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
+      return origin;
+    }
+    
+    // In development, allow localhost variations but log warning
+    if (process.env["NODE_ENV"] !== "production") {
+      if (origin.match(/^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/)) {
+        console.warn(`[CORS] Allowing origin ${origin} in development mode`);
+        return origin;
+      }
+    }
+    
+    console.warn(`[CORS] Rejected origin: ${origin}`);
+    return null;  // Properly reject the origin
+  },
+  credentials: true,
+};
+
+app.use("*", cors(corsConfig));
 app.use("*", logger());
 
 // ============================================
@@ -823,17 +861,48 @@ app.get("/stats/tools-summary", getToolsSummary);
  * POST /api/auth/token - Generate a WebSocket auth token for an agent
  * Body: { agent_id: string, session_id?: string }
  * Returns: { token: string, expires_in: number }
+ * Rate limited: 10 requests per 15 minutes per IP
  */
-app.post("/api/auth/token", async (c) => {
+app.post("/api/auth/token", rateLimit(rateLimitPresets.auth), async (c) => {
   try {
     const body = await c.req.json() as { agent_id: string; session_id?: string };
+    
+    // Validate agent_id is provided
     if (!body.agent_id) {
       return c.json({ error: "Missing agent_id" }, 400);
     }
-    const token = generateToken(body.agent_id, body.session_id);
-    return c.json({ token, expires_in: 3600 });
+    
+    // Validate agent_id format using shared validation
+    if (!isValidAgentId(body.agent_id)) {
+      return c.json({ 
+        error: "Invalid agent_id format. Must be alphanumeric with hyphens/underscores, max 64 characters" 
+      }, 400);
+    }
+    
+    // Validate session_id format if provided using shared validation
+    if (body.session_id && !isValidSessionId(body.session_id)) {
+      return c.json({ 
+        error: "Invalid session_id format. Must be alphanumeric with hyphens/underscores, max 128 characters" 
+      }, 400);
+    }
+    
+    try {
+      const token = generateToken(body.agent_id, body.session_id);
+      return c.json({ token, expires_in: 3600 });
+    } catch (validationError) {
+      // Log detailed error server-side, return generic message to client
+      console.error("[API] Token generation validation error:", validationError);
+      return c.json({ 
+        error: "Invalid request parameters" 
+      }, 400);
+    }
   } catch (error) {
-    return c.json({ error: "Failed to generate token" }, 500);
+    // Log full error server-side
+    console.error("[API] POST /api/auth/token error:", error);
+    // Return generic error to client to avoid information disclosure
+    return c.json({ 
+      error: "Failed to generate token"
+    }, 500);
   }
 });
 

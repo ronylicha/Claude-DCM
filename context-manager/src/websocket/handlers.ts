@@ -209,29 +209,21 @@ function handlePublish(ws: WSClient, msg: WSPublish): void {
 }
 
 function handleAuth(ws: WSClient, msg: WSAuth): void {
-  // Validate token if provided
-  if (msg.token) {
-    const payload = validateToken(msg.token);
-    if (!payload) {
-      sendError(ws, "4001", "Invalid or expired token");
-      return;
-    }
-    ws.data.agent_id = payload.agent_id;
-    ws.data.session_id = payload.session_id || ws.data.session_id;
-    ws.data.authenticated = true;
-  } else if (msg.agent_id) {
-    // Fallback: allow agent_id without token in dev mode
-    if (process.env["NODE_ENV"] === "production") {
-      sendError(ws, "4002", "Token required in production mode");
-      return;
-    }
-    ws.data.agent_id = msg.agent_id;
-    ws.data.session_id = msg.session_id || ws.data.session_id;
-    ws.data.authenticated = true;
-  } else {
-    sendError(ws, "4003", "Missing token or agent_id");
+  // Validate token - always required for security
+  if (!msg.token) {
+    sendError(ws, "4002", "Token required for authentication");
     return;
   }
+  
+  const payload = validateToken(msg.token);
+  if (!payload) {
+    sendError(ws, "4001", "Invalid or expired token");
+    return;
+  }
+  
+  ws.data.agent_id = payload.agent_id;
+  ws.data.session_id = payload.session_id || ws.data.session_id;
+  ws.data.authenticated = true;
 
   // Send auth success
   sendAck(ws, msg.id, true);
