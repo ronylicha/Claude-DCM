@@ -40,6 +40,16 @@ DCM uses Claude Code's hook system to capture every tool invocation without inte
 | `track-action.sh` | Every tool use (`*`) | Records all tool actions to the API |
 | `track-agent.sh` | Task tool only | Tracks agent spawning as subtasks |
 | `track-session.sh` | Session start | Initializes the project/session/request/task chain |
+| `track-agent-start.sh` | Task tool (alt) | Alternative agent start tracking with richer metadata |
+| `track-agent-end.sh` | Task completion | Updates subtask status on agent completion |
+| `track-session-end.sh` | Session end | Marks session as ended in the database |
+
+**Legacy hooks** (not recommended, from SQLite era):
+
+| Hook | Status | Notes |
+|------|--------|-------|
+| `track-usage.sh` | Deprecated | Original SQLite-based tracking, replaced by `track-action.sh` |
+| `track-usage-wrapper.sh` | Deprecated | Wrapper for `track-usage.sh`, no longer needed |
 
 ### Configuration
 

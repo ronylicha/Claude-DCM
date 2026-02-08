@@ -371,7 +371,7 @@ bash context-manager/scripts/health-check.sh --quiet
 | `DB_HOST`             | `localhost`      | No       | PostgreSQL host                     |
 | `DB_PORT`             | `5432`           | No       | PostgreSQL port                     |
 | `DB_NAME`             | `claude_context` | No       | Database name                       |
-| `DB_USER`             | `dcm`            | No       | Database user                       |
+| `DB_USER`             | --               | **Yes**  | Database user (required, no default) |
 | `DB_PASSWORD`         | --               | **Yes**  | Database password                   |
 | `DB_MAX_CONNECTIONS`  | `10`             | No       | Connection pool size                |
 | `HOST`                | `127.0.0.1`      | No       | API bind address                    |

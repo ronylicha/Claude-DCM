@@ -8,7 +8,7 @@ Centralized context management for Claude Code multi-agent architecture. Tracks 
                          ┌──────────────────┐
                          │  PostgreSQL 16    │
                          │  claude_context   │
-                         │  12 tables        │
+                         │  10 tables        │
                          └────────┬─────────┘
                                   │
                     LISTEN/NOTIFY │ bridge
@@ -34,7 +34,7 @@ Centralized context management for Claude Code multi-agent architecture. Tracks 
 | **DCM API** | Bun, Hono, postgres.js, Zod | 3847 | REST API - 50+ endpoints, CRUD, routing intelligence |
 | **DCM WebSocket** | Bun, ws, LISTEN/NOTIFY | 3849 | Real-time events, HMAC auth, auto-reconnect |
 | **DCM Dashboard** | Next.js 16, React 19, Recharts, shadcn/ui | 3848 | Premium monitoring with glassmorphism UI |
-| **PostgreSQL** | PostgreSQL 16 | 5432 | 12 tables, 4 views, 15+ indexes, JSONB metadata |
+| **PostgreSQL** | PostgreSQL 16 | 5432 | 10 tables, 4 views, 20+ indexes, JSONB metadata |
 
 ## Quick Start
 
@@ -266,6 +266,7 @@ Premium monitoring UI at `http://localhost:3848` with real-time updates via WebS
 | **Tools** | Tool usage analytics, type distribution, success rates |
 | **Routing** | Keyword-tool mappings, routing tester with live feedback |
 | **Messages** | Inter-agent message history with expandable payloads |
+| **Context** | Agent context browser with stats and type distribution |
 
 **Design System:** Glassmorphism cards, 8 CSS animations, dark mode (oklch), responsive grids, shadcn/ui + Radix UI + Tailwind CSS 4
 
@@ -276,7 +277,7 @@ Premium monitoring UI at `http://localhost:3848` with real-time updates via WebS
 | `DB_HOST` | `localhost` | PostgreSQL host |
 | `DB_PORT` | `5432` | PostgreSQL port |
 | `DB_NAME` | `claude_context` | Database name |
-| `DB_USER` | `dcm` | Database user |
+| `DB_USER` | *required* | Database user |
 | `DB_PASSWORD` | *required* | Database password |
 | `PORT` | `3847` | API server port |
 | `WS_PORT` | `3849` | WebSocket server port |

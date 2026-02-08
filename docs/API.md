@@ -2,7 +2,7 @@
 
 Complete reference for the Distributed Context Manager REST API.
 
-**Version:** 1.8.0
+**Version:** 2.0.0
 **Base URL:** `http://localhost:3847`
 **Transport:** JSON over HTTP
 **Authentication:** None required for REST (HMAC tokens for WebSocket only)
@@ -150,6 +150,134 @@ curl http://localhost:3847/stats/tools-summary
   "plugins": 3,
   "cached_at": "2025-06-15T14:30:00.000Z",
   "from_cache": false
+}
+```
+
+---
+
+## Dashboard KPIs
+
+### GET /api/dashboard/kpis
+
+Aggregated KPI metrics for the dashboard. Returns 24-hour action stats, session counts, agent context distribution, subtask completion rates, and routing intelligence stats. Runs 7 parallel aggregation queries.
+
+```bash
+curl http://localhost:3847/api/dashboard/kpis
+```
+
+**Response `200`:**
+
+```json
+{
+  "actions_24h": {
+    "total": 156,
+    "success": 150,
+    "success_rate": 96,
+    "unique_tools": 12,
+    "active_sessions": 2,
+    "avg_per_hour": 6.5
+  },
+  "sessions": {
+    "total": 37,
+    "active": 2,
+    "avg_tools_per_session": 78.1
+  },
+  "agents": {
+    "contexts_total": 42,
+    "unique_types": 8,
+    "top_types": [
+      {"agent_type": "backend-laravel", "count": 12}
+    ]
+  },
+  "subtasks": {
+    "total": 423,
+    "completed": 380,
+    "running": 15,
+    "failed": 28,
+    "completion_rate": 90
+  },
+  "routing": {
+    "keywords": 340,
+    "tools": 68,
+    "mappings": 1250
+  },
+  "timestamp": "2025-06-15T14:30:00.000Z"
+}
+```
+
+---
+
+## Agent Contexts
+
+### GET /api/agent-contexts
+
+List all agent context snapshots with filtering and stats.
+
+```bash
+curl "http://localhost:3847/api/agent-contexts?agent_type=backend-laravel&limit=20"
+```
+
+**Query parameters:**
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `agent_type` | string | - | Filter by agent type |
+| `status` | string | - | Filter by status (from `role_context.status`) |
+| `limit` | integer | 100 | Max results (capped at 100) |
+| `offset` | integer | 0 | Pagination offset |
+
+**Response `200`:**
+
+```json
+{
+  "contexts": [ ... ],
+  "total": 42,
+  "limit": 20,
+  "offset": 0,
+  "stats": {
+    "total": 42,
+    "unique_types": 8,
+    "running": 3,
+    "completed": 35,
+    "failed": 4
+  },
+  "type_distribution": [
+    {"agent_type": "backend-laravel", "count": 12, "running": 1, "completed": 10}
+  ],
+  "timestamp": "2025-06-15T14:30:00.000Z"
+}
+```
+
+---
+
+### GET /api/agent-contexts/stats
+
+Detailed agent context statistics including top types, recent activity, and tool usage.
+
+```bash
+curl http://localhost:3847/api/agent-contexts/stats
+```
+
+**Response `200`:**
+
+```json
+{
+  "overview": {
+    "total_contexts": 42,
+    "unique_agent_types": 8,
+    "unique_projects": 3,
+    "active_agents": 3,
+    "completed_agents": 35,
+    "failed_agents": 4,
+    "oldest_context": "2025-05-01T10:00:00.000Z",
+    "newest_context": "2025-06-15T14:30:00.000Z"
+  },
+  "top_types": [ ... ],
+  "recent_activity": [ ... ],
+  "tools_used": [
+    {"tool": "Read", "usage_count": 245}
+  ],
+  "timestamp": "2025-06-15T14:30:00.000Z"
 }
 ```
 
@@ -1393,6 +1521,34 @@ curl -X POST http://localhost:3847/api/messages \
 **WebSocket events:**
 - `message.new` on channel `global`
 - `message.new` on channel `agents/{to_agent}` (if targeted)
+
+---
+
+### GET /api/messages
+
+List all messages across all agents (dashboard endpoint). Returns messages ordered by creation date, newest first.
+
+```bash
+curl "http://localhost:3847/api/messages?limit=50&offset=0"
+```
+
+**Query parameters:**
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `limit` | integer | 100 | Max results (capped at 100) |
+| `offset` | integer | 0 | Pagination offset |
+
+**Response `200`:**
+
+```json
+{
+  "messages": [ ... ],
+  "count": 64,
+  "limit": 50,
+  "offset": 0
+}
+```
 
 ---
 

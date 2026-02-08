@@ -78,7 +78,7 @@ Four processes collaborate:
 | **DCM API** | Bun + Hono | 3847 | REST API with 50+ endpoints. Receives hook data, serves the dashboard, manages all CRUD. |
 | **DCM WebSocket** | Bun native WebSocket | 3849 | Real-time event bridge. Listens to PostgreSQL NOTIFY, forwards to subscribed clients. |
 | **DCM Dashboard** | Next.js 16, React 19, shadcn/ui, Recharts | 3848 | Premium glassmorphism monitoring UI with 11 pages. |
-| **PostgreSQL** | PostgreSQL 16 + pgcrypto | 5432 | Persistent storage. 12 tables, 4 views, 20+ indexes. LISTEN/NOTIFY for event bus. |
+| **PostgreSQL** | PostgreSQL 16 + pgcrypto | 5432 | Persistent storage. 10 tables, 4 views, 20+ indexes. LISTEN/NOTIFY for event bus. |
 
 ---
 
@@ -426,9 +426,9 @@ erDiagram
 | `agent_contexts` | Agent context snapshots for recovery after compacts | `role_context` (JSONB), `skills_to_restore`, `tools_used` |
 | `schema_version` | Tracks applied schema migrations | `version` |
 
-Two additional logical tables are referenced in the API but share storage with the above:
-- **subscriptions** -- tracked via the `agent_messages` topic subscriptions API
-- **blocking_queue** -- agent blocking coordination, managed through dedicated API endpoints
+Two additional API abstractions are managed via inline SQL queries, without dedicated tables:
+- **subscriptions** -- tracked via the `agent_messages` topic subscriptions API (uses `agent_messages` table with topic filtering)
+- **blocking** -- agent blocking coordination, managed through dedicated API endpoints (uses `agent_messages` table with type filtering)
 
 ### Views
 
@@ -520,7 +520,7 @@ The WebSocket server uses HMAC-SHA256 tokens. The token format is `base64url(pay
 
 ```
 task.created    task.updated    task.completed    task.failed
-subtask.created subtask.updated subtask.completed subtask.failed
+subtask.created subtask.updated subtask.completed subtask.failed subtask.running
 message.new     message.read    message.expired
 agent.connected agent.disconnected agent.heartbeat agent.blocked agent.unblocked
 session.created session.ended

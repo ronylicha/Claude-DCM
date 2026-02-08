@@ -1,5 +1,5 @@
 -- Distributed Context Manager - Schema PostgreSQL
--- Version: 1.0
+-- Version: 2.0.0
 -- Created: 2026-01-30
 
 -- Enable required extensions
@@ -330,5 +330,5 @@ CREATE TABLE IF NOT EXISTS schema_version (
     applied_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-INSERT INTO schema_version (version) VALUES ('1.0.0')
+INSERT INTO schema_version (version) VALUES ('2.0.0')
 ON CONFLICT (version) DO NOTHING;

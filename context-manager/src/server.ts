@@ -116,7 +116,7 @@ app.get("/health", async (c) => {
   return c.json({
     status,
     timestamp: new Date().toISOString(),
-    version: "1.8.0", // Phase 8 - WebSocket Auth & Delivery
+    version: "2.0.0",
     database: dbHealth,
     features: {
       phase1: "database",
