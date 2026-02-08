@@ -1,0 +1,21 @@
+{
+  "name": "dcm-marketplace",
+  "owner": {
+    "name": "DCM Project",
+    "email": "rony@licha.dev"
+  },
+  "metadata": {
+    "description": "Distributed Context Manager for Claude Code multi-agent sessions",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "dcm",
+      "source": "./context-manager",
+      "description": "Context tracking, compact save/restore, cross-agent sharing, and proactive monitoring",
+      "version": "2.1.0",
+      "category": "productivity",
+      "keywords": ["context", "compact", "multi-agent", "hooks", "monitoring"]
+    }
+  ]
+}

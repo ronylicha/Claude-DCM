@@ -1,6 +1,6 @@
 # DCM Deployment Guide
 
-Complete reference for deploying the Distributed Context Manager. Four methods are documented, from fully containerized to bare-metal with systemd. Pick the one that fits your environment.
+Complete reference for deploying the Distributed Context Manager. Six methods are documented, from fully containerized to bare-metal with systemd. Pick the one that fits your environment.
 
 ---
 
@@ -9,8 +9,10 @@ Complete reference for deploying the Distributed Context Manager. Four methods a
 - [Prerequisites](#prerequisites)
 - [Method 1: Docker Compose (Recommended)](#method-1-docker-compose-recommended)
 - [Method 2: One-Command Installer](#method-2-one-command-installer)
-- [Method 3: Manual Installation](#method-3-manual-installation)
-- [Method 4: Systemd Services](#method-4-systemd-services)
+- [Method 3: DCM CLI](#method-3-dcm-cli)
+- [Method 4: Claude Code Plugin](#method-4-claude-code-plugin)
+- [Method 5: Manual Installation](#method-5-manual-installation)
+- [Method 6: Systemd Services](#method-6-systemd-services)
 - [Claude Code Hooks Integration](#claude-code-hooks-integration)
 - [Health Checks](#health-checks)
 - [Environment Variables Reference](#environment-variables-reference)
@@ -123,7 +125,7 @@ chmod +x install.sh
 | 5    | Starts the API temporarily to verify it responds healthy|
 | 6    | Configures Claude Code hooks                            |
 
-After the installer finishes, start the servers manually or set up systemd (see Method 4).
+After the installer finishes, start the servers manually or set up systemd (see Method 6).
 
 ```bash
 # Terminal 1 -- API
@@ -133,11 +135,55 @@ bun run src/server.ts
 bun run src/websocket-server.ts
 ```
 
-The installer does **not** set up the dashboard. See the dashboard steps in Method 3 below.
+The installer does **not** set up the dashboard. See the dashboard steps in Method 5 below.
 
 ---
 
-## Method 3: Manual Installation
+## Method 3: DCM CLI
+
+The `dcm` wrapper script at `context-manager/dcm` handles the full lifecycle. It is the simplest option for local development.
+
+```bash
+cd context-manager
+./dcm install    # Checks prereqs, installs deps, creates DB, injects hooks
+./dcm start      # Starts API + WebSocket + Dashboard as background processes
+./dcm status     # Verifies all components are healthy
+```
+
+Other commands:
+
+- `dcm stop` / `dcm restart` -- Service management
+- `dcm hooks` / `dcm unhook` -- Manage Claude Code hook injection
+- `dcm logs api|ws|dashboard` -- Tail service logs
+- `dcm snapshot` -- Manual context snapshot
+- `dcm health` -- Quick API health check
+- `dcm db:setup` / `dcm db:reset` -- Database management
+
+Services run as background processes with PIDs stored in `/tmp/.dcm-pids/`. The stop command uses PID files and falls back to port-based killing if a PID file is missing or stale.
+
+---
+
+## Method 4: Claude Code plugin
+
+Install DCM as a plugin through Claude Code's plugin system:
+
+```shell
+# From Claude Code interactive mode:
+/plugin marketplace add /path/to/Claude-DCM
+/plugin install dcm@dcm-marketplace
+
+# Or from GitHub (after pushing):
+/plugin marketplace add ronylicha/Claude-DCM
+/plugin install dcm@Claude-DCM
+```
+
+The plugin registers hooks automatically via `hooks/hooks.json` using `${CLAUDE_PLUGIN_ROOT}` for path resolution. No manual `settings.json` editing is needed.
+
+Note: The plugin installs hooks only. You still need to run the API server and database separately (via `dcm start`, Docker, or manual setup).
+
+---
+
+## Method 5: Manual Installation
 
 Full control, step by step.
 
@@ -212,7 +258,7 @@ NEXT_PUBLIC_WS_URL=ws://127.0.0.1:3849
 
 ---
 
-## Method 4: Systemd Services
+## Method 6: Systemd Services
 
 For long-running servers. Three unit files are provided in the repository. Each one applies security hardening (`NoNewPrivileges`, `ProtectSystem=strict`, `PrivateTmp`) and memory limits.
 
@@ -265,9 +311,31 @@ sudo systemctl stop context-manager-api context-manager-ws context-dashboard
 
 ## Claude Code Hooks Integration
 
-DCM tracks Claude Code activity through PostToolUse and SessionStart hooks. The installer can set these up, or you can configure them manually.
+DCM tracks Claude Code activity through PostToolUse and SessionStart hooks. There are three ways to set them up, from most automated to fully manual.
 
-Add the following to `~/.claude/settings.json`:
+### Option A: Plugin mode (automatic)
+
+If you installed DCM as a Claude Code plugin (Method 4), hooks are registered automatically via `hooks/hooks.json`. No further configuration is needed.
+
+### Option B: DCM CLI (recommended for non-plugin setups)
+
+The setup script auto-injects the required hooks into `~/.claude/settings.json`:
+
+```bash
+# Inject hooks (idempotent -- safe to run multiple times)
+./dcm hooks
+# or equivalently:
+bash context-manager/scripts/setup-hooks.sh
+
+# Remove all DCM hooks from settings.json
+./dcm unhook
+```
+
+The script uses `jq` to merge hook entries into your existing settings without overwriting other configuration. Running it again is safe; it will not duplicate entries.
+
+### Option C: Manual configuration
+
+If you prefer full control, add the following to `~/.claude/settings.json`:
 
 ```json
 {

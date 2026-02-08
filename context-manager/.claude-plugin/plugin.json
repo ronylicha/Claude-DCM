@@ -1,0 +1,10 @@
+{
+  "name": "dcm",
+  "version": "2.1.0",
+  "description": "Distributed Context Manager - Persistent context, cross-agent sharing, and compact recovery for Claude Code multi-agent sessions",
+  "author": {
+    "name": "DCM Project"
+  },
+  "repository": "https://github.com/ronylicha/Claude-DCM",
+  "license": "MIT"
+}

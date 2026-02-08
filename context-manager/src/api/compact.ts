@@ -248,4 +248,190 @@ export async function getCompactStatus(c: Context): Promise<Response> {
   }
 }
 
-export { CompactRestoreInputSchema };
+/**
+ * POST /api/compact/save - Save context snapshot before a compact operation
+ *
+ * Called by PreCompact hook to persist the current session state
+ * so it can be restored after Claude compacts the context window.
+ *
+ * @param c - Hono context
+ */
+const CompactSaveInputSchema = z.object({
+  session_id: z.string().min(1, "session_id is required"),
+  trigger: z.enum(["auto", "manual", "proactive"]).default("auto"),
+  context_summary: z.string().optional(),
+  active_tasks: z.array(z.object({
+    id: z.string(),
+    description: z.string(),
+    status: z.string(),
+    agent_type: z.string().optional(),
+  })).optional().default([]),
+  modified_files: z.array(z.string()).optional().default([]),
+  key_decisions: z.array(z.string()).optional().default([]),
+  agent_states: z.array(z.object({
+    agent_id: z.string(),
+    agent_type: z.string(),
+    status: z.string(),
+    summary: z.string().optional(),
+  })).optional().default([]),
+});
+
+export async function postCompactSave(c: Context): Promise<Response> {
+  try {
+    const body = await c.req.json();
+
+    const parseResult = CompactSaveInputSchema.safeParse(body);
+    if (!parseResult.success) {
+      return c.json(
+        {
+          error: "Validation failed",
+          details: parseResult.error.flatten().fieldErrors,
+        },
+        400
+      );
+    }
+
+    const input = parseResult.data;
+    const sql = getDb();
+
+    console.log(
+      `[Compact] Saving snapshot for session=${input.session_id}, trigger=${input.trigger}`
+    );
+
+    // 1. Find session's project
+    interface SessionRow {
+      project_id: string | null;
+    }
+    const sessions = await sql<SessionRow[]>`
+      SELECT project_id FROM sessions WHERE id = ${input.session_id} LIMIT 1
+    `;
+    const projectId = sessions[0]?.project_id;
+
+    // 2. Store snapshot in agent_contexts with a special "compact-snapshot" type
+    const snapshotData = {
+      trigger: input.trigger,
+      saved_at: new Date().toISOString(),
+      context_summary: input.context_summary ?? null,
+      active_tasks: input.active_tasks,
+      modified_files: input.modified_files,
+      key_decisions: input.key_decisions,
+      agent_states: input.agent_states,
+    };
+
+    // Upsert: one snapshot per session
+    await sql`
+      INSERT INTO agent_contexts (
+        project_id,
+        agent_id,
+        agent_type,
+        role_context,
+        progress_summary,
+        tools_used,
+        last_updated
+      ) VALUES (
+        ${projectId ?? null},
+        ${"compact-snapshot-" + input.session_id},
+        'compact-snapshot',
+        ${sql.json(snapshotData)},
+        ${input.context_summary ?? "Pre-compact snapshot"},
+        ${sql.array(input.modified_files)},
+        NOW()
+      )
+      ON CONFLICT (project_id, agent_id)
+      DO UPDATE SET
+        role_context = ${sql.json(snapshotData)},
+        progress_summary = ${input.context_summary ?? "Pre-compact snapshot"},
+        tools_used = ${sql.array(input.modified_files)},
+        last_updated = NOW()
+    `;
+
+    // 3. Also mark the request as having a pending compact
+    await sql`
+      UPDATE requests
+      SET metadata = metadata || ${sql.json({
+        compact_snapshot_at: new Date().toISOString(),
+        compact_trigger: input.trigger,
+      })}
+      WHERE session_id = ${input.session_id}
+    `;
+
+    console.log(
+      `[Compact] Snapshot saved: ${input.active_tasks.length} tasks, ${input.modified_files.length} files, ${input.key_decisions.length} decisions`
+    );
+
+    return c.json({
+      success: true,
+      snapshot: {
+        session_id: input.session_id,
+        trigger: input.trigger,
+        tasks_count: input.active_tasks.length,
+        files_count: input.modified_files.length,
+        decisions_count: input.key_decisions.length,
+        agents_count: input.agent_states.length,
+      },
+      saved_at: new Date().toISOString(),
+    }, 201);
+  } catch (error) {
+    console.error("[API] POST /api/compact/save error:", error);
+    return c.json(
+      {
+        error: "Failed to save compact snapshot",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
+  }
+}
+
+/**
+ * GET /api/compact/snapshot/:session_id - Get the latest saved snapshot
+ * @param c - Hono context
+ */
+export async function getCompactSnapshot(c: Context): Promise<Response> {
+  try {
+    const sessionId = c.req.param("session_id");
+
+    if (!sessionId) {
+      return c.json({ error: "Missing session_id parameter" }, 400);
+    }
+
+    const sql = getDb();
+
+    const results = await sql`
+      SELECT role_context, progress_summary, tools_used, last_updated
+      FROM agent_contexts
+      WHERE agent_id = ${"compact-snapshot-" + sessionId}
+        AND agent_type = 'compact-snapshot'
+      LIMIT 1
+    `;
+
+    if (results.length === 0) {
+      return c.json({
+        session_id: sessionId,
+        exists: false,
+        snapshot: null,
+      });
+    }
+
+    const row = results[0];
+    return c.json({
+      session_id: sessionId,
+      exists: true,
+      snapshot: row.role_context,
+      summary: row.progress_summary,
+      modified_files: row.tools_used,
+      saved_at: row.last_updated,
+    });
+  } catch (error) {
+    console.error("[API] GET /api/compact/snapshot error:", error);
+    return c.json(
+      {
+        error: "Failed to get compact snapshot",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
+  }
+}
+
+export { CompactRestoreInputSchema, CompactSaveInputSchema };

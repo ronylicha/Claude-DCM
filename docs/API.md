@@ -2126,6 +2126,92 @@ If the session has never been compacted:
 
 ---
 
+### POST /api/compact/save
+
+Save a pre-compact context snapshot. Called by the PreCompact hook before Claude auto-compacts.
+
+```bash
+curl -X POST http://localhost:3847/api/compact/save \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "abc-123",
+    "trigger": "auto",
+    "context_summary": "Working on authentication module...",
+    "active_tasks": [
+      {"id": "1", "description": "Implement login", "status": "in_progress"}
+    ],
+    "modified_files": ["src/auth.ts", "src/routes.ts"],
+    "key_decisions": ["Using JWT over session cookies"],
+    "agent_states": [
+      {"agent_id": "backend-1", "agent_type": "backend-laravel", "status": "running", "summary": "Creating auth controller"}
+    ]
+  }'
+```
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `session_id` | string | Yes | Session identifier |
+| `trigger` | `"auto" \| "manual" \| "proactive"` | No | What triggered the save (default: `auto`) |
+| `context_summary` | string | No | Brief summary of current work |
+| `active_tasks` | array | No | List of active tasks with id, description, status, agent_type |
+| `modified_files` | string[] | No | Files modified in this session |
+| `key_decisions` | string[] | No | Important decisions made |
+| `agent_states` | array | No | Current agent states with agent_id, agent_type, status, summary |
+
+**Response `201`:**
+
+```json
+{
+  "status": "success",
+  "snapshot_id": "uuid",
+  "session_id": "abc-123",
+  "trigger": "auto"
+}
+```
+
+Stores in `agent_contexts` table with `agent_type='compact-snapshot'` and `agent_id='compact-snapshot-{session_id}'`. Uses upsert (`ON CONFLICT DO UPDATE`) so each session has at most one snapshot.
+
+---
+
+### GET /api/compact/snapshot/:session_id
+
+Retrieve a saved compact snapshot by session ID.
+
+```bash
+curl http://localhost:3847/api/compact/snapshot/abc-123
+```
+
+**Response `200`:**
+
+```json
+{
+  "status": "success",
+  "snapshot": {
+    "session_id": "abc-123",
+    "trigger": "auto",
+    "context_summary": "Working on authentication module...",
+    "active_tasks": [...],
+    "modified_files": [...],
+    "key_decisions": [...],
+    "agent_states": [...],
+    "saved_at": "2025-02-08T10:30:00.000Z"
+  }
+}
+```
+
+**Response `404`:**
+
+```json
+{
+  "status": "not_found",
+  "message": "No compact snapshot found for session abc-123"
+}
+```
+
+---
+
 ## Hierarchy
 
 ### GET /api/hierarchy/:project_id

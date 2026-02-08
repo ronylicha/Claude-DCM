@@ -1,0 +1,389 @@
+#!/usr/bin/env bash
+# dcm - Distributed Context Manager CLI
+# Single entry point for all DCM operations
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VERSION="2.1.0"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Load env if available
+if [[ -f "$SCRIPT_DIR/.env" ]]; then
+    set -a
+    source "$SCRIPT_DIR/.env" 2>/dev/null || true
+    set +a
+fi
+
+API_PORT="${PORT:-3847}"
+WS_PORT="${WS_PORT:-3849}"
+DASHBOARD_PORT="${DASHBOARD_PORT:-3848}"
+API_URL="http://127.0.0.1:${API_PORT}"
+
+usage() {
+    echo -e "${BLUE}DCM - Distributed Context Manager v${VERSION}${NC}"
+    echo ""
+    echo "Usage: dcm <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  install     Install DCM: deps + database + hooks (one-command setup)"
+    echo "  start       Start all DCM services (API + WebSocket + Dashboard)"
+    echo "  stop        Stop all DCM services"
+    echo "  restart     Restart all DCM services"
+    echo "  status      Show health status of all services"
+    echo "  logs        Show logs (api|ws|dashboard)"
+    echo "  hooks       Install/update Claude Code hooks"
+    echo "  unhook      Remove DCM hooks from Claude Code settings"
+    echo "  health      Quick health check"
+    echo "  version     Show version"
+    echo ""
+    echo "Advanced:"
+    echo "  db:setup    Initialize database schema"
+    echo "  db:reset    Drop and recreate database (DESTRUCTIVE)"
+    echo "  snapshot    Trigger a manual context snapshot"
+    echo "  context     Get context brief for an agent"
+    echo ""
+    echo "Examples:"
+    echo "  dcm install          # First-time setup"
+    echo "  dcm start            # Start everything"
+    echo "  dcm status           # Check what's running"
+    echo "  dcm context backend-laravel  # Get context for agent"
+}
+
+cmd_install() {
+    echo -e "${BLUE}DCM Install - Full Setup${NC}"
+    echo ""
+
+    # Step 1: Prerequisites
+    echo -e "${YELLOW}[1/5]${NC} Checking prerequisites..."
+    local missing=""
+    command -v bun &>/dev/null || missing="$missing bun"
+    command -v psql &>/dev/null || missing="$missing psql"
+    command -v jq &>/dev/null || missing="$missing jq"
+    command -v curl &>/dev/null || missing="$missing curl"
+
+    if [[ -n "$missing" ]]; then
+        echo -e "${RED}Missing:${NC}$missing"
+        [[ "$missing" == *"bun"* ]] && echo "  Install Bun: curl -fsSL https://bun.sh/install | bash"
+        [[ "$missing" == *"psql"* ]] && echo "  Install PostgreSQL: sudo apt install postgresql postgresql-client"
+        [[ "$missing" == *"jq"* ]] && echo "  Install jq: sudo apt install jq"
+        exit 1
+    fi
+    echo -e "  ${GREEN}All prerequisites found.${NC}"
+
+    # Step 2: Dependencies
+    echo -e "${YELLOW}[2/5]${NC} Installing dependencies..."
+    cd "$SCRIPT_DIR"
+    bun install --silent 2>/dev/null || bun install
+    echo -e "  ${GREEN}Dependencies installed.${NC}"
+
+    # Step 3: Environment
+    echo -e "${YELLOW}[3/5]${NC} Configuring environment..."
+    if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
+        cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env" 2>/dev/null || true
+        echo "  Created .env from template."
+        echo -e "  ${YELLOW}Edit $SCRIPT_DIR/.env with your database credentials.${NC}"
+    else
+        echo "  .env already exists."
+    fi
+
+    # Reload env
+    set -a
+    source "$SCRIPT_DIR/.env" 2>/dev/null || true
+    set +a
+
+    # Step 4: Database
+    echo -e "${YELLOW}[4/5]${NC} Setting up database..."
+    if [[ -f "$SCRIPT_DIR/scripts/setup-db.sh" ]]; then
+        bash "$SCRIPT_DIR/scripts/setup-db.sh" 2>&1 | sed 's/^/  /'
+    else
+        echo "  Skipped (setup-db.sh not found)"
+    fi
+
+    # Step 5: Hooks
+    echo -e "${YELLOW}[5/5]${NC} Installing Claude Code hooks..."
+    bash "$SCRIPT_DIR/scripts/setup-hooks.sh" 2>&1 | sed 's/^/  /'
+
+    echo ""
+    echo -e "${GREEN}Installation complete!${NC}"
+    echo ""
+    echo "Next: dcm start"
+}
+
+cmd_start() {
+    echo -e "${BLUE}Starting DCM services...${NC}"
+
+    local pids_dir="/tmp/.dcm-pids"
+    mkdir -p "$pids_dir"
+
+    # Start API server
+    if ! curl -s "http://127.0.0.1:${API_PORT}/health" >/dev/null 2>&1; then
+        echo -n "  API server (port ${API_PORT})... "
+        cd "$SCRIPT_DIR"
+        nohup bun run src/server.ts > /tmp/dcm-api.log 2>&1 &
+        echo $! > "$pids_dir/api.pid"
+        sleep 1
+        if curl -s "http://127.0.0.1:${API_PORT}/health" | jq -e '.status == "healthy"' >/dev/null 2>&1; then
+            echo -e "${GREEN}started${NC}"
+        else
+            echo -e "${YELLOW}starting (check /tmp/dcm-api.log)${NC}"
+        fi
+    else
+        echo -e "  API server (port ${API_PORT})... ${GREEN}already running${NC}"
+    fi
+
+    # Start WebSocket server
+    if ! curl -s "http://127.0.0.1:${WS_PORT}" >/dev/null 2>&1; then
+        echo -n "  WebSocket server (port ${WS_PORT})... "
+        cd "$SCRIPT_DIR"
+        nohup bun run src/websocket-server.ts > /tmp/dcm-ws.log 2>&1 &
+        echo $! > "$pids_dir/ws.pid"
+        echo -e "${GREEN}started${NC}"
+    else
+        echo -e "  WebSocket server (port ${WS_PORT})... ${GREEN}already running${NC}"
+    fi
+
+    # Start Dashboard (if context-dashboard exists)
+    local dashboard_dir="$(dirname "$SCRIPT_DIR")/context-dashboard"
+    if [[ -d "$dashboard_dir" ]]; then
+        if ! curl -s "http://127.0.0.1:${DASHBOARD_PORT}" >/dev/null 2>&1; then
+            echo -n "  Dashboard (port ${DASHBOARD_PORT})... "
+            cd "$dashboard_dir"
+            nohup npm start > /tmp/dcm-dashboard.log 2>&1 &
+            echo $! > "$pids_dir/dashboard.pid"
+            echo -e "${GREEN}started${NC}"
+        else
+            echo -e "  Dashboard (port ${DASHBOARD_PORT})... ${GREEN}already running${NC}"
+        fi
+    fi
+
+    echo ""
+    echo -e "  API:       http://127.0.0.1:${API_PORT}"
+    echo -e "  WebSocket: ws://127.0.0.1:${WS_PORT}"
+    echo -e "  Dashboard: http://127.0.0.1:${DASHBOARD_PORT}"
+}
+
+cmd_stop() {
+    echo -e "${BLUE}Stopping DCM services...${NC}"
+
+    local pids_dir="/tmp/.dcm-pids"
+
+    for service in api ws dashboard; do
+        local pid_file="$pids_dir/${service}.pid"
+        if [[ -f "$pid_file" ]]; then
+            local pid=$(cat "$pid_file")
+            if kill -0 "$pid" 2>/dev/null; then
+                kill "$pid" 2>/dev/null || true
+                echo -e "  ${service}: ${GREEN}stopped${NC} (pid $pid)"
+            else
+                echo -e "  ${service}: ${YELLOW}not running${NC}"
+            fi
+            rm -f "$pid_file"
+        else
+            echo -e "  ${service}: ${YELLOW}no pid file${NC}"
+        fi
+    done
+
+    # Also kill by port as fallback
+    for port in "$API_PORT" "$WS_PORT" "$DASHBOARD_PORT"; do
+        local pid=$(lsof -ti ":$port" 2>/dev/null || true)
+        if [[ -n "$pid" ]]; then
+            kill "$pid" 2>/dev/null || true
+        fi
+    done
+}
+
+cmd_status() {
+    echo -e "${BLUE}DCM Status${NC}"
+    echo ""
+
+    # API
+    echo -n "  API (port ${API_PORT}):       "
+    local health=$(curl -s "http://127.0.0.1:${API_PORT}/health" --connect-timeout 2 2>/dev/null || echo "")
+    if [[ -n "$health" ]]; then
+        local status=$(echo "$health" | jq -r '.status // "unknown"' 2>/dev/null)
+        local version=$(echo "$health" | jq -r '.version // "?"' 2>/dev/null)
+        if [[ "$status" == "healthy" ]]; then
+            echo -e "${GREEN}healthy${NC} (v${version})"
+        else
+            echo -e "${RED}${status}${NC}"
+        fi
+    else
+        echo -e "${RED}not running${NC}"
+    fi
+
+    # WebSocket
+    echo -n "  WebSocket (port ${WS_PORT}):  "
+    if lsof -i ":${WS_PORT}" >/dev/null 2>&1; then
+        echo -e "${GREEN}running${NC}"
+    else
+        echo -e "${RED}not running${NC}"
+    fi
+
+    # Dashboard
+    echo -n "  Dashboard (port ${DASHBOARD_PORT}): "
+    if curl -s "http://127.0.0.1:${DASHBOARD_PORT}" --connect-timeout 2 >/dev/null 2>&1; then
+        echo -e "${GREEN}running${NC}"
+    else
+        echo -e "${RED}not running${NC}"
+    fi
+
+    # Database
+    echo -n "  PostgreSQL:          "
+    if [[ -n "$health" ]]; then
+        local db_healthy=$(echo "$health" | jq -r '.database.healthy // false' 2>/dev/null)
+        if [[ "$db_healthy" == "true" ]]; then
+            echo -e "${GREEN}connected${NC}"
+        else
+            echo -e "${RED}disconnected${NC}"
+        fi
+    else
+        echo -e "${YELLOW}unknown${NC}"
+    fi
+
+    # Hooks
+    echo -n "  Claude Code hooks:   "
+    if grep -q "pre-compact-save.sh" "$HOME/.claude/settings.json" 2>/dev/null; then
+        echo -e "${GREEN}installed${NC}"
+    else
+        echo -e "${YELLOW}not installed${NC} (run: dcm hooks)"
+    fi
+}
+
+cmd_hooks() {
+    bash "$SCRIPT_DIR/scripts/setup-hooks.sh" "$@"
+}
+
+cmd_unhook() {
+    echo -e "${BLUE}Removing DCM hooks from Claude Code settings...${NC}"
+    local settings="$HOME/.claude/settings.json"
+
+    if [[ ! -f "$settings" ]]; then
+        echo "No settings.json found."
+        exit 0
+    fi
+
+    # Backup
+    cp "$settings" "${settings}.bak.$(date +%Y%m%d%H%M%S)"
+
+    # Remove all DCM hook entries
+    jq '
+      .hooks.PostToolUse = [(.hooks.PostToolUse // [])[] | select((.hooks // []) | all(.command | test("track-action|track-agent|monitor-context") | not))] |
+      .hooks.SessionStart = [(.hooks.SessionStart // [])[] | select((.hooks // []) | all(.command | test("track-session|post-compact-restore") | not))] |
+      .hooks.PreCompact = [(.hooks.PreCompact // [])[] | select((.hooks // []) | all(.command | test("pre-compact-save") | not))] |
+      .hooks.SubagentStop = [(.hooks.SubagentStop // [])[] | select((.hooks // []) | all(.command | test("save-agent-result") | not))] |
+      .hooks.SessionEnd = [(.hooks.SessionEnd // [])[] | select((.hooks // []) | all(.command | test("track-session-end") | not))] |
+      # Clean up empty arrays
+      if .hooks.PostToolUse == [] then del(.hooks.PostToolUse) else . end |
+      if .hooks.SessionStart == [] then del(.hooks.SessionStart) else . end |
+      if .hooks.PreCompact == [] then del(.hooks.PreCompact) else . end |
+      if .hooks.SubagentStop == [] then del(.hooks.SubagentStop) else . end |
+      if .hooks.SessionEnd == [] then del(.hooks.SessionEnd) else . end |
+      if .hooks == {} then del(.hooks) else . end
+    ' "$settings" > "${settings}.tmp" && mv "${settings}.tmp" "$settings"
+
+    echo -e "${GREEN}DCM hooks removed.${NC}"
+}
+
+cmd_health() {
+    curl -s "${API_URL}/health" --connect-timeout 2 2>/dev/null | jq . 2>/dev/null || echo -e "${RED}DCM API not responding${NC}"
+}
+
+cmd_snapshot() {
+    local session_id="${1:-}"
+    if [[ -z "$session_id" ]]; then
+        # Try to find current session from cache
+        local latest_cache=$(ls -t /tmp/.claude-context/*.json 2>/dev/null | head -1)
+        if [[ -n "$latest_cache" ]]; then
+            session_id=$(jq -r '.session_id' "$latest_cache" 2>/dev/null)
+        fi
+    fi
+
+    if [[ -z "$session_id" ]]; then
+        echo "Usage: dcm snapshot <session_id>"
+        exit 1
+    fi
+
+    echo "Taking snapshot for session: $session_id"
+    curl -s -X POST "${API_URL}/api/compact/save" \
+        -H "Content-Type: application/json" \
+        -d "{\"session_id\":\"$session_id\",\"trigger\":\"manual\"}" | jq .
+}
+
+cmd_context() {
+    local agent_id="${1:-orchestrator}"
+    local session_id="${2:-}"
+
+    if [[ -z "$session_id" ]]; then
+        local latest_cache=$(ls -t /tmp/.claude-context/*.json 2>/dev/null | head -1)
+        if [[ -n "$latest_cache" ]]; then
+            session_id=$(jq -r '.session_id' "$latest_cache" 2>/dev/null)
+        fi
+    fi
+
+    if [[ -z "$session_id" ]]; then
+        echo "Usage: dcm context <agent_id> [session_id]"
+        exit 1
+    fi
+
+    curl -s "${API_URL}/api/context/${agent_id}?session_id=${session_id}&format=brief" | jq .
+}
+
+cmd_logs() {
+    local service="${1:-api}"
+    case "$service" in
+        api)       tail -f /tmp/dcm-api.log 2>/dev/null || echo "No API logs" ;;
+        ws)        tail -f /tmp/dcm-ws.log 2>/dev/null || echo "No WS logs" ;;
+        dashboard) tail -f /tmp/dcm-dashboard.log 2>/dev/null || echo "No dashboard logs" ;;
+        *)         echo "Usage: dcm logs (api|ws|dashboard)" ;;
+    esac
+}
+
+cmd_db_setup() {
+    bash "$SCRIPT_DIR/scripts/setup-db.sh"
+}
+
+cmd_db_reset() {
+    echo -e "${RED}WARNING: This will DROP and recreate the database!${NC}"
+    read -p "Are you sure? (type 'yes' to confirm): " confirm
+    if [[ "$confirm" == "yes" ]]; then
+        local db_name="${DB_NAME:-claude_context}"
+        local db_user="${DB_USER:-dcm}"
+        psql -U "$db_user" -c "DROP DATABASE IF EXISTS $db_name;" 2>/dev/null || true
+        psql -U "$db_user" -c "CREATE DATABASE $db_name;" 2>/dev/null || true
+        psql -U "$db_user" -d "$db_name" < "$SCRIPT_DIR/src/db/schema.sql"
+        echo -e "${GREEN}Database reset complete.${NC}"
+    else
+        echo "Cancelled."
+    fi
+}
+
+# Route commands
+case "${1:-}" in
+    install)   cmd_install ;;
+    start)     cmd_start ;;
+    stop)      cmd_stop ;;
+    restart)   cmd_stop; sleep 1; cmd_start ;;
+    status)    cmd_status ;;
+    health)    cmd_health ;;
+    hooks)     shift; cmd_hooks "$@" ;;
+    unhook)    cmd_unhook ;;
+    logs)      shift; cmd_logs "$@" ;;
+    snapshot)  shift; cmd_snapshot "$@" ;;
+    context)   shift; cmd_context "$@" ;;
+    db:setup)  cmd_db_setup ;;
+    db:reset)  cmd_db_reset ;;
+    version|-v|--version) echo "DCM v${VERSION}" ;;
+    help|-h|--help|"") usage ;;
+    *)
+        echo -e "${RED}Unknown command: $1${NC}"
+        echo ""
+        usage
+        exit 1
+        ;;
+esac

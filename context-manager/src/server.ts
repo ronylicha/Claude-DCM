@@ -38,7 +38,7 @@ import {
   getMessageStats,
 } from "./cleanup";
 // Phase 5 - Context Agent Integration
-import { postCompactRestore, getCompactStatus } from "./api/compact";
+import { postCompactRestore, getCompactStatus, postCompactSave, getCompactSnapshot } from "./api/compact";
 import { getContext, postContextGenerate } from "./api/context";
 // Phase 6 - Sessions Management
 import { postSession, getSessions, getSessionById, patchSession, getSessionsStats, deleteSession } from "./api/sessions";
@@ -553,12 +553,19 @@ app.get("/api/context/:agent_id", getContext);
 // POST /api/context/generate - Generate context brief on demand
 app.post("/api/context/generate", postContextGenerate);
 
+// POST /api/compact/save - Save context snapshot before compact (PreCompact hook)
+// Body: { session_id, trigger, context_summary?, active_tasks?, modified_files?, key_decisions?, agent_states? }
+app.post("/api/compact/save", postCompactSave);
+
 // POST /api/compact/restore - Restore context after compact operation
 // Body: { session_id, agent_id, agent_type?, compact_summary?, max_tokens? }
 app.post("/api/compact/restore", postCompactRestore);
 
 // GET /api/compact/status/:session_id - Check if session is compacted
 app.get("/api/compact/status/:session_id", getCompactStatus);
+
+// GET /api/compact/snapshot/:session_id - Get saved snapshot for a session
+app.get("/api/compact/snapshot/:session_id", getCompactSnapshot);
 
 
 // ============================================
