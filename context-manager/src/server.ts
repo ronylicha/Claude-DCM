@@ -46,6 +46,8 @@ import { postSession, getSessions, getSessionById, patchSession, getSessionsStat
 import { getToolsSummary } from "./api/tools-summary";
 // Phase 8 - WebSocket Auth
 import { generateToken, isValidAgentId, isValidSessionId } from "./websocket/auth";
+// Rate limiting
+import { rateLimit, rateLimitPresets } from "./middleware/rate-limit";
 
 // Validate configuration at startup
 validateConfig();
@@ -53,8 +55,38 @@ validateConfig();
 // Create Hono app
 const app = new Hono();
 
-// Middleware
-app.use("*", cors());
+// Middleware - Configure CORS based on environment
+const allowedOrigins = process.env["ALLOWED_ORIGINS"]?.split(",") || [
+  "http://localhost:3848",  // Dashboard in development
+  "http://127.0.0.1:3848",  // Dashboard alternative
+];
+
+// In production, only allow configured origins. In dev, be more permissive but still log warnings
+const corsConfig = {
+  origin: (origin: string) => {
+    // Allow requests with no origin (e.g., mobile apps, curl)
+    if (!origin) return origin;
+    
+    // Check against allowed origins
+    if (allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
+      return origin;
+    }
+    
+    // In development, allow localhost variations but log warning
+    if (process.env["NODE_ENV"] !== "production") {
+      if (origin.match(/^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/)) {
+        console.warn(`[CORS] Allowing origin ${origin} in development mode`);
+        return origin;
+      }
+    }
+    
+    console.warn(`[CORS] Rejected origin: ${origin}`);
+    return "";  // Reject the origin
+  },
+  credentials: true,
+};
+
+app.use("*", cors(corsConfig));
 app.use("*", logger());
 
 // ============================================
@@ -823,8 +855,9 @@ app.get("/stats/tools-summary", getToolsSummary);
  * POST /api/auth/token - Generate a WebSocket auth token for an agent
  * Body: { agent_id: string, session_id?: string }
  * Returns: { token: string, expires_in: number }
+ * Rate limited: 10 requests per 15 minutes per IP
  */
-app.post("/api/auth/token", async (c) => {
+app.post("/api/auth/token", rateLimit(rateLimitPresets.auth), async (c) => {
   try {
     const body = await c.req.json() as { agent_id: string; session_id?: string };
     
