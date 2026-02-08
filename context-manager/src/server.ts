@@ -45,7 +45,7 @@ import { postSession, getSessions, getSessionById, patchSession, getSessionsStat
 // Phase 7 - Tools Summary
 import { getToolsSummary } from "./api/tools-summary";
 // Phase 8 - WebSocket Auth
-import { generateToken } from "./websocket/auth";
+import { generateToken, isValidAgentId, isValidSessionId } from "./websocket/auth";
 
 // Validate configuration at startup
 validateConfig();
@@ -828,32 +828,41 @@ app.post("/api/auth/token", async (c) => {
   try {
     const body = await c.req.json() as { agent_id: string; session_id?: string };
     
-    // Validate agent_id is provided and format
+    // Validate agent_id is provided
     if (!body.agent_id) {
       return c.json({ error: "Missing agent_id" }, 400);
     }
     
-    // Validate agent_id format (alphanumeric, hyphens, underscores, max 64 chars)
-    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(body.agent_id)) {
+    // Validate agent_id format using shared validation
+    if (!isValidAgentId(body.agent_id)) {
       return c.json({ 
         error: "Invalid agent_id format. Must be alphanumeric with hyphens/underscores, max 64 characters" 
       }, 400);
     }
     
-    // Validate session_id format if provided
-    if (body.session_id && !/^[a-zA-Z0-9_-]{1,128}$/.test(body.session_id)) {
+    // Validate session_id format if provided using shared validation
+    if (body.session_id && !isValidSessionId(body.session_id)) {
       return c.json({ 
         error: "Invalid session_id format. Must be alphanumeric with hyphens/underscores, max 128 characters" 
       }, 400);
     }
     
-    const token = generateToken(body.agent_id, body.session_id);
-    return c.json({ token, expires_in: 3600 });
+    try {
+      const token = generateToken(body.agent_id, body.session_id);
+      return c.json({ token, expires_in: 3600 });
+    } catch (validationError) {
+      // Log detailed error server-side, return generic message to client
+      console.error("[API] Token generation validation error:", validationError);
+      return c.json({ 
+        error: "Invalid request parameters" 
+      }, 400);
+    }
   } catch (error) {
+    // Log full error server-side
     console.error("[API] POST /api/auth/token error:", error);
+    // Return generic error to client to avoid information disclosure
     return c.json({ 
-      error: "Failed to generate token",
-      message: error instanceof Error ? error.message : "Unknown error"
+      error: "Failed to generate token"
     }, 500);
   }
 });
