@@ -38,8 +38,13 @@ function getClientIP(c: Context): string {
   if (forwardedFor) {
     // Take only the first IP (client IP) from comma-separated list
     const firstIP = forwardedFor.split(",")[0].trim();
-    // Basic IP validation (IPv4 or IPv6)
-    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(firstIP) || /^[a-fA-F0-9:]+$/.test(firstIP)) {
+    
+    // Validate IPv4 (strict: each octet must be 0-255)
+    const ipv4Regex = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    // Validate IPv6 (simplified: allows standard notation)
+    const ipv6Regex = /^([0-9a-fA-F]{0,4}:){7}[0-9a-fA-F]{0,4}$/;
+    
+    if (ipv4Regex.test(firstIP) || ipv6Regex.test(firstIP)) {
       return firstIP;
     }
   }
@@ -75,13 +80,16 @@ export function rateLimit(config: RateLimitConfig) {
       rateLimitStore.set(key, entry);
     }
 
-    // Set rate limit headers BEFORE incrementing
+    // Increment counter first
+    entry.count++;
+
+    // Set rate limit headers AFTER incrementing (shows correct remaining count)
     c.header("X-RateLimit-Limit", maxRequests.toString());
     c.header("X-RateLimit-Remaining", Math.max(0, maxRequests - entry.count).toString());
     c.header("X-RateLimit-Reset", Math.floor(entry.resetTime / 1000).toString());
 
-    // Check if limit exceeded BEFORE incrementing
-    if (entry.count >= maxRequests) {
+    // Check if limit exceeded AFTER incrementing
+    if (entry.count > maxRequests) {
       c.header("Retry-After", Math.ceil((entry.resetTime - now) / 1000).toString());
       return c.json(
         {
@@ -92,9 +100,6 @@ export function rateLimit(config: RateLimitConfig) {
         429
       );
     }
-
-    // Increment counter after check
-    entry.count++;
 
     await next();
   };
