@@ -1,6 +1,8 @@
 /**
  * Simple in-memory rate limiting middleware
- * For production, consider using Redis-backed rate limiting
+ * Designed for local development use with generous limits
+ * Primary purpose: protect against accidental infinite loops or bugs
+ * Note: For production deployments, consider using Redis-backed rate limiting
  */
 import type { Context, Next } from "hono";
 
@@ -107,21 +109,24 @@ export function rateLimit(config: RateLimitConfig) {
 
 /**
  * Preset configurations for common use cases
+ * Note: DCM is designed for local development use, so limits are very generous
+ * to prevent interfering with normal Claude Code usage while still protecting
+ * against accidental infinite loops or bugs
  */
 export const rateLimitPresets = {
-  // Strict limit for authentication endpoints
+  // Very generous limit for authentication endpoints (local development use)
   auth: {
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    maxRequests: 10,           // 10 requests per 15 minutes
+    windowMs: 60 * 1000,       // 1 minute
+    maxRequests: 1000,         // 1000 requests per minute
   },
   // Standard limit for write operations
   write: {
     windowMs: 60 * 1000,       // 1 minute
-    maxRequests: 60,           // 60 requests per minute
+    maxRequests: 1000,         // 1000 requests per minute
   },
   // Generous limit for read operations
   read: {
     windowMs: 60 * 1000,       // 1 minute
-    maxRequests: 300,          // 300 requests per minute
+    maxRequests: 3000,         // 3000 requests per minute
   },
 };
