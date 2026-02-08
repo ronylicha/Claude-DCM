@@ -66,7 +66,6 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve> {
           {
             headers: {
               "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
             },
           }
         );
@@ -78,18 +77,6 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve> {
         return new Response(JSON.stringify(stats), {
           headers: {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
-        });
-      }
-
-      // CORS preflight
-      if (req.method === "OPTIONS") {
-        return new Response(null, {
-          headers: {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
           },
         });
       }
