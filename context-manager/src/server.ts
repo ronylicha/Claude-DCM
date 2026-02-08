@@ -52,7 +52,27 @@ validateConfig();
 // Create Hono app
 const app = new Hono();
 
-// Middleware
+// Middleware - Minimal CORS for local development (dashboard support)
+// Only allows localhost origins, no rate limiting needed for local use
+app.use("*", async (c, next) => {
+  const origin = c.req.header("origin");
+  
+  // Allow localhost origins for dashboard (port 3848) and other local tools
+  if (origin && origin.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/)) {
+    c.header("Access-Control-Allow-Origin", origin);
+    c.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+    c.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    c.header("Access-Control-Max-Age", "86400"); // 24 hours
+  }
+  
+  // Handle preflight
+  if (c.req.method === "OPTIONS") {
+    return c.text("", 204);
+  }
+  
+  await next();
+});
+
 app.use("*", logger());
 
 // ============================================

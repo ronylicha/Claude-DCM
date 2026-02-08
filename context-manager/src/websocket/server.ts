@@ -54,6 +54,25 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve> {
 
       // Health check endpoint
       if (url.pathname === "/health") {
+        // Handle OPTIONS for proper HTTP semantics
+        if (req.method === "OPTIONS") {
+          return new Response(null, {
+            status: 204,
+            headers: {
+              "Allow": "GET, OPTIONS",
+            },
+          });
+        }
+        
+        if (req.method !== "GET") {
+          return new Response("Method Not Allowed", {
+            status: 405,
+            headers: {
+              "Allow": "GET, OPTIONS",
+            },
+          });
+        }
+        
         const stats = getWSStats();
         return new Response(
           JSON.stringify({
@@ -73,6 +92,25 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve> {
 
       // Stats endpoint
       if (url.pathname === "/stats") {
+        // Handle OPTIONS for proper HTTP semantics
+        if (req.method === "OPTIONS") {
+          return new Response(null, {
+            status: 204,
+            headers: {
+              "Allow": "GET, OPTIONS",
+            },
+          });
+        }
+        
+        if (req.method !== "GET") {
+          return new Response("Method Not Allowed", {
+            status: 405,
+            headers: {
+              "Allow": "GET, OPTIONS",
+            },
+          });
+        }
+        
         const stats = getWSStats();
         return new Response(JSON.stringify(stats), {
           headers: {
