@@ -417,10 +417,6 @@ curl http://127.0.0.1:3847/health
 
 Vérifier que Recharts est correctement importé et que les données sont au bon format.
 
-### Erreur de CORS
-
-Le Context Manager doit autoriser les requêtes cross-origin. Vérifier la configuration CORS dans `server.ts`.
-
 ### WebSocket ne se connecte pas
 
 Vérifier que le serveur WebSocket est démarré :
