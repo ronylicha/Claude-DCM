@@ -87,18 +87,33 @@ export function validateConfig(): void {
       "DB_PASSWORD environment variable is required. Set it in your .env file or export it before starting the server."
     );
   }
-  // Validate WS_AUTH_SECRET is set in production
+  
+  // Validate WS_AUTH_SECRET (strict validation in production, warning in development)
   const wsAuthSecret = process.env["WS_AUTH_SECRET"];
-  if (process.env["NODE_ENV"] === "production" && !wsAuthSecret) {
-    throw new Error(
-      "WS_AUTH_SECRET environment variable is required in production. Set it in your .env file with a strong random value."
-    );
+  const isProduction = process.env["NODE_ENV"] === "production";
+  
+  if (!wsAuthSecret) {
+    if (isProduction) {
+      throw new Error(
+        "WS_AUTH_SECRET environment variable is required in production. Set it in your .env file with a strong random value."
+      );
+    } else {
+      console.warn(
+        "[WARN] WS_AUTH_SECRET is not set. WebSocket authentication will fail. Set it in your .env file."
+      );
+    }
+  } else if (wsAuthSecret.length < 32) {
+    if (isProduction) {
+      throw new Error(
+        "WS_AUTH_SECRET must be at least 32 characters long in production for secure authentication."
+      );
+    } else {
+      console.warn(
+        "[WARN] WS_AUTH_SECRET is shorter than 32 characters. For production use, ensure it is at least 32 characters long."
+      );
+    }
   }
-  if (wsAuthSecret && wsAuthSecret.length < 32) {
-    throw new Error(
-      "WS_AUTH_SECRET must be at least 32 characters long for secure authentication."
-    );
-  }
+  
   if (config.server.port < 1 || config.server.port > 65535) {
     throw new Error(`Invalid server port: ${config.server.port}`);
   }

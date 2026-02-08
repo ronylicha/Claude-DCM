@@ -5,10 +5,6 @@
 import { config } from "../config";
 import { createHmac, timingSafeEqual } from "crypto";
 
-const AUTH_SECRET = process.env["WS_AUTH_SECRET"];
-if (!AUTH_SECRET) {
-  throw new Error("WS_AUTH_SECRET environment variable is required for secure authentication");
-}
 const TOKEN_TTL_MS = 3600000; // 1 hour
 
 // Shared validation patterns for consistency
@@ -20,6 +16,18 @@ interface TokenPayload {
   session_id?: string;
   issued_at: number;
   expires_at: number;
+}
+
+/**
+ * Get the AUTH_SECRET with validation
+ * Throws error if not set (validation handled by config.ts for consistency)
+ */
+function getAuthSecret(): string {
+  const secret = process.env["WS_AUTH_SECRET"];
+  if (!secret) {
+    throw new Error("WS_AUTH_SECRET environment variable is not set. Configure it before using authentication.");
+  }
+  return secret;
 }
 
 /**
@@ -58,7 +66,8 @@ export function generateToken(agentId: string, sessionId?: string): string {
   };
   const data = JSON.stringify(payload);
   // Use proper HMAC instead of string concatenation
-  const signature = createHmac("sha256", AUTH_SECRET)
+  const authSecret = getAuthSecret();
+  const signature = createHmac("sha256", authSecret)
     .update(data)
     .digest("hex");
   // Token format: base64(payload).signature
@@ -76,7 +85,8 @@ export function validateToken(token: string): TokenPayload | null {
 
     const data = Buffer.from(encoded, "base64url").toString();
     // Use proper HMAC instead of string concatenation
-    const expectedSig = createHmac("sha256", AUTH_SECRET)
+    const authSecret = getAuthSecret();
+    const expectedSig = createHmac("sha256", authSecret)
       .update(data)
       .digest("hex");
 
