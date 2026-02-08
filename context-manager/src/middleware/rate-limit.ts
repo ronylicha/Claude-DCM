@@ -29,14 +29,38 @@ setInterval(() => {
 }, 60000);
 
 /**
+ * Extract the client IP address from request headers
+ * Handles x-forwarded-for with multiple IPs and validates format
+ */
+function getClientIP(c: Context): string {
+  // Try x-forwarded-for (used by proxies/load balancers)
+  const forwardedFor = c.req.header("x-forwarded-for");
+  if (forwardedFor) {
+    // Take only the first IP (client IP) from comma-separated list
+    const firstIP = forwardedFor.split(",")[0].trim();
+    // Basic IP validation (IPv4 or IPv6)
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(firstIP) || /^[a-fA-F0-9:]+$/.test(firstIP)) {
+      return firstIP;
+    }
+  }
+  
+  // Try x-real-ip (alternative proxy header)
+  const realIP = c.req.header("x-real-ip");
+  if (realIP) return realIP;
+  
+  // Fallback to unknown (this prevents bypassing rate limits)
+  return "unknown";
+}
+
+/**
  * Create a rate limiting middleware
  */
 export function rateLimit(config: RateLimitConfig) {
   const { windowMs, maxRequests, keyGenerator } = config;
 
   return async (c: Context, next: Next) => {
-    // Generate key (default: IP address)
-    const key = keyGenerator ? keyGenerator(c) : c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+    // Generate key (default: validated client IP)
+    const key = keyGenerator ? keyGenerator(c) : getClientIP(c);
     const now = Date.now();
 
     // Get or create entry
@@ -51,16 +75,13 @@ export function rateLimit(config: RateLimitConfig) {
       rateLimitStore.set(key, entry);
     }
 
-    // Increment counter
-    entry.count++;
-
-    // Set rate limit headers
+    // Set rate limit headers BEFORE incrementing
     c.header("X-RateLimit-Limit", maxRequests.toString());
     c.header("X-RateLimit-Remaining", Math.max(0, maxRequests - entry.count).toString());
     c.header("X-RateLimit-Reset", Math.floor(entry.resetTime / 1000).toString());
 
-    // Check if limit exceeded
-    if (entry.count > maxRequests) {
+    // Check if limit exceeded BEFORE incrementing
+    if (entry.count >= maxRequests) {
       c.header("Retry-After", Math.ceil((entry.resetTime - now) / 1000).toString());
       return c.json(
         {
@@ -71,6 +92,9 @@ export function rateLimit(config: RateLimitConfig) {
         429
       );
     }
+
+    // Increment counter after check
+    entry.count++;
 
     await next();
   };

@@ -63,9 +63,15 @@ const allowedOrigins = process.env["ALLOWED_ORIGINS"]?.split(",") || [
 
 // In production, only allow configured origins. In dev, be more permissive but still log warnings
 const corsConfig = {
-  origin: (origin: string) => {
-    // Allow requests with no origin (e.g., mobile apps, curl)
-    if (!origin) return origin;
+  origin: (origin: string | undefined) => {
+    // Allow requests with no origin (e.g., mobile apps, curl, Postman)
+    if (origin === undefined) return origin;
+    
+    // Reject empty string origins
+    if (origin === "") {
+      console.warn("[CORS] Rejected empty origin");
+      return null;
+    }
     
     // Check against allowed origins
     if (allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
@@ -81,7 +87,7 @@ const corsConfig = {
     }
     
     console.warn(`[CORS] Rejected origin: ${origin}`);
-    return "";  // Reject the origin
+    return null;  // Properly reject the origin
   },
   credentials: true,
 };
