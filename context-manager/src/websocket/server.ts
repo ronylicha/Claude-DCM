@@ -32,6 +32,37 @@ function generateClientId(): string {
 }
 
 // ============================================
+// HTTP Method Validation Helpers
+// ============================================
+
+/**
+ * Handle OPTIONS request for HTTP endpoints
+ */
+function handleOptions(): Response {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Allow": "GET, OPTIONS",
+    },
+  });
+}
+
+/**
+ * Validate HTTP method is GET, return 405 if not
+ */
+function validateGetMethod(method: string): Response | null {
+  if (method !== "GET") {
+    return new Response("Method Not Allowed", {
+      status: 405,
+      headers: {
+        "Allow": "GET, OPTIONS",
+      },
+    });
+  }
+  return null;
+}
+
+// ============================================
 // WebSocket Server
 // ============================================
 
@@ -56,22 +87,11 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve> {
       if (url.pathname === "/health") {
         // Handle OPTIONS for proper HTTP semantics
         if (req.method === "OPTIONS") {
-          return new Response(null, {
-            status: 204,
-            headers: {
-              "Allow": "GET, OPTIONS",
-            },
-          });
+          return handleOptions();
         }
         
-        if (req.method !== "GET") {
-          return new Response("Method Not Allowed", {
-            status: 405,
-            headers: {
-              "Allow": "GET, OPTIONS",
-            },
-          });
-        }
+        const methodError = validateGetMethod(req.method);
+        if (methodError) return methodError;
         
         const stats = getWSStats();
         return new Response(
@@ -94,22 +114,11 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve> {
       if (url.pathname === "/stats") {
         // Handle OPTIONS for proper HTTP semantics
         if (req.method === "OPTIONS") {
-          return new Response(null, {
-            status: 204,
-            headers: {
-              "Allow": "GET, OPTIONS",
-            },
-          });
+          return handleOptions();
         }
         
-        if (req.method !== "GET") {
-          return new Response("Method Not Allowed", {
-            status: 405,
-            headers: {
-              "Allow": "GET, OPTIONS",
-            },
-          });
-        }
+        const methodError = validateGetMethod(req.method);
+        if (methodError) return methodError;
         
         const stats = getWSStats();
         return new Response(JSON.stringify(stats), {
