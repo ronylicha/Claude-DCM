@@ -1,4 +1,4 @@
-###DCM - Distributed Context Manager
+# DCM - Distributed Context Manager
 Persistent context, compact recovery, and cross-agent sharing for Claude Code multi-agent sessions.
 What is DCM?
 DCM (Distributed Context Manager) is a backend service that gives Claude Code sessions persistent memory. When Claude Code runs multi-agent workflows, each agent operates in isolation with a finite context window. DCM solves this by tracking every tool call, saving context snapshots before compaction, restoring them afterward, and sharing results across agents in real time.
