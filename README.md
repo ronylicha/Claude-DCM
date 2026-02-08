@@ -21,42 +21,11 @@ The system consists of three services: a REST API for tracking and context manag
 
 ## Key Features
 
-- **Compact save/restore** -- Automatically saves context snapshots before compaction and restores them afterward, so sessions never lose track of work in progress
-- **Cross-agent sharing** -- When a subagent finishes, its result is broadcast so other agents can access it through the context API
-- **Proactive monitoring** -- Monitors transcript size every 10th tool call and triggers early snapshots when nearing the context limit
-- **Real-time event streaming** -- WebSocket server with LISTEN/NOTIFY bridge for live activity feeds
-- **Tool and session tracking** -- Records every tool invocation, agent delegation, and session lifecycle event
-- **Routing intelligence** -- Keyword-based tool suggestion with feedback-driven weight adjustment
-- **Inter-agent messaging** -- Pub/sub messaging system for agent coordination
-- **Auto-start services** -- In both CLI and plugin mode, DCM auto-launches when Claude Code starts a session
-- **Monitoring dashboard** -- Next.js UI with live activity feeds, session timelines, agent statistics, and tool analytics
+![DCM key features overview](docs/assets/key-features.svg)
 
 ## Architecture Overview
 
-```
-                         +--------------------+
-                         |   PostgreSQL 16    |
-                         |   claude_context   |
-                         |   10 tables        |
-                         +---------+----------+
-                                   |
-                     LISTEN/NOTIFY | bridge
-                   +---------------+---------------+
-                   |               |               |
-          +--------v--------+ +---v---------+ +---v--------------+
-          |    DCM API      | |   DCM WS    | |  DCM Dashboard   |
-          |    Bun + Hono   | |   Bun + ws  | |  Next.js 16      |
-          |    Port 3847    | |   Port 3849  | |  Port 3848       |
-          |    REST API     | |   Real-time  | |  Monitoring UI   |
-          +--------+--------+ +-------------+ +------------------+
-                   |
-      +------------+------------+
-      |            |            |
-  +---v----+  +---v-----+  +---v----+
-  | Hooks  |  |  SDK    |  | cURL   |
-  | (bash) |  |  (TS)   |  |        |
-  +--------+  +---------+  +--------+
-```
+![DCM architecture overview](docs/assets/architecture.svg)
 
 | Component         | Stack                                      | Port | Description                                         |
 | ----------------- | ------------------------------------------ | ---- | --------------------------------------------------- |
@@ -119,44 +88,21 @@ Both modes include the `ensure-services.sh` hook, which auto-starts DCM services
 
 DCM uses Claude Code's hooks system to track and manage context. All hooks are fire-and-forget with short timeouts -- they never block Claude.
 
-```
-Claude Code Session
-  |
-  +-- SessionStart(startup)  -> ensure-services.sh   -> auto-starts DCM if needed
-  |                          -> track-session.sh     -> creates session record
-  |
-  +-- PostToolUse(*)         -> track-action.sh      -> POST /api/actions
-  +-- PostToolUse(Task)      -> track-agent.sh       -> POST /api/subtasks
-  +-- PostToolUse(*/10th)    -> monitor-context.sh   -> checks transcript size
-  |
-  +-- PreCompact(auto|manual)-> pre-compact-save.sh  -> POST /api/compact/save
-  +-- SessionStart(compact)  -> post-compact-restore.sh -> injects context brief
-  |
-  +-- SubagentStop           -> save-agent-result.sh -> POST /api/messages
-  +-- SessionEnd             -> track-session-end.sh -> cleanup
-```
+![Hooks lifecycle flow](docs/assets/hooks-flow.svg)
 
 ### Compact save/restore
 
 When Claude's context window fills up, the conversation compacts. Without DCM, agents lose track of what happened before. DCM handles this automatically:
 
-1. **Before compact**: `pre-compact-save.sh` saves active tasks, modified files, agent states, and key decisions to the database
-2. **After compact**: `post-compact-restore.sh` fetches a context brief and injects it back into the session via `additionalContext`
-3. **Proactive monitoring**: `monitor-context.sh` runs every 10th tool call; if the transcript exceeds 800 KB, it triggers an early snapshot so data is saved even if compaction happens unexpectedly
+![Compact save and restore sequence](docs/assets/compact-sequence.svg)
 
 ### Cross-agent sharing
 
-When a subagent finishes, `save-agent-result.sh` broadcasts its result as a message. Other agents pick this up through the context API, preventing work from getting siloed.
+![Cross-agent sharing](docs/assets/cross-agent-sharing.svg)
 
 ## Auto-Start Feature
 
-In both CLI and plugin installation modes, the `ensure-services.sh` hook runs on every `SessionStart(startup)` event. It performs the following:
-
-1. **Health check** -- Calls `GET /health` on the API. If healthy, exits immediately (no-op).
-2. **Lock acquisition** -- Creates a lock file to prevent concurrent auto-starts when multiple Claude sessions launch simultaneously.
-3. **PostgreSQL check** -- Verifies PostgreSQL is reachable via `pg_isready`. If not, logs a warning and exits gracefully.
-4. **Service start** -- Launches the API and WebSocket servers as background processes.
-5. **Readiness wait** -- Polls the health endpoint for up to 5 seconds until the API confirms healthy status.
+![Auto-start sequence](docs/assets/auto-start.svg)
 
 The hook is idempotent: if services are already running, it exits in under 50 ms. If PostgreSQL is not available, it skips startup without error.
 

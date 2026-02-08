@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-label="DCM key features">
+  <defs>
+    <style>
+      .title { font: 700 32px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .node { font: 600 20px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .sub { font: 400 16px "Inter", "Segoe UI", Arial, sans-serif; fill: #334155; }
+      .box { fill: #f8fafc; stroke: #94a3b8; stroke-width: 2; rx: 16; }
+      .line { stroke: #64748b; stroke-width: 2; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="720" fill="#ffffff"/>
+  <text x="40" y="56" class="title">DCM — Key Features</text>
+
+  <rect x="470" y="90" width="260" height="70" class="box"/>
+  <text x="600" y="135" text-anchor="middle" class="node">DCM</text>
+
+  <line x1="600" y1="160" x2="250" y2="240" class="line"/>
+  <rect x="80" y="220" width="340" height="110" class="box"/>
+  <text x="250" y="252" text-anchor="middle" class="node">Compact save/restore</text>
+  <text x="250" y="280" text-anchor="middle" class="sub">Snapshots before compaction</text>
+  <text x="250" y="304" text-anchor="middle" class="sub">Brief injected after compaction</text>
+
+  <line x1="600" y1="160" x2="950" y2="240" class="line"/>
+  <rect x="780" y="220" width="340" height="110" class="box"/>
+  <text x="950" y="252" text-anchor="middle" class="node">Cross-agent sharing</text>
+  <text x="950" y="280" text-anchor="middle" class="sub">Subagent results broadcast</text>
+  <text x="950" y="304" text-anchor="middle" class="sub">Context API access</text>
+
+  <line x1="600" y1="160" x2="250" y2="420" class="line"/>
+  <rect x="80" y="390" width="340" height="120" class="box"/>
+  <text x="250" y="424" text-anchor="middle" class="node">Proactive monitoring</text>
+  <text x="250" y="452" text-anchor="middle" class="sub">Every 10th tool call</text>
+  <text x="250" y="476" text-anchor="middle" class="sub">Early snapshot near limit</text>
+
+  <line x1="600" y1="160" x2="950" y2="420" class="line"/>
+  <rect x="780" y="390" width="340" height="120" class="box"/>
+  <text x="950" y="424" text-anchor="middle" class="node">Real-time streaming</text>
+  <text x="950" y="452" text-anchor="middle" class="sub">WebSocket + LISTEN/NOTIFY</text>
+  <text x="950" y="476" text-anchor="middle" class="sub">Live activity feeds</text>
+
+  <line x1="600" y1="160" x2="420" y2="610" class="line"/>
+  <rect x="220" y="570" width="400" height="110" class="box"/>
+  <text x="420" y="602" text-anchor="middle" class="node">Tracking + routing</text>
+  <text x="420" y="630" text-anchor="middle" class="sub">Tool/session tracking</text>
+  <text x="420" y="654" text-anchor="middle" class="sub">Keyword routing intelligence</text>
+
+  <line x1="600" y1="160" x2="780" y2="610" class="line"/>
+  <rect x="660" y="570" width="360" height="110" class="box"/>
+  <text x="840" y="602" text-anchor="middle" class="node">Automation + UI</text>
+  <text x="840" y="630" text-anchor="middle" class="sub">Auto-start services</text>
+  <text x="840" y="654" text-anchor="middle" class="sub">Monitoring dashboard</text>
+</svg>

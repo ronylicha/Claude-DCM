@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="460" viewBox="0 0 1200 460" role="img" aria-label="Auto-start sequence">
+  <defs>
+    <style>
+      .title { font: 700 28px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .label { font: 600 16px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .sub { font: 400 14px "Inter", "Segoe UI", Arial, sans-serif; fill: #334155; }
+      .box { fill: #f8fafc; stroke: #94a3b8; stroke-width: 2; rx: 12; }
+      .line { stroke: #64748b; stroke-width: 2; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#64748b" />
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="460" fill="#ffffff"/>
+  <text x="40" y="48" class="title">Auto-start (ensure-services.sh)</text>
+
+  <rect x="60" y="120" width="240" height="70" class="box"/>
+  <text x="180" y="155" text-anchor="middle" class="label">SessionStart</text>
+
+  <rect x="340" y="120" width="240" height="70" class="box"/>
+  <text x="460" y="146" text-anchor="middle" class="label">GET /health</text>
+  <text x="460" y="168" text-anchor="middle" class="sub">API check</text>
+
+  <rect x="620" y="80" width="240" height="70" class="box"/>
+  <text x="740" y="115" text-anchor="middle" class="label">Healthy</text>
+  <text x="740" y="138" text-anchor="middle" class="sub">exit no-op</text>
+
+  <rect x="620" y="170" width="240" height="70" class="box"/>
+  <text x="740" y="205" text-anchor="middle" class="label">Acquire lock</text>
+
+  <rect x="900" y="170" width="240" height="70" class="box"/>
+  <text x="1020" y="205" text-anchor="middle" class="label">pg_isready</text>
+
+  <rect x="620" y="260" width="240" height="70" class="box"/>
+  <text x="740" y="295" text-anchor="middle" class="label">Start API + WS</text>
+
+  <rect x="900" y="260" width="240" height="70" class="box"/>
+  <text x="1020" y="295" text-anchor="middle" class="label">Poll /health</text>
+  <text x="1020" y="318" text-anchor="middle" class="sub">until ready</text>
+
+  <line x1="300" y1="155" x2="340" y2="155" class="line"/>
+  <line x1="580" y1="155" x2="620" y2="115" class="line"/>
+  <line x1="580" y1="155" x2="620" y2="205" class="line"/>
+  <line x1="860" y1="205" x2="900" y2="205" class="line"/>
+  <line x1="740" y1="240" x2="740" y2="260" class="line"/>
+  <line x1="860" y1="295" x2="900" y2="295" class="line"/>
+</svg>

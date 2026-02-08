@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-label="Compact save and restore sequence">
+  <defs>
+    <style>
+      .title { font: 700 28px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .label { font: 600 16px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .sub { font: 400 14px "Inter", "Segoe UI", Arial, sans-serif; fill: #334155; }
+      .box { fill: #f8fafc; stroke: #94a3b8; stroke-width: 2; rx: 12; }
+      .line { stroke: #64748b; stroke-width: 2; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#64748b" />
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="520" fill="#ffffff"/>
+  <text x="40" y="48" class="title">Compact Save & Restore</text>
+
+  <rect x="60" y="90" width="220" height="60" class="box"/>
+  <text x="170" y="125" text-anchor="middle" class="label">Claude Code</text>
+
+  <rect x="330" y="90" width="220" height="60" class="box"/>
+  <text x="440" y="125" text-anchor="middle" class="label">Hooks</text>
+
+  <rect x="600" y="90" width="220" height="60" class="box"/>
+  <text x="710" y="125" text-anchor="middle" class="label">DCM API</text>
+
+  <rect x="870" y="90" width="220" height="60" class="box"/>
+  <text x="980" y="125" text-anchor="middle" class="label">PostgreSQL</text>
+
+  <line x1="170" y1="180" x2="440" y2="180" class="line"/>
+  <text x="300" y="170" text-anchor="middle" class="sub">PreCompact</text>
+
+  <line x1="440" y1="220" x2="710" y2="220" class="line"/>
+  <text x="575" y="210" text-anchor="middle" class="sub">POST /api/compact/save</text>
+
+  <line x1="710" y1="260" x2="980" y2="260" class="line"/>
+  <text x="845" y="250" text-anchor="middle" class="sub">Save snapshot</text>
+
+  <line x1="170" y1="320" x2="440" y2="320" class="line"/>
+  <text x="300" y="310" text-anchor="middle" class="sub">SessionStart (compact)</text>
+
+  <line x1="440" y1="360" x2="710" y2="360" class="line"/>
+  <text x="575" y="350" text-anchor="middle" class="sub">GET /api/compact/restore</text>
+
+  <line x1="710" y1="400" x2="980" y2="400" class="line"/>
+  <text x="845" y="390" text-anchor="middle" class="sub">Fetch brief</text>
+
+  <line x1="710" y1="440" x2="440" y2="440" class="line"/>
+  <text x="575" y="430" text-anchor="middle" class="sub">Context brief</text>
+
+  <line x1="440" y1="480" x2="170" y2="480" class="line"/>
+  <text x="300" y="470" text-anchor="middle" class="sub">Inject additionalContext</text>
+</svg>
