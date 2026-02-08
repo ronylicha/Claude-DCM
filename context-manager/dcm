@@ -274,7 +274,7 @@ cmd_unhook() {
     # Remove all DCM hook entries
     jq '
       .hooks.PostToolUse = [(.hooks.PostToolUse // [])[] | select((.hooks // []) | all(.command | test("track-action|track-agent|monitor-context") | not))] |
-      .hooks.SessionStart = [(.hooks.SessionStart // [])[] | select((.hooks // []) | all(.command | test("track-session|post-compact-restore") | not))] |
+      .hooks.SessionStart = [(.hooks.SessionStart // [])[] | select((.hooks // []) | all(.command | test("ensure-services|track-session|post-compact-restore") | not))] |
       .hooks.PreCompact = [(.hooks.PreCompact // [])[] | select((.hooks // []) | all(.command | test("pre-compact-save") | not))] |
       .hooks.SubagentStop = [(.hooks.SubagentStop // [])[] | select((.hooks // []) | all(.command | test("save-agent-result") | not))] |
       .hooks.SessionEnd = [(.hooks.SessionEnd // [])[] | select((.hooks // []) | all(.command | test("track-session-end") | not))] |

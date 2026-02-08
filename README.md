@@ -1,367 +1,265 @@
 # DCM - Distributed Context Manager
 
-Context management for Claude Code multi-agent sessions. Tracks tool usage, agent delegation, and sessions in real-time -- and now handles compact save/restore so agents don't lose context when the conversation window fills up.
+<!-- TODO: Add project logo -->
+<!-- ![DCM Logo](docs/assets/logo.png) -->
 
-## Architecture
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1.svg)](https://bun.sh)
+[![PostgreSQL 16](https://img.shields.io/badge/database-PostgreSQL%2016-336791.svg)](https://www.postgresql.org/)
+
+**Persistent context, compact recovery, and cross-agent sharing for Claude Code multi-agent sessions.**
+
+---
+
+## What is DCM?
+
+DCM (Distributed Context Manager) is a backend service that gives Claude Code sessions persistent memory. When Claude Code runs multi-agent workflows, each agent operates in isolation with a finite context window. DCM solves this by tracking every tool call, saving context snapshots before compaction, restoring them afterward, and sharing results across agents in real time.
+
+DCM integrates with Claude Code through its hooks system. Lightweight bash scripts fire on key lifecycle events -- session start, tool use, agent completion, compaction -- and report to a local API backed by PostgreSQL. When Claude's context window fills up and the conversation compacts, DCM injects a context brief so the session picks up where it left off without losing track of active tasks, modified files, or key decisions.
+
+The system consists of three services: a REST API for tracking and context management, a WebSocket server for real-time event streaming, and a Next.js dashboard for monitoring. All three can be started with a single command, or auto-launched when Claude Code starts via the plugin system.
+
+## Key Features
+
+- **Compact save/restore** -- Automatically saves context snapshots before compaction and restores them afterward, so sessions never lose track of work in progress
+- **Cross-agent sharing** -- When a subagent finishes, its result is broadcast so other agents can access it through the context API
+- **Proactive monitoring** -- Monitors transcript size every 10th tool call and triggers early snapshots when nearing the context limit
+- **Real-time event streaming** -- WebSocket server with LISTEN/NOTIFY bridge for live activity feeds
+- **Tool and session tracking** -- Records every tool invocation, agent delegation, and session lifecycle event
+- **Routing intelligence** -- Keyword-based tool suggestion with feedback-driven weight adjustment
+- **Inter-agent messaging** -- Pub/sub messaging system for agent coordination
+- **Auto-start services** -- In both CLI and plugin mode, DCM auto-launches when Claude Code starts a session
+- **Monitoring dashboard** -- Next.js UI with live activity feeds, session timelines, agent statistics, and tool analytics
+
+## Architecture Overview
 
 ```
-                         ┌──────────────────┐
-                         │  PostgreSQL 16    │
-                         │  claude_context   │
-                         │  10 tables        │
-                         └────────┬─────────┘
-                                  │
-                    LISTEN/NOTIFY │ bridge
-                  ┌───────────────┼───────────────┐
-                  │               │               │
-         ┌────────▼───────┐ ┌────▼────────┐ ┌────▼────────────┐
-         │   DCM API       │ │  DCM WS     │ │  DCM Dashboard   │
-         │   Bun + Hono    │ │  Bun + ws   │ │  Next.js 16      │
-         │   Port 3847     │ │  Port 3849  │ │  Port 3848       │
-         │   50+ endpoints │ │  Real-time  │ │  Glassmorphism   │
-         └────────┬────────┘ └─────────────┘ └──────────────────┘
-                  │
-    ┌─────────────┼─────────────┐
-    │             │             │
-┌───▼───┐   ┌────▼────┐   ┌───▼────┐
-│ Hooks │   │  SDK    │   │ cURL   │
-│ (bash)│   │  (TS)   │   │        │
-└───────┘   └─────────┘   └────────┘
+                         +--------------------+
+                         |   PostgreSQL 16    |
+                         |   claude_context   |
+                         |   10 tables        |
+                         +---------+----------+
+                                   |
+                     LISTEN/NOTIFY | bridge
+                   +---------------+---------------+
+                   |               |               |
+          +--------v--------+ +---v---------+ +---v--------------+
+          |    DCM API      | |   DCM WS    | |  DCM Dashboard   |
+          |    Bun + Hono   | |   Bun + ws  | |  Next.js 16      |
+          |    Port 3847    | |   Port 3849  | |  Port 3848       |
+          |    REST API     | |   Real-time  | |  Monitoring UI   |
+          +--------+--------+ +-------------+ +------------------+
+                   |
+      +------------+------------+
+      |            |            |
+  +---v----+  +---v-----+  +---v----+
+  | Hooks  |  |  SDK    |  | cURL   |
+  | (bash) |  |  (TS)   |  |        |
+  +--------+  +---------+  +--------+
 ```
 
-| Component         | Stack                                     | Port | Description                                          |
-| ----------------- | ----------------------------------------- | ---- | ---------------------------------------------------- |
-| **DCM API**       | Bun, Hono, Bun.sql, Zod                   | 3847 | REST API, compact save/restore, routing intelligence |
-| **DCM WebSocket** | Bun native WS, LISTEN/NOTIFY              | 3849 | Real-time events, HMAC auth, auto-reconnect          |
-| **DCM Dashboard** | Next.js 16, React 19, Recharts, shadcn/ui | 3848 | Monitoring UI with live activity feed                |
-| **PostgreSQL**    | PostgreSQL 16                             | 5432 | 10 tables, 4 views, 20+ indexes, JSONB metadata      |
+| Component         | Stack                                      | Port | Description                                         |
+| ----------------- | ------------------------------------------ | ---- | --------------------------------------------------- |
+| **DCM API**       | Bun, Hono, Bun.sql, Zod                    | 3847 | REST API, compact save/restore, routing intelligence |
+| **DCM WebSocket** | Bun native WS, LISTEN/NOTIFY               | 3849 | Real-time events, HMAC auth, auto-reconnect          |
+| **DCM Dashboard** | Next.js 16, React 19, Recharts, shadcn/ui  | 3848 | Monitoring UI with live activity feed                |
+| **PostgreSQL**    | PostgreSQL 16                               | 5432 | 10 tables, 4 views, JSONB metadata                   |
 
-## Quick start
+## Quick Start
 
-### DCM CLI (recommended)
+### Prerequisites
 
-The `dcm` CLI handles everything: dependencies, database, hooks, and services.
+- [Bun](https://bun.sh) 1.x
+- [PostgreSQL](https://www.postgresql.org/) 16+
+- `jq` and `curl` (standard on most Linux/macOS systems)
+- [Node.js](https://nodejs.org/) 22+ (for the dashboard only)
+
+### One-command install
 
 ```bash
 git clone git@github.com:ronylicha/Claude-DCM.git
 cd Claude-DCM/context-manager
 
-# One command: installs deps, creates DB, injects Claude Code hooks
+# Install deps, create database, inject Claude Code hooks
 ./dcm install
 
 # Start API + WebSocket + Dashboard
 ./dcm start
-
-# Check everything is running
-./dcm status
 ```
 
-That's it. The installer auto-injects hooks into `~/.claude/settings.json` (with backup) so Claude Code starts tracking immediately. Restart Claude Code to pick up the new hooks.
+Restart Claude Code to pick up the new hooks. From that point on, DCM tracks every session automatically.
 
-### Docker
+### Auto-start via plugin
 
-```bash
-cp context-manager/.env.example .env
-# Edit .env: set DB_PASSWORD and WS_AUTH_SECRET
-
-docker compose up -d
-
-curl http://localhost:3847/health
-```
-
-With Docker, you still need to run `./dcm hooks` to inject hooks into your Claude Code settings.
-
-### Manual setup
+When installed as a Claude Code plugin, DCM auto-launches its services the moment Claude Code starts a session. No manual `dcm start` needed.
 
 ```bash
-# Prerequisites: Bun 1.x, Node.js 22+, PostgreSQL 16+, jq
-
-# 1. Database
-createdb claude_context
-psql claude_context < context-manager/src/db/schema.sql
-
-# 2. API Server
-cd context-manager
-cp .env.example .env    # Edit with your credentials
-bun install
-bun run src/server.ts
-
-# 3. WebSocket Server (separate terminal)
-bun run src/websocket-server.ts
-
-# 4. Dashboard (separate terminal)
-cd ../context-dashboard
-cp .env.example .env.local
-npm install && npm run build && npm start
-
-# 5. Install hooks
-cd ../context-manager
-./scripts/setup-hooks.sh
-```
-
-### As a Claude Code plugin
-
-If you prefer plugin auto-discovery over global hooks injection:
-
-```bash
-# Copy or symlink context-manager/ into your plugins directory
+# Symlink into your plugins directory
 ln -s /path/to/Claude-DCM/context-manager ~/.claude/plugins/dcm
 ```
 
-The `.claude-plugin/plugin.json` manifest and `hooks/hooks.json` handle registration automatically. Claude Code picks up the hooks on next restart.
+On the next Claude Code session, the `ensure-services.sh` hook detects that DCM is not running, starts the API and WebSocket servers, and waits for health confirmation -- all within the SessionStart hook timeout.
 
-## How it works
+**Prerequisite**: PostgreSQL must be running before Claude Code starts. Using systemd to manage PostgreSQL is recommended so it starts at boot.
 
-### Hooks
+## Installation Methods
 
-DCM uses Claude Code hooks to track and manage context automatically. All hooks are fire-and-forget with short timeouts -- they never block Claude.
+| Feature                | CLI Mode (`dcm install`)                     | Plugin Mode (auto-discovery)                      |
+| ---------------------- | -------------------------------------------- | ------------------------------------------------- |
+| **Setup**              | `./dcm install` then `./dcm start`           | Symlink into `~/.claude/plugins/dcm`              |
+| **Hook injection**     | Merges into `~/.claude/settings.json`         | Plugin's `hooks/hooks.json` loaded by Claude Code |
+| **Service startup**    | `./dcm start` or auto via ensure-services.sh  | Auto via `ensure-services.sh` on SessionStart     |
+| **Hook paths**         | Absolute paths to hooks directory             | `${CLAUDE_PLUGIN_ROOT}/hooks/` variable paths     |
+| **Scope**              | Global (all projects)                         | Per-plugin                                        |
+| **Uninstall**          | `./dcm unhook`                                | Remove the symlink                                |
+
+Both modes include the `ensure-services.sh` hook, which auto-starts DCM services if they are not already running when a Claude Code session begins.
+
+## How It Works
+
+DCM uses Claude Code's hooks system to track and manage context. All hooks are fire-and-forget with short timeouts -- they never block Claude.
 
 ```
 Claude Code Session
-  │
-  ├─ Any tool call         → track-action.sh      → POST /api/actions
-  ├─ Task (agent spawn)    → track-agent.sh       → POST /api/subtasks
-  ├─ Any tool call (1/10)  → monitor-context.sh   → checks transcript size
-  │
-  ├─ Before compact        → pre-compact-save.sh  → POST /api/compact/save
-  ├─ After compact         → post-compact-restore.sh → injects context back
-  │
-  ├─ Agent finishes        → save-agent-result.sh → POST /api/messages (broadcast)
-  ├─ Session start         → track-session.sh     → creates session record
-  └─ Session end           → track-session-end.sh → cleanup
+  |
+  +-- SessionStart(startup)  -> ensure-services.sh   -> auto-starts DCM if needed
+  |                          -> track-session.sh     -> creates session record
+  |
+  +-- PostToolUse(*)         -> track-action.sh      -> POST /api/actions
+  +-- PostToolUse(Task)      -> track-agent.sh       -> POST /api/subtasks
+  +-- PostToolUse(*/10th)    -> monitor-context.sh   -> checks transcript size
+  |
+  +-- PreCompact(auto|manual)-> pre-compact-save.sh  -> POST /api/compact/save
+  +-- SessionStart(compact)  -> post-compact-restore.sh -> injects context brief
+  |
+  +-- SubagentStop           -> save-agent-result.sh -> POST /api/messages
+  +-- SessionEnd             -> track-session-end.sh -> cleanup
 ```
 
 ### Compact save/restore
 
-When Claude's context window fills up, it compacts the conversation. Without DCM, agents lose track of what happened before. DCM fixes this:
+When Claude's context window fills up, the conversation compacts. Without DCM, agents lose track of what happened before. DCM handles this automatically:
 
 1. **Before compact**: `pre-compact-save.sh` saves active tasks, modified files, agent states, and key decisions to the database
 2. **After compact**: `post-compact-restore.sh` fetches a context brief and injects it back into the session via `additionalContext`
-3. **Proactive monitoring**: `monitor-context.sh` runs every 10th tool call. If the transcript exceeds 800KB, it triggers an early snapshot -- so even if compact happens unexpectedly, the data is already saved
+3. **Proactive monitoring**: `monitor-context.sh` runs every 10th tool call; if the transcript exceeds 800 KB, it triggers an early snapshot so data is saved even if compaction happens unexpectedly
 
 ### Cross-agent sharing
 
-When a subagent finishes, `save-agent-result.sh` broadcasts its result as a message. Other agents can pick this up through the context API, so work doesn't get siloed.
+When a subagent finishes, `save-agent-result.sh` broadcasts its result as a message. Other agents pick this up through the context API, preventing work from getting siloed.
 
-### Database schema
+## Auto-Start Feature
 
-```
-projects ──→ requests ──→ task_lists ──→ subtasks ──→ actions
-    │                                                    │
-    └── sessions (auto-created)        keyword_tool_scores (routing)
-                                       agent_messages (pub/sub)
-                                       agent_contexts (compact/restore)
-```
+In both CLI and plugin installation modes, the `ensure-services.sh` hook runs on every `SessionStart(startup)` event. It performs the following:
 
-| Table                 | Purpose                                |
-| --------------------- | -------------------------------------- |
-| `projects`            | Project registry by filesystem path    |
-| `requests`            | User prompts with session tracking     |
-| `task_lists`          | Waves/groups of objectives             |
-| `subtasks`            | Agent delegation with status tracking  |
-| `actions`             | Every tool invocation (compressed I/O) |
-| `sessions`            | Session lifecycle with counters        |
-| `keyword_tool_scores` | Routing intelligence weights           |
-| `agent_messages`      | Inter-agent pub/sub messaging          |
-| `agent_contexts`      | Context snapshots for compact/restore  |
+1. **Health check** -- Calls `GET /health` on the API. If healthy, exits immediately (no-op).
+2. **Lock acquisition** -- Creates a lock file to prevent concurrent auto-starts when multiple Claude sessions launch simultaneously.
+3. **PostgreSQL check** -- Verifies PostgreSQL is reachable via `pg_isready`. If not, logs a warning and exits gracefully.
+4. **Service start** -- Launches the API and WebSocket servers as background processes.
+5. **Readiness wait** -- Polls the health endpoint for up to 5 seconds until the API confirms healthy status.
 
-## Claude Code integration
+The hook is idempotent: if services are already running, it exits in under 50 ms. If PostgreSQL is not available, it skips startup without error.
 
-Hooks are injected automatically by `dcm install` or `dcm hooks`. You can also run the setup script directly:
+**Recommended setup**: Configure PostgreSQL to start at boot via systemd so it is always available when Claude Code launches:
 
 ```bash
-./scripts/setup-hooks.sh          # inject hooks
-./scripts/setup-hooks.sh --force  # re-inject (idempotent)
+sudo systemctl enable postgresql
+sudo systemctl start postgresql
 ```
 
-The script merges DCM hooks into your existing `~/.claude/settings.json` without touching non-DCM hooks. It backs up the file before any change.
+## CLI Commands
 
-To remove all DCM hooks:
+| Command          | Description                                           |
+| ---------------- | ----------------------------------------------------- |
+| `dcm install`    | Full setup: dependencies, database, hooks             |
+| `dcm start`      | Start API + WebSocket + Dashboard                     |
+| `dcm stop`       | Stop all DCM services                                 |
+| `dcm restart`    | Restart all services                                  |
+| `dcm status`     | Health check for all components                       |
+| `dcm hooks`      | Install or update Claude Code hooks                   |
+| `dcm unhook`     | Remove DCM hooks from `~/.claude/settings.json`       |
+| `dcm logs <svc>` | Tail logs for a service (`api`, `ws`, or `dashboard`) |
+| `dcm snapshot`   | Trigger a manual context snapshot                     |
+| `dcm context`    | Get context brief for an agent                        |
+| `dcm health`     | Quick API health check (JSON output)                  |
+| `dcm db:setup`   | Initialize database schema                            |
+| `dcm db:reset`   | Drop and recreate database (destructive)              |
+| `dcm version`    | Show DCM version                                      |
 
-```bash
-./dcm unhook
-```
+## Documentation
 
-### DCM CLI commands
-
-```
-dcm install     Full setup: deps + database + hooks
-dcm start       Start API + WebSocket + Dashboard
-dcm stop        Stop all services
-dcm restart     Restart all services
-dcm status      Health check for all components
-dcm hooks       Install/update Claude Code hooks
-dcm unhook      Remove DCM hooks from settings.json
-dcm logs api    Tail API server logs (also: ws, dashboard)
-dcm snapshot    Trigger a manual context snapshot
-dcm context     Get context brief for an agent
-dcm health      Quick API health check
-dcm db:setup    Initialize database schema
-dcm db:reset    Drop and recreate database (destructive)
-```
-
-## API overview
-
-Full specification: [`context-manager/openapi.yaml`](context-manager/openapi.yaml) | Detailed docs: [`docs/API.md`](docs/API.md)
-
-### Core endpoints
-
-| Method        | Endpoint                            | Description                            |
-| ------------- | ----------------------------------- | -------------------------------------- |
-| `GET`         | `/health`                           | Service health + feature phases        |
-| `GET`         | `/api/stats`                        | Global statistics                      |
-| **Projects**  |                                     |                                        |
-| `POST`        | `/api/projects`                     | Create/upsert project                  |
-| `GET`         | `/api/projects`                     | List projects                          |
-| `GET`         | `/api/projects/by-path`             | Lookup by filesystem path              |
-| **Sessions**  |                                     |                                        |
-| `GET`         | `/api/sessions`                     | List sessions (with counters)          |
-| `GET`         | `/api/sessions/stats`               | Session statistics                     |
-| **Tracking**  |                                     |                                        |
-| `POST`        | `/api/actions`                      | Log tool action (auto-creates session) |
-| `GET`         | `/api/actions`                      | List actions with filters              |
-| `GET`         | `/api/actions/hourly`               | 24h hourly distribution                |
-| **Hierarchy** |                                     |                                        |
-| `POST`        | `/api/requests`                     | Create user request                    |
-| `POST`        | `/api/tasks`                        | Create task/wave                       |
-| `POST`        | `/api/subtasks`                     | Create subtask (agent delegation)      |
-| `GET`         | `/api/hierarchy/:project_id`        | Full project hierarchy                 |
-| **Routing**   |                                     |                                        |
-| `GET`         | `/api/routing/suggest`              | Keyword-based tool suggestions         |
-| `POST`        | `/api/routing/feedback`             | Submit routing feedback                |
-| **Messaging** |                                     |                                        |
-| `POST`        | `/api/messages`                     | Send inter-agent message               |
-| `GET`         | `/api/messages/:agent_id`           | Poll messages for agent                |
-| **Context**   |                                     |                                        |
-| `GET`         | `/api/context/:agent_id`            | Generate context brief                 |
-| `POST`        | `/api/compact/save`                 | Save pre-compact snapshot              |
-| `GET`         | `/api/compact/snapshot/:session_id` | Retrieve saved snapshot                |
-| `POST`        | `/api/compact/restore`              | Restore context after compact          |
-| **Auth**      |                                     |                                        |
-| `POST`        | `/api/auth/token`                   | Generate HMAC WebSocket token          |
-
-### WebSocket protocol
-
-```javascript
-// Connect
-const ws = new WebSocket("ws://localhost:3849");
-
-// Subscribe to channels
-ws.send(JSON.stringify({
-  type: "subscribe",
-  channels: ["global", "agents/backend-laravel"]
-}));
-
-// Receive real-time events
-ws.onmessage = (msg) => {
-  const event = JSON.parse(msg.data);
-  // { event: "action.created", channel: "global", data: {...}, timestamp: 123 }
-};
-```
-
-**Event Types:** `action.created`, `task.created/updated/completed/failed`, `subtask.created/updated/completed/failed`, `session.created/ended`, `message.new`, `agent.connected/disconnected`, `metric.update`
-
-**Authentication (production):**
-
-```bash
-TOKEN=$(curl -s -X POST http://localhost:3847/api/auth/token \
-  -H "Content-Type: application/json" \
-  -d '{"agent_id": "my-agent"}' | jq -r .token)
-
-wscat -c "ws://localhost:3849?token=$TOKEN"
-```
-
-## Client SDK (TypeScript)
-
-```typescript
-import { DCMClient } from "./context-manager/src/sdk/client";
-import { DCMWebSocketClient } from "./context-manager/src/sdk/ws-client";
-
-// REST client
-const client = new DCMClient("http://localhost:3847");
-await client.recordAction({
-  tool_name: "Read", tool_type: "builtin",
-  session_id: "my-session", exit_code: 0
-});
-const suggestions = await client.suggestTool(["react", "component"]);
-
-// WebSocket client (auto-reconnect, exponential backoff)
-const ws = new DCMWebSocketClient("ws://localhost:3849", {
-  channels: ["global"],
-  onEvent: (event) => console.log(event),
-});
-await ws.connect();
-ws.onEvent("action.created", (data) => console.log(data.tool_name));
-```
+| Document                                                         | Description                                     |
+| ---------------------------------------------------------------- | ----------------------------------------------- |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)                   | System design, data flow, database schema, ADRs |
+| [`docs/API.md`](docs/API.md)                                     | Full API reference with examples                |
+| [`docs/INTEGRATION.md`](docs/INTEGRATION.md)                     | Claude Code hooks setup, SDK usage              |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)                       | Docker, systemd, manual deployment guides       |
+| [`context-manager/openapi.yaml`](context-manager/openapi.yaml)   | OpenAPI 3.0 specification                       |
 
 ## Dashboard
 
-Monitoring UI at `http://localhost:3848`, updated in real-time via WebSocket.
+<!-- TODO: Add dashboard screenshot -->
+<!-- ![DCM Dashboard](docs/assets/dashboard-screenshot.png) -->
 
-| Page               | Features                                                                     |
-| ------------------ | ---------------------------------------------------------------------------- |
-| **Dashboard**      | Health gauge, KPI cards with sparklines, area/bar charts, live activity feed |
-| **Live Activity**  | Real-time event stream, semi-circle gauges, agent topology grid              |
-| **Sessions**       | Session list with filters, sort, search, tool counters                       |
-| **Session Detail** | Timeline view with request cards and task items                              |
-| **Projects**       | Project list with KPIs, search, delete                                       |
-| **Project Detail** | Project-specific sessions and metrics                                        |
-| **Agents**         | Agent statistics, active agents, type distribution                           |
-| **Agent Detail**   | Per-agent task history and metrics                                           |
-| **Tools**          | Tool usage analytics, type distribution, success rates                       |
-| **Routing**        | Keyword-tool mappings, routing tester with live feedback                     |
-| **Messages**       | Inter-agent message history with expandable payloads                         |
-| **Context**        | Agent context browser with stats and type distribution                       |
+The monitoring dashboard is available at `http://localhost:3848` and updates in real time via WebSocket.
 
-Built with shadcn/ui, Radix UI, Tailwind CSS 4. Glassmorphism cards, dark mode (oklch), responsive.
+| Page               | Features                                                                 |
+| ------------------ | ------------------------------------------------------------------------ |
+| **Dashboard**      | Health gauge, KPI cards with sparklines, area/bar charts, activity feed  |
+| **Live Activity**  | Real-time event stream, agent topology grid                              |
+| **Sessions**       | Session list with filters, search, tool counters                         |
+| **Session Detail** | Timeline view with request cards and task items                          |
+| **Projects**       | Project list with KPIs, search                                           |
+| **Agents**         | Agent statistics, active agents, type distribution                       |
+| **Tools**          | Tool usage analytics, type distribution, success rates                   |
+| **Routing**        | Keyword-tool mappings, routing tester with live feedback                 |
+| **Messages**       | Inter-agent message history with expandable payloads                     |
+| **Context**        | Agent context browser with stats and type distribution                   |
+
+Built with shadcn/ui, Radix UI, and Tailwind CSS. Dark mode with glassmorphism cards.
 
 ## Configuration
 
-| Variable         | Default          | Description                                      |
-| ---------------- | ---------------- | ------------------------------------------------ |
-| `DB_HOST`        | `localhost`      | PostgreSQL host                                  |
-| `DB_PORT`        | `5432`           | PostgreSQL port                                  |
-| `DB_NAME`        | `claude_context` | Database name                                    |
-| `DB_USER`        | *required*       | Database user                                    |
-| `DB_PASSWORD`    | *required*       | Database password                                |
-| `PORT`           | `3847`           | API server port                                  |
-| `WS_PORT`        | `3849`           | WebSocket server port                            |
-| `WS_AUTH_SECRET` | -                | HMAC secret for WS auth (required in production) |
-| `DASHBOARD_PORT` | `3848`           | Dashboard port                                   |
-| `DCM_HOST`       | `127.0.0.1`      | External host for dashboard API URLs             |
-| `NODE_ENV`       | `production`     | Environment (dev mode allows bare WS auth)       |
+Copy `.env.example` to `.env` and edit:
 
-## Architecture decisions
+```bash
+cp context-manager/.env.example context-manager/.env
+```
 
-| ADR | Decision                                   | Rationale                                     |
-| --- | ------------------------------------------ | --------------------------------------------- |
-| 001 | PostgreSQL LISTEN/NOTIFY over polling      | Near-zero latency, no polling overhead        |
-| 002 | HMAC-SHA256 for WS auth                    | Stateless tokens, no external dependencies    |
-| 003 | Single npm package for SDK                 | Simpler distribution and versioning           |
-| 004 | Bun-first, Node.js compatible              | Performance + broad compatibility             |
-| 005 | At-least-once delivery (3 retries, 5s ack) | Reliability without exactly-once complexity   |
-| 006 | Dev mode allows bare agent_id              | Easier development, strict auth in production |
-| 007 | JSONB for metadata columns                 | Flexible schema, indexed queries              |
-| 008 | Separate WS server process                 | Independent scaling, cleaner architecture     |
+| Variable           | Default          | Description                                            |
+| ------------------ | ---------------- | ------------------------------------------------------ |
+| `DB_HOST`          | `localhost`      | PostgreSQL host                                        |
+| `DB_PORT`          | `5432`           | PostgreSQL port                                        |
+| `DB_NAME`          | `claude_context` | Database name                                          |
+| `DB_USER`          | *(required)*     | Database user                                          |
+| `DB_PASSWORD`      | *(required)*     | Database password                                      |
+| `PORT`             | `3847`           | API server port                                        |
+| `WS_PORT`          | `3849`           | WebSocket server port                                  |
+| `DASHBOARD_PORT`   | `3848`           | Dashboard port                                         |
+| `WS_AUTH_SECRET`   | --               | HMAC secret for WebSocket auth (required in production)|
+| `DCM_HOST`         | `127.0.0.1`     | External host for dashboard API URLs                   |
+| `NODE_ENV`         | `production`     | Environment (`production` enforces WS auth)            |
 
 ## Tests
 
 ```bash
 cd context-manager
-bun test                    # Run all (123 tests)
-bun test src/tests/api      # API tests (101 tests)
-bun test src/tests/ws       # WebSocket tests (22 tests)
+bun test                   # Run all tests
+bun test src/tests/api     # API tests only
+bun test src/tests/ws      # WebSocket tests only
 ```
 
-## Documentation
+## Contributing
 
-| Document                                                       | Description                                     |
-| -------------------------------------------------------------- | ----------------------------------------------- |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)                 | System design, data flow, database schema, ADRs |
-| [`docs/API.md`](docs/API.md)                                   | Full API reference with examples                |
-| [`docs/INTEGRATION.md`](docs/INTEGRATION.md)                   | Claude Code hooks setup, SDK usage              |
-| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)                     | Docker, systemd, manual deployment guides       |
-| [`context-manager/openapi.yaml`](context-manager/openapi.yaml) | OpenAPI 3.0 specification                       |
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Make your changes and add tests
+4. Run the test suite (`bun test`)
+5. Commit your changes (`git commit -m "Add my feature"`)
+6. Push to the branch (`git push origin feature/my-feature`)
+7. Open a Pull Request
+
+Please ensure all tests pass and follow the existing code style.
 
 ## License
 

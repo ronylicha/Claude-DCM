@@ -94,6 +94,16 @@ HOOKS_JSON=$(cat <<HOOKS_EOF
       "hooks": [
         {
           "type": "command",
+          "command": "bash ${HOOKS_DIR}/ensure-services.sh",
+          "timeout": 10
+        }
+      ]
+    },
+    {
+      "matcher": "startup",
+      "hooks": [
+        {
+          "type": "command",
           "command": "bash ${HOOKS_DIR}/track-session.sh",
           "timeout": 5
         }
@@ -172,7 +182,7 @@ jq --argjson new_hooks "$HOOKS_JSON" '
   ) |
   .hooks.SessionStart = (
     [(.hooks.SessionStart // [])[] | select(
-      (.hooks // []) | all(.command | test("track-session|post-compact-restore") | not)
+      (.hooks // []) | all(.command | test("ensure-services|track-session|post-compact-restore") | not)
     )] + $new_hooks.SessionStart
   ) |
   .hooks.PreCompact = (
@@ -212,6 +222,7 @@ echo "    - track-action.sh     (all tools, tracks usage)"
 echo "    - track-agent.sh      (Task tool, tracks agent spawns)"
 echo "    - monitor-context.sh  (all tools, proactive compact monitoring)"
 echo "  SessionStart:"
+echo "    - ensure-services.sh  (startup, auto-starts DCM if not running)"
 echo "    - track-session.sh  (startup, creates session hierarchy)"
 echo "    - post-compact-restore.sh (compact, restores context from DCM)"
 echo "  PreCompact:"

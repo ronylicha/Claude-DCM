@@ -1,191 +1,283 @@
-# Claude Code integration guide
+# Integration Guide
 
-DCM integrates with Claude Code through two mechanisms: **shell hooks** that capture tool usage, manage compact recovery, and monitor context size in real time, and a **TypeScript SDK** for programmatic access to the REST API and WebSocket server.
-
-This guide covers setup, configuration, and usage for both.
+DCM integrates with Claude Code through its **hook system**, intercepting session lifecycle events to track tool usage, manage compact recovery, share agent results, and proactively monitor context size. This guide covers every aspect of the integration: installation, hook behavior, data flow, CLI usage, and troubleshooting.
 
 ---
 
-## Table of contents
+## Table of Contents
 
+- [Overview](#overview)
 - [Prerequisites](#prerequisites)
-- [Hooks setup](#hooks-setup)
-  - [Configuration](#configuration)
-  - [Hook reference](#hook-reference)
-  - [Automated setup](#automated-setup)
-- [Plugin installation](#plugin-installation)
+- [Installation Modes](#installation-modes)
+  - [Plugin Mode (Recommended)](#plugin-mode-recommended)
+  - [Global Hooks Mode](#global-hooks-mode)
+- [Auto-Start](#auto-start)
+- [Hook Reference Table](#hook-reference-table)
+- [Hook Details](#hook-details)
+  - [ensure-services.sh](#ensure-servicessh)
+  - [track-session.sh](#track-sessionsh)
+  - [track-action.sh](#track-actionsh)
+  - [track-agent.sh](#track-agentsh)
+  - [monitor-context.sh](#monitor-contextsh)
+  - [pre-compact-save.sh](#pre-compact-savesh)
+  - [post-compact-restore.sh](#post-compact-restoresh)
+  - [save-agent-result.sh](#save-agent-resultsh)
+  - [track-session-end.sh](#track-session-endsh)
+- [Complete Data Flow](#complete-data-flow)
+- [Plugin Structure](#plugin-structure)
 - [DCM CLI](#dcm-cli)
-- [TypeScript SDK](#typescript-sdk)
-  - [REST client](#rest-client)
-  - [WebSocket client](#websocket-client)
-- [Data flow](#data-flow)
-- [Environment variables](#environment-variables)
+- [Environment Variables](#environment-variables)
 - [Troubleshooting](#troubleshooting)
+
+---
+
+## Overview
+
+Claude Code exposes five hook event types that fire at specific points during a session. DCM registers shell scripts against each event to build a persistent record of everything that happens:
+
+| Event Type | When It Fires | DCM Purpose |
+|------------|---------------|-------------|
+| `SessionStart` | Session begins (startup or post-compact) | Auto-start services, register session, restore context |
+| `PostToolUse` | After every tool invocation | Track actions, track agent spawns, monitor transcript size |
+| `PreCompact` | Before conversation compaction (auto or manual) | Save context snapshot |
+| `SubagentStop` | After a subagent finishes | Broadcast result, mark subtask completed |
+| `SessionEnd` | Session terminates | Mark session ended, clean up cache |
+
+All hooks follow a **fire-and-forget** pattern: short connect timeouts, bounded execution times, errors silently ignored. They never block Claude Code.
 
 ---
 
 ## Prerequisites
 
-- DCM API running on port 3847 (see [README](../README.md) for installation)
-- `jq` installed on the host machine (`sudo apt install jq` or `brew install jq`)
-- `curl` available in PATH
-- Claude Code installed and configured
+- **PostgreSQL 16+** running and accessible
+- **Bun** runtime installed (for the API and WebSocket servers)
+- **jq** installed on the host (`sudo apt install jq` or `brew install jq`)
+- **curl** available in PATH
+- **Claude Code** installed and configured
 
 ---
 
-## Hooks setup
+## Installation Modes
 
-DCM uses Claude Code's hook system to capture tool invocations, save and restore context across compacts, broadcast agent results, and proactively monitor transcript size. Nine hooks work together across five event types:
+DCM offers two ways to register its hooks with Claude Code. Both produce the same result: nine hook scripts responding to five event types.
 
-| Hook | Event | Matcher | Purpose |
-|------|-------|---------|---------|
-| `track-action.sh` | PostToolUse | `*` | Records all tool actions to the API |
-| `track-agent.sh` | PostToolUse | `Task` | Tracks agent spawning as subtasks |
-| `monitor-context.sh` | PostToolUse | `*` | Proactive transcript size monitoring |
-| `track-session.sh` | SessionStart | `startup` | Initializes the project/session/request/task chain |
-| `post-compact-restore.sh` | SessionStart | `compact` | Restores context after compact |
-| `pre-compact-save.sh` | PreCompact | `auto`, `manual` | Saves context snapshot before compact |
-| `save-agent-result.sh` | SubagentStop | -- | Broadcasts agent results for cross-agent sharing |
-| `track-session-end.sh` | SessionEnd | -- | Marks session as ended in the database |
-| `track-agent-start.sh` | PostToolUse | `Task` | Alternative agent start tracking with richer metadata |
-| `track-agent-end.sh` | SubagentStop | -- | Updates subtask status on agent completion |
+### Plugin Mode (Recommended)
 
-**Legacy hooks** (not recommended, from SQLite era):
+The plugin approach uses Claude Code's auto-discovery mechanism. Hook script paths resolve automatically through the `${CLAUDE_PLUGIN_ROOT}` variable, so no hard-coded absolute paths are needed.
 
-| Hook | Status | Notes |
-|------|--------|-------|
-| `track-usage.sh` | Deprecated | Original SQLite-based tracking, replaced by `track-action.sh` |
-| `track-usage-wrapper.sh` | Deprecated | Wrapper for `track-usage.sh`, no longer needed |
+**How it works.** Claude Code scans for `.claude-plugin/plugin.json` manifests and loads the corresponding `hooks/hooks.json` file. All hook definitions use `${CLAUDE_PLUGIN_ROOT}` as a path prefix, which Claude Code replaces with the actual plugin directory at runtime.
 
-### Configuration
+**Installation:**
 
-The recommended way to configure hooks is through the automated setup script (see [Automated setup](#automated-setup)). If you prefer manual configuration, add the following to `~/.claude/settings.json`. Replace `/path/to/context-manager` with the actual install path.
+```bash
+# From the Claude Code plugin marketplace
+/plugin marketplace add /path/to/Claude-DCM
+/plugin install dcm@dcm-marketplace
+```
+
+Once installed, Claude Code discovers all hooks automatically. No manual editing of `settings.json` is required.
+
+**When to use plugin mode:**
+- You want Claude Code to manage hook lifecycle automatically.
+- You want zero-touch setup with no changes to `~/.claude/settings.json`.
+- You run multiple projects and prefer isolated plugin management.
+
+### Global Hooks Mode
+
+The global approach injects hook definitions directly into `~/.claude/settings.json` using the `setup-hooks.sh` script. Hook commands reference absolute paths to the scripts on disk.
+
+**Installation:**
+
+```bash
+cd context-manager
+bash scripts/setup-hooks.sh
+```
+
+The script performs these steps:
+
+1. Verifies that `jq` is installed.
+2. Creates `~/.claude/settings.json` if it does not exist.
+3. Checks whether DCM hooks are already present. If so, exits unless `--force` is passed.
+4. Backs up the current settings file to `~/.claude/settings.json.bak.<timestamp>`.
+5. Builds the complete hook configuration with absolute paths to every hook script.
+6. Merges the hooks into existing settings using jq. The merge strategy strips any pre-existing DCM entries (matched by script name regex) before appending the new ones, preventing duplicates.
+7. Validates the resulting JSON. If validation fails, the backup is restored automatically.
+
+**Force re-injection** (after updating DCM):
+
+```bash
+bash scripts/setup-hooks.sh --force
+```
+
+**Remove hooks:**
+
+```bash
+# Via setup script
+./dcm unhook
+
+# Manual restore
+cp ~/.claude/settings.json.bak.<timestamp> ~/.claude/settings.json
+```
+
+**When to use global mode:**
+- You need fine-grained control over hook configuration.
+- You want to customize individual timeouts or matchers.
+- You prefer explicit management of `~/.claude/settings.json`.
+
+After any hook change in either mode, **restart Claude Code** for the new configuration to take effect.
+
+---
+
+## Auto-Start
+
+Starting with DCM v2.1.0, the `ensure-services.sh` hook automatically launches the DCM API and WebSocket servers when a Claude Code session starts. This eliminates the need to manually run `dcm start` before using Claude Code.
+
+**How it works.** The hook is registered under `SessionStart` with the `startup` matcher. It runs before `track-session.sh` (which depends on the API being available). On every session start:
+
+1. **Health check** -- Calls `GET /health` on the API. If the response contains `"healthy"`, the hook exits immediately (services already running).
+2. **PostgreSQL check** -- Runs `pg_isready` to verify the database is accessible. If PostgreSQL is down, the hook exits with a warning and does not attempt to start services.
+3. **Lock acquisition** -- Creates `/tmp/.dcm-autostart.lock` to prevent race conditions when multiple Claude Code sessions start simultaneously. A stale lock older than 30 seconds is automatically removed.
+4. **Service launch** -- Starts the API server (`bun run src/server.ts`) and WebSocket server (`bun run src/websocket-server.ts`) as background processes via `nohup`. PIDs are written to `/tmp/.dcm-pids/`.
+5. **Readiness wait** -- Polls the health endpoint for up to 5 seconds until the API responds as healthy.
+
+**Configuration.** The hook reads its configuration from the `.env` file (if present) and the following environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3847` | API server port |
+| `WS_PORT` | `3849` | WebSocket server port |
+| `DB_USER` | `dcm` | PostgreSQL user |
+| `DB_NAME` | `claude_context` | PostgreSQL database name |
+| `DB_HOST` | `127.0.0.1` | PostgreSQL host |
+| `DB_PORT` | `5432` | PostgreSQL port |
+
+**Logs.** Service output is written to `/tmp/dcm-api.log` and `/tmp/dcm-ws.log`. If the API does not become healthy within 5 seconds, a warning is emitted to stderr.
+
+**Idempotency.** The hook is fully idempotent. Running it when services are already up adds no overhead beyond a single health check (1-2 second timeout).
+
+---
+
+## Hook Reference Table
+
+Every hook script registered by DCM, listed in execution order within each event type:
+
+| Script | Event | Matcher | Timeout | Description |
+|--------|-------|---------|---------|-------------|
+| `ensure-services.sh` | SessionStart | `startup` | 10s | Auto-starts DCM API and WebSocket if not running |
+| `track-session.sh` | SessionStart | `startup` | 5s | Creates project/session/request/task hierarchy |
+| `post-compact-restore.sh` | SessionStart | `compact` | 8s | Restores context after conversation compaction |
+| `track-action.sh` | PostToolUse | `*` | 3s | Records every tool invocation to the API |
+| `track-agent.sh` | PostToolUse | `Task` | 3s | Tracks Task tool spawns as subtasks |
+| `monitor-context.sh` | PostToolUse | `*` | 2s | Proactive transcript size monitoring (every 10th call) |
+| `pre-compact-save.sh` | PreCompact | `auto` | 5s | Saves context snapshot before auto-compact |
+| `pre-compact-save.sh` | PreCompact | `manual` | 5s | Saves context snapshot before manual `/compact` |
+| `save-agent-result.sh` | SubagentStop | -- | 3s | Broadcasts agent results, marks subtask completed |
+| `track-session-end.sh` | SessionEnd | -- | 3s | Marks session ended, cleans up cache files |
+
+---
+
+## Hook Details
+
+### ensure-services.sh
+
+**Event:** SessionStart (matcher: `startup`)
+**Timeout:** 10 seconds
+**Purpose:** Auto-start DCM services if they are not already running.
+
+This hook guarantees that the DCM API and WebSocket server are available before any other hook attempts to call them. It is the first hook to fire on session startup.
+
+**Execution flow:**
+
+```
+SessionStart(startup)
+  |
+  +-- Quick health check: GET /health
+  |     \-- If healthy -> exit 0 (nothing to do)
+  |
+  +-- Lock: /tmp/.dcm-autostart.lock
+  |     \-- If locked < 30s -> poll health for 5s -> exit
+  |     \-- If locked > 30s -> stale, remove and proceed
+  |
+  +-- PostgreSQL: pg_isready
+  |     \-- If not ready -> warn on stderr -> exit 0
+  |
+  +-- Start API: nohup bun run src/server.ts
+  +-- Start WS:  nohup bun run src/websocket-server.ts
+  |
+  +-- Poll health for up to 5s
+  |     \-- If healthy -> log success on stderr
+  |     \-- If timeout -> log warning on stderr
+  |
+  \-- Release lock (trap on EXIT)
+```
+
+**Race condition handling.** When multiple Claude Code sessions start at the same time, only the first acquires the lock. Others wait up to 5 seconds for the API to become healthy, then proceed regardless.
+
+**Temporary files:**
+
+| File | Purpose |
+|------|---------|
+| `/tmp/.dcm-autostart.lock` | Prevents concurrent auto-starts |
+| `/tmp/.dcm-pids/api.pid` | API server process ID |
+| `/tmp/.dcm-pids/ws.pid` | WebSocket server process ID |
+| `/tmp/dcm-api.log` | API server stdout/stderr |
+| `/tmp/dcm-ws.log` | WebSocket server stdout/stderr |
+
+---
+
+### track-session.sh
+
+**Event:** SessionStart (matcher: `startup`)
+**Timeout:** 5 seconds
+**Purpose:** Initialize the full resource hierarchy for a new session.
+
+This hook fires once per session start and creates the entire chain of resources that other hooks depend on. It runs after `ensure-services.sh` has confirmed the API is available.
+
+**Resource creation order:**
+
+1. **Project** -- Created or fetched by filesystem path via `POST /api/projects`.
+2. **Session** -- Registered with the Claude Code session ID via `POST /api/sessions`.
+3. **Request** -- Initial request record with `prompt_type: "other"` via `POST /api/requests`.
+4. **Task** -- Wave 0 task in `running` status via `POST /api/tasks`.
+
+**ID caching.** All resource IDs are written to `/tmp/.claude-context/{session_id}.json` so that subsequent hooks (`track-agent.sh`, `pre-compact-save.sh`, `save-agent-result.sh`) can locate them without extra API calls.
+
+**Cache file format:**
 
 ```json
 {
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /path/to/context-manager/hooks/track-action.sh",
-            "timeout": 3
-          }
-        ]
-      },
-      {
-        "matcher": "Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /path/to/context-manager/hooks/track-agent.sh",
-            "timeout": 3
-          }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /path/to/context-manager/hooks/monitor-context.sh",
-            "timeout": 2
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "startup",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /path/to/context-manager/hooks/track-session.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /path/to/context-manager/hooks/post-compact-restore.sh",
-            "timeout": 8
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "auto",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /path/to/context-manager/hooks/pre-compact-save.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "manual",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /path/to/context-manager/hooks/pre-compact-save.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /path/to/context-manager/hooks/save-agent-result.sh",
-            "timeout": 3
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash /path/to/context-manager/hooks/track-session-end.sh",
-            "timeout": 3
-          }
-        ]
-      }
-    ]
-  }
+  "session_id": "abc-123",
+  "project_id": "uuid-...",
+  "request_id": "uuid-...",
+  "task_id": "uuid-...",
+  "created_at": "2025-01-15T10:30:00+00:00"
 }
 ```
 
-All hooks follow a fire-and-forget pattern: short connect timeouts, bounded max execution times, errors silently ignored. They never block Claude Code.
+**Idempotency.** If the cache file already exists for the session, the hook exits immediately without creating duplicate resources.
 
-### Hook reference
+---
 
-#### track-action.sh
+### track-action.sh
 
-Fires on every tool use. Reads JSON from stdin with the fields `tool_name`, `tool_input`, `session_id`, and `cwd`.
+**Event:** PostToolUse (matcher: `*`)
+**Timeout:** 3 seconds
+**Purpose:** Record every tool invocation in the DCM database.
 
-**Tool type detection.** The hook classifies each tool into one of four types:
+This hook fires after every tool call Claude makes. It classifies the tool, resolves an effective name, and sends the data to the API.
 
-| Type | Tools |
-|------|-------|
-| `builtin` | Read, Write, Edit, Bash, Glob, Grep, MultiEdit, NotebookEdit, WebFetch, WebSearch, and others |
-| `agent` | Task, TaskCreate, TaskUpdate, TaskGet, TaskList, TaskOutput, TaskStop |
-| `skill` | Skill (effective name extracted from `tool_input.skill`) |
+**Tool type detection:**
+
+| Type | Matched Tools |
+|------|---------------|
+| `builtin` | Read, Write, Edit, MultiEdit, Bash, Glob, Grep, NotebookEdit, WebFetch, WebSearch, EnterPlanMode, ExitPlanMode, AskUserQuestion, TaskCreate, TaskUpdate, TaskGet, TaskList, TaskOutput, TaskStop, ToolSearch, and all unrecognized tools |
+| `agent` | Task |
+| `skill` | Skill |
 | `mcp` | Any tool prefixed with `mcp__` |
 
-**Effective name resolution.** For `Skill` tools, the hook extracts the skill name from `tool_input.skill`. For `Task` tools, it uses `tool_input.subagent_type`. This means the API receives the specific agent or skill name rather than a generic tool label.
+**Effective name resolution.** For `Skill` tools, the hook extracts the skill name from `tool_input.skill`. For `Task` tools, it uses `tool_input.subagent_type`. This means the API receives the specific agent or skill name (e.g., `backend-laravel`, `clean-code`) rather than a generic tool label.
 
-**Payload sent to the API:**
+**API payload:**
 
 ```
 POST /api/actions
@@ -199,20 +291,26 @@ POST /api/actions
 }
 ```
 
-Sessions and projects are auto-created by the API if they do not exist yet (upsert behavior).
+Sessions and projects are auto-created by the API if they do not exist yet (upsert behavior). Timeouts: 1-second connect, 2-second max for the request.
 
-#### track-agent.sh
+---
 
-Fires only on Task tool calls. Creates a subtask entry that represents an agent being spawned.
+### track-agent.sh
 
-**Initialization chain.** If no task exists for the current session, the hook auto-creates the full hierarchy:
+**Event:** PostToolUse (matcher: `Task`)
+**Timeout:** 3 seconds
+**Purpose:** Create a subtask entry when an agent is spawned via the Task tool.
+
+This hook fires only for Task tool calls. It represents each spawned agent as a subtask within the session's task hierarchy.
+
+**Initialization chain.** If no task exists for the current session (e.g., `track-session.sh` did not run or the cache was lost), the hook auto-creates the full hierarchy:
 
 1. Finds or creates a project from the current working directory.
-2. Creates a request with `prompt_type: "auto"`.
+2. Creates a request with `prompt_type: "other"`.
 3. Creates a task in `running` status.
-4. Caches the resulting `task_id` in `/tmp/.claude-context/{session_id}.json` for subsequent calls.
+4. Caches the resulting `task_id` in `/tmp/.claude-context/{session_id}.json`.
 
-**Subtask creation.** Once a `task_id` is available, the hook creates a subtask:
+**Subtask creation.** Once a `task_id` is available:
 
 ```
 POST /api/subtasks
@@ -221,41 +319,70 @@ POST /api/subtasks
   "agent_type": "<from tool_input.subagent_type>",
   "agent_id": "agent-<timestamp>-<random hex>",
   "description": "<from tool_input.description, max 500 chars>",
-  "status": "running"
+  "status": "running" | "completed"
 }
 ```
 
-#### track-session.sh
+**Status logic.** If `tool_input.run_in_background` is `true`, the subtask is created with status `running` (it will be updated later by `save-agent-result.sh`). Otherwise it is created with status `completed` (synchronous agent call).
 
-Fires once at session start (matcher: `startup`). Creates the full resource chain in order:
+---
 
-1. **Project** -- created or fetched by path via `POST /api/projects`.
-2. **Session** -- created with the Claude Code session ID via `POST /api/sessions`.
-3. **Request** -- initial request with `prompt_type: "other"` via `POST /api/requests`.
-4. **Task** -- wave 0 task in `running` status via `POST /api/tasks`.
+### monitor-context.sh
 
-All IDs are cached to `/tmp/.claude-context/{session_id}.json` so that `track-agent.sh` can find them without extra API calls.
+**Event:** PostToolUse (matcher: `*`)
+**Timeout:** 2 seconds
+**Purpose:** Proactively monitor transcript size and trigger snapshots before auto-compact.
 
-#### pre-compact-save.sh
+This hook fires on every tool use but only performs a full check every 10th invocation to minimize overhead.
 
-Fires before Claude compacts the conversation. Registered for both `auto` and `manual` PreCompact matchers, so it runs whether the user types `/compact` or Claude triggers an automatic compaction.
+**Counter mechanism.** A persistent counter lives in `/tmp/.dcm-monitor-counter`. On each invocation the hook increments the counter and exits immediately unless the count is a multiple of 10.
 
-**What it saves.** The hook gathers state from multiple sources and posts a snapshot to the API:
+**Transcript size thresholds.** On every 10th call, the hook measures the transcript file size:
 
-1. **Active tasks** -- queries `GET /api/subtasks?status=running&limit=20` for running subtasks.
-2. **Modified files** -- queries `GET /api/actions?limit=50&session_id=...` and extracts file paths from Edit and Write actions.
-3. **Agent states** -- queries `GET /api/agent-contexts?limit=20` for agent context entries.
-4. **Context summary** -- reads the last 50 lines of the transcript file and extracts assistant messages (capped at 500 characters).
-5. **Cached session data** -- reads the project ID from `/tmp/.claude-context/{session_id}.json`.
+| Zone | Threshold | Action |
+|------|-----------|--------|
+| Green | Under 500 KB | No action |
+| Yellow | 500 KB -- 800 KB | Logs a warning to `/tmp/dcm-monitor.log` |
+| Red | Over 800 KB | Triggers a proactive context snapshot |
 
-**Payload sent to the API:**
+**Proactive snapshot.** In the red zone, the hook calls `POST /api/compact/save` with `trigger: "proactive"` and a context summary extracted from the last 50 lines of the transcript (capped at 500 characters). This ensures that if Claude auto-compacts shortly after, `post-compact-restore.sh` has fresh data to restore from.
+
+**Cooldown.** A 60-second cooldown prevents repeated snapshots. The timestamp of the last proactive snapshot is stored in `/tmp/.dcm-last-proactive`. If fewer than 60 seconds have elapsed, the hook skips the save.
+
+**Temporary files:**
+
+| File | Purpose |
+|------|---------|
+| `/tmp/.dcm-monitor-counter` | Invocation counter |
+| `/tmp/.dcm-last-proactive` | Timestamp of last proactive snapshot |
+| `/tmp/dcm-monitor.log` | Warnings, alerts, and error messages |
+
+---
+
+### pre-compact-save.sh
+
+**Event:** PreCompact (matcher: `auto`, `manual`)
+**Timeout:** 5 seconds
+**Purpose:** Save a complete context snapshot before Claude compacts the conversation.
+
+This hook fires for both automatic compaction (when the transcript grows too large) and manual compaction (when the user types `/compact`). It gathers state from multiple sources and posts a consolidated snapshot.
+
+**Data gathered:**
+
+1. **Active tasks** -- `GET /api/subtasks?status=running&limit=20`
+2. **Modified files** -- `GET /api/actions?limit=50&session_id=...` then filters for Edit and Write actions to extract file paths.
+3. **Agent states** -- `GET /api/agent-contexts?limit=20`
+4. **Context summary** -- Reads the last 50 lines of the transcript file and extracts assistant messages (capped at 500 characters).
+5. **Cached project ID** -- Reads from `/tmp/.claude-context/{session_id}.json`.
+
+**API payload:**
 
 ```
 POST /api/compact/save
 {
   "session_id": "<session_id>",
   "trigger": "auto" | "manual",
-  "context_summary": "<extracted summary>",
+  "context_summary": "<extracted from transcript>",
   "active_tasks": [...],
   "modified_files": [...],
   "key_decisions": [...],
@@ -265,14 +392,20 @@ POST /api/compact/save
 
 Timeouts: 1-second connect, 3-second max for the save request. Errors are silently ignored.
 
-#### post-compact-restore.sh
+---
 
-Fires at session start with the `compact` matcher, meaning it runs only when a session resumes after compaction. This is the counterpart to `pre-compact-save.sh`.
+### post-compact-restore.sh
 
-**Restore strategy.** The hook tries two approaches in order:
+**Event:** SessionStart (matcher: `compact`)
+**Timeout:** 8 seconds
+**Purpose:** Restore context after Claude compacts the conversation.
 
-1. `POST /api/compact/restore` with `session_id`, `agent_id`, `agent_type`, and `max_tokens: 3000`. The server generates a full context brief from the saved snapshot and recent activity.
-2. If the first call returns no brief, falls back to `GET /api/compact/snapshot/{session_id}` and builds a minimal brief locally from the raw snapshot data (active tasks, modified files, agent states, key decisions).
+This is the counterpart to `pre-compact-save.sh`. It fires when a session resumes after compaction and injects essential context back into the conversation.
+
+**Restore strategy (two-tier):**
+
+1. **Full restore** -- `POST /api/compact/restore` with `session_id`, `agent_id: "orchestrator"`, `agent_type: "orchestrator"`, and `max_tokens: 3000`. The server generates a comprehensive context brief from the saved snapshot plus recent activity.
+2. **Fallback** -- If the first call returns no brief, the hook tries `GET /api/compact/snapshot/{session_id}` and builds a minimal brief locally from the raw snapshot data (active tasks, modified files, agent states, key decisions).
 
 **Context injection.** If a brief is obtained, the hook writes JSON to stdout in the format Claude Code expects:
 
@@ -285,24 +418,27 @@ Fires at session start with the `compact` matcher, meaning it runs only when a s
 }
 ```
 
-Claude Code reads this output and injects the `additionalContext` string into the conversation, so the model sees the restored state immediately after compact.
+Claude Code reads this output and injects the `additionalContext` string into the conversation. The model sees the restored state immediately after compact, preventing loss of critical session state.
 
 If neither restore call succeeds, the hook exits silently and Claude continues without injected context.
 
 Timeouts: 2-second connect, 5-second max for the restore call, 3-second max for the snapshot fallback.
 
-#### save-agent-result.sh
+---
 
-Fires on the SubagentStop event, after a subagent finishes execution.
+### save-agent-result.sh
 
-**What it captures.** The hook reads the transcript file to extract:
+**Event:** SubagentStop (matcher: none / all)
+**Timeout:** 3 seconds
+**Purpose:** Broadcast agent results for cross-agent sharing and mark subtasks as completed.
 
+This hook fires after a subagent finishes execution. It reads the transcript to extract the agent's output and performs two actions in parallel.
+
+**Data extraction.** The hook reads the transcript file (JSONL format) to find:
 - The last Task tool result (the subagent's output, capped at 1000 characters then truncated to 500 for storage).
 - The last Task tool call to identify the `agent_type` and `description`.
 
-**What it does.** Two actions run in parallel:
-
-1. **Broadcasts a message** via `POST /api/messages` with topic `agent.completed`, making the result available to other agents through the messaging API and WebSocket server.
+**Action 1 -- Broadcast message:**
 
 ```
 POST /api/messages
@@ -320,95 +456,274 @@ POST /api/messages
 }
 ```
 
-2. **Updates the subtask status** by querying `GET /api/subtasks?agent_type=...&status=running&limit=1` to find the matching subtask, then calling `PATCH /api/subtasks/{id}` with `status: "completed"` and the result summary.
+This makes the result available to other agents through the messaging API and WebSocket server.
 
-Timeouts: 1-second connect, 2-second max per request. Both requests fire in parallel and complete independently.
+**Action 2 -- Update subtask:**
 
-#### monitor-context.sh
+1. Queries `GET /api/subtasks?agent_type=...&status=running&limit=1` to find the matching subtask.
+2. Calls `PATCH /api/subtasks/{id}` with `status: "completed"` and the result summary.
 
-Fires on every PostToolUse event (matcher: `*`), but only performs a full check every 10th invocation to minimize overhead.
-
-**Counter mechanism.** The hook maintains a call counter in `/tmp/.dcm-monitor-counter`. On each invocation it increments the counter and exits immediately unless the count is a multiple of 10.
-
-**Transcript size thresholds.** On every 10th call, the hook checks the transcript file size:
-
-| Zone | Size | Action |
-|------|------|--------|
-| Green | Under 500 KB | No action |
-| Yellow | 500 KB to 800 KB | Logs a warning to `/tmp/dcm-monitor.log` |
-| Red | Over 800 KB | Triggers a proactive context snapshot |
-
-**Proactive snapshot.** When the transcript enters the red zone, the hook calls `POST /api/compact/save` with `trigger: "proactive"` and a context summary extracted from the last 50 lines of the transcript. This saves the current state so that if Claude auto-compacts shortly after, `post-compact-restore.sh` has fresh data to work with.
-
-**Cooldown.** A 60-second cooldown prevents repeated snapshots. The timestamp of the last proactive snapshot is stored in `/tmp/.dcm-last-proactive`. If fewer than 60 seconds have elapsed since the last snapshot, the hook skips the save.
-
-**Logging.** All significant events (warnings, alerts, errors) are appended to `/tmp/dcm-monitor.log`.
-
-### Automated setup
-
-The setup script auto-injects all DCM hooks into `~/.claude/settings.json` using a jq deep merge. Existing non-DCM hooks in the settings file are preserved.
-
-```bash
-cd context-manager
-bash scripts/setup-hooks.sh
-```
-
-The script performs the following steps:
-
-1. Verifies that `jq` is installed.
-2. Creates `~/.claude/settings.json` if it does not exist.
-3. Checks whether DCM hooks are already present. If so, exits unless `--force` is passed.
-4. Backs up the current settings file to `~/.claude/settings.json.bak.<timestamp>`.
-5. Builds the complete hook configuration with absolute paths to the hook scripts.
-6. Merges the hooks into the existing settings using jq. The merge strategy strips any pre-existing DCM hook entries (matched by script name) before appending the new ones, so running the script twice does not create duplicates.
-7. Validates the resulting JSON. If validation fails, the backup is restored automatically.
-
-To force re-injection (for example after updating DCM):
-
-```bash
-bash scripts/setup-hooks.sh --force
-```
-
-The `dcm` CLI provides aliases for these operations:
-
-```bash
-./dcm hooks           # Same as bash scripts/setup-hooks.sh
-./dcm hooks --force   # Same as bash scripts/setup-hooks.sh --force
-./dcm unhook          # Remove all DCM hooks from settings.json (backs up first)
-```
-
-After any hook change, restart Claude Code for the new configuration to take effect.
+Both requests fire in parallel via background processes and complete independently. Timeouts: 1-second connect, 2-second max per request.
 
 ---
 
-## Plugin installation
+### track-session-end.sh
 
-As an alternative to global hooks injection, DCM can be installed as a Claude Code plugin. The plugin approach uses `hooks/hooks.json` with `${CLAUDE_PLUGIN_ROOT}` path variables, so hook script paths resolve automatically without hard-coded absolute paths.
+**Event:** SessionEnd (matcher: none / all)
+**Timeout:** 3 seconds
+**Purpose:** Mark the session as ended and clean up temporary files.
 
-**Plugin directory structure:**
+This hook fires when Claude Code terminates a session.
+
+**What it does:**
+
+1. Extracts `session_id` from stdin JSON. If unavailable, falls back to the most recent cache file in `/tmp/.claude-context/`.
+2. Calls `PATCH /api/sessions/{session_id}` with `ended_at` set to the current UTC timestamp.
+3. Removes the session cache file (`/tmp/.claude-context/{session_id}.json`).
+
+---
+
+## Complete Data Flow
+
+```
+Claude Code Session Lifecycle
+==========================================================================
+
+[1] SESSION START
+    |
+    | SessionStart(startup) fires
+    |
+    +-- ensure-services.sh               [timeout: 10s]
+    |     +-- GET /health
+    |     |     \-- If healthy -> exit (services already up)
+    |     +-- pg_isready
+    |     |     \-- If down -> warn, exit
+    |     +-- nohup bun run src/server.ts        -> /tmp/dcm-api.log
+    |     +-- nohup bun run src/websocket-server.ts -> /tmp/dcm-ws.log
+    |     \-- Poll /health until ready (max 5s)
+    |
+    +-- track-session.sh                  [timeout: 5s]
+    |     +-- POST /api/projects    (find or create project by path)
+    |     +-- POST /api/sessions    (register session ID)
+    |     +-- POST /api/requests    (initial request, prompt_type: "other")
+    |     +-- POST /api/tasks       (wave 0 task, status: running)
+    |     \-- Cache IDs -> /tmp/.claude-context/{session_id}.json
+    |
+    v
+[2] TOOL USAGE (repeats for every tool call)
+    |
+    | PostToolUse(*) fires
+    |
+    +-- track-action.sh                   [timeout: 3s]
+    |     \-- POST /api/actions
+    |           { tool_name, tool_type, input (2KB), session_id, project_path }
+    |
+    +-- track-agent.sh  (only for Task)   [timeout: 3s]
+    |     +-- Read task_id from cache (or auto-create hierarchy)
+    |     \-- POST /api/subtasks
+    |           { task_id, agent_type, agent_id, description, status }
+    |
+    +-- monitor-context.sh                [timeout: 2s]
+    |     +-- Increment /tmp/.dcm-monitor-counter
+    |     +-- Every 10th call: check transcript size
+    |     |     +-- < 500KB  -> green, do nothing
+    |     |     +-- 500-800KB -> yellow, log warning
+    |     |     \-- > 800KB  -> red, trigger proactive snapshot
+    |     \-- Proactive: POST /api/compact/save (trigger: proactive)
+    |           (60s cooldown via /tmp/.dcm-last-proactive)
+    |
+    \-- Server-side effects:
+          +-- Row inserted in PostgreSQL
+          +-- Session counters updated
+          +-- Keywords extracted for routing intelligence
+          \-- NOTIFY -> WebSocket server -> Dashboard
+    |
+    v
+[3] SUBAGENT COMPLETES
+    |
+    | SubagentStop fires
+    |
+    \-- save-agent-result.sh              [timeout: 3s]
+          +-- Read transcript for last Task result
+          +-- POST /api/messages (topic: agent.completed)  [background]
+          \-- PATCH /api/subtasks/{id} (status: completed) [background]
+    |
+    v
+[4] COMPACT (auto or /compact)
+    |
+    | PreCompact(auto|manual) fires
+    |
+    +-- pre-compact-save.sh               [timeout: 5s]
+    |     +-- GET /api/subtasks?status=running     (active tasks)
+    |     +-- GET /api/actions?limit=50            (modified files)
+    |     +-- GET /api/agent-contexts              (agent states)
+    |     +-- Read last 50 lines of transcript     (context summary)
+    |     \-- POST /api/compact/save               (full snapshot)
+    |
+    | ... Claude compacts the conversation ...
+    |
+    | SessionStart(compact) fires
+    |
+    \-- post-compact-restore.sh            [timeout: 8s]
+          +-- POST /api/compact/restore
+          |     { session_id, agent_id, agent_type, max_tokens: 3000 }
+          +-- Fallback: GET /api/compact/snapshot/{session_id}
+          \-- Output JSON to stdout:
+                {
+                  "hookSpecificOutput": {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": "<restored brief>"
+                  }
+                }
+                -> Claude sees restored context immediately
+    |
+    v
+[5] SESSION END
+    |
+    | SessionEnd fires
+    |
+    \-- track-session-end.sh              [timeout: 3s]
+          +-- PATCH /api/sessions/{id} (ended_at: now)
+          \-- rm /tmp/.claude-context/{session_id}.json
+```
+
+### Mermaid Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant CC as Claude Code
+    participant ES as ensure-services.sh
+    participant TS as track-session.sh
+    participant TA as track-action.sh
+    participant AG as track-agent.sh
+    participant MO as monitor-context.sh
+    participant PC as pre-compact-save.sh
+    participant PR as post-compact-restore.sh
+    participant SA as save-agent-result.sh
+    participant TE as track-session-end.sh
+    participant API as DCM API
+
+    Note over CC: Session starts
+    CC->>ES: SessionStart(startup)
+    ES->>API: GET /health
+    alt Not running
+        ES->>API: Start API + WS servers
+    end
+    CC->>TS: SessionStart(startup)
+    TS->>API: POST /api/projects
+    TS->>API: POST /api/sessions
+    TS->>API: POST /api/requests
+    TS->>API: POST /api/tasks
+
+    Note over CC: User prompts, Claude works
+    loop Every tool call
+        CC->>TA: PostToolUse(*)
+        TA->>API: POST /api/actions
+        CC->>MO: PostToolUse(*)
+        MO-->>MO: counter++ (check every 10th)
+    end
+
+    CC->>AG: PostToolUse(Task)
+    AG->>API: POST /api/subtasks
+
+    Note over CC: Subagent finishes
+    CC->>SA: SubagentStop
+    SA->>API: POST /api/messages
+    SA->>API: PATCH /api/subtasks/{id}
+
+    Note over CC: Compact triggered
+    CC->>PC: PreCompact(auto|manual)
+    PC->>API: POST /api/compact/save
+
+    Note over CC: After compact
+    CC->>PR: SessionStart(compact)
+    PR->>API: POST /api/compact/restore
+    PR-->>CC: additionalContext (injected)
+
+    Note over CC: Session ends
+    CC->>TE: SessionEnd
+    TE->>API: PATCH /api/sessions/{id}
+```
+
+---
+
+## Plugin Structure
+
+When installed as a Claude Code plugin, DCM uses this directory layout:
 
 ```
 context-manager/
   .claude-plugin/
-    plugin.json          Plugin manifest (name, version, description)
+    plugin.json             Plugin manifest
   hooks/
-    hooks.json           Plugin-native hook definitions
+    hooks.json              Plugin-native hook definitions
+    ensure-services.sh      Auto-start DCM services
+    track-session.sh        Session initialization
+    track-action.sh         Tool usage tracking
+    track-agent.sh          Agent spawn tracking
+    monitor-context.sh      Proactive context monitoring
+    pre-compact-save.sh     Pre-compact snapshot
+    post-compact-restore.sh Post-compact restore
+    save-agent-result.sh    Agent result broadcasting
+    track-session-end.sh    Session cleanup
   agents/
-    context-keeper.md    Agent for manual context inspection
+    context-keeper.md       Agent for manual context inspection
+  src/
+    server.ts               API server (Hono + Bun)
+    websocket-server.ts     WebSocket server (Bun native)
+    ...
 ```
 
-**Installation via the Claude Code plugin system:**
+### plugin.json
 
+The plugin manifest declares the package identity:
+
+```json
+{
+  "name": "dcm",
+  "version": "2.1.0",
+  "description": "Distributed Context Manager - Persistent context, cross-agent sharing, and compact recovery for Claude Code multi-agent sessions",
+  "author": { "name": "DCM Project" },
+  "repository": "https://github.com/ronylicha/Claude-DCM",
+  "license": "MIT"
+}
 ```
-/plugin marketplace add /path/to/Claude-DCM
-/plugin install dcm@dcm-marketplace
+
+### hooks.json
+
+The plugin hook definitions use `${CLAUDE_PLUGIN_ROOT}` so paths resolve automatically:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          { "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/ensure-services.sh", "timeout": 10 },
+          { "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/track-session.sh", "timeout": 5 }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          { "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/post-compact-restore.sh", "timeout": 8 }
+        ]
+      }
+    ]
+  }
+}
 ```
 
-Once installed, Claude Code discovers the plugin automatically and registers all hooks defined in `hooks/hooks.json`. The plugin provides the same hooks as the global setup (track-action, track-agent, monitor-context, track-session, post-compact-restore, pre-compact-save, save-agent-result, track-session-end) with the same timeouts.
+### context-keeper Agent
 
-The plugin also exposes the `context-keeper` agent, which can query DCM state, trigger manual snapshots, and display restored context on demand.
+The plugin also exposes the `context-keeper` agent, which can:
+- Query DCM state for the current session
+- Trigger manual context snapshots
+- Display restored context on demand
+- Check cross-agent message history
 
-**When to use plugin vs global hooks.** Use the plugin approach when you want Claude Code to manage hook lifecycle automatically and avoid touching `~/.claude/settings.json`. Use the global hooks approach when you need more control over hook configuration or want to customize timeouts and matchers.
+Invoke it from Claude Code when you need to inspect or manage DCM state manually.
 
 ---
 
@@ -421,464 +736,132 @@ cd context-manager
 ./dcm <command> [options]
 ```
 
-**Available commands:**
+### Commands
 
 | Command | Description |
 |---------|-------------|
-| `install` | Full first-time setup: check prerequisites, install dependencies, configure environment, set up database, inject hooks |
-| `start` | Start all DCM services (API on port 3847, WebSocket on port 3849, Dashboard on port 3848) |
-| `stop` | Stop all DCM services |
+| `install` | Full first-time setup: check prerequisites (bun, psql, jq, curl), install dependencies, configure `.env`, set up database, inject hooks |
+| `start` | Start all DCM services (API on port 3847, WS on port 3849, Dashboard on port 3848) |
+| `stop` | Stop all DCM services (by PID file, then by port as fallback) |
 | `restart` | Stop then start all services |
-| `status` | Show health status of all services, database connection, and hook installation |
-| `hooks` | Install or update Claude Code hooks (delegates to `scripts/setup-hooks.sh`) |
+| `status` | Show health status of API, WebSocket, Dashboard, PostgreSQL, and hook installation |
+| `hooks [--force]` | Install or update Claude Code hooks (delegates to `scripts/setup-hooks.sh`) |
 | `unhook` | Remove all DCM hooks from `~/.claude/settings.json` (backs up first) |
-| `health` | Quick health check against the API |
-| `logs <service>` | Tail logs for a service (`api`, `ws`, or `dashboard`) |
-| `snapshot [session_id]` | Trigger a manual context snapshot. If no session ID is provided, uses the most recent cached session |
-| `context <agent_id> [session_id]` | Get the context brief for an agent. Defaults to `orchestrator` if no agent ID is given |
+| `health` | Quick JSON health check against the API |
+| `logs <service>` | Tail logs for a service: `api`, `ws`, or `dashboard` |
+| `snapshot [session_id]` | Trigger a manual context snapshot. Uses the most recent cached session if no ID is provided |
+| `context [agent_id] [session_id]` | Get the context brief for an agent. Defaults to `orchestrator` if no agent ID is given |
 | `db:setup` | Initialize the database schema |
 | `db:reset` | Drop and recreate the database (prompts for confirmation) |
-| `version` | Print DCM version |
+| `version` | Print DCM version (currently v2.1.0) |
 
-**Examples:**
+### Examples
 
 ```bash
-./dcm install                           # First-time setup
-./dcm start                             # Start everything
-./dcm status                            # Check what's running
-./dcm context backend-laravel           # Get context for an agent
-./dcm snapshot abc-123                   # Manual snapshot for a session
-./dcm logs api                          # Tail API logs
-./dcm unhook                            # Remove hooks from settings.json
+./dcm install                        # First-time setup (deps + db + hooks)
+./dcm start                          # Start all services
+./dcm status                         # Check what is running
+./dcm health                         # Raw JSON health check
+./dcm context backend-laravel        # Get context brief for an agent
+./dcm snapshot abc-123               # Manual snapshot for a specific session
+./dcm logs api                       # Tail API server logs
+./dcm hooks --force                  # Re-inject hooks after DCM update
+./dcm unhook                         # Remove all DCM hooks
+./dcm db:reset                       # Drop and recreate database
 ```
 
 ---
 
-## TypeScript SDK
+## Environment Variables
 
-The SDK provides typed clients for both the REST API and the WebSocket server. Source files are located in `context-manager/src/sdk/`.
+### Hook Configuration
 
-```
-src/sdk/
-  index.ts      -- Package exports
-  types.ts      -- Type definitions (DCMConfig, ActionInput, etc.)
-  client.ts     -- DCMClient (REST)
-  ws-client.ts  -- DCMWebSocket (real-time events)
-```
+| Variable | Default | Used By | Description |
+|----------|---------|---------|-------------|
+| `CONTEXT_MANAGER_URL` | `http://127.0.0.1:3847` | All hooks except `ensure-services.sh` | Base URL for API calls |
+| `CLAUDE_PLUGIN_ROOT` | (auto-set by Claude Code) | Plugin mode only | Resolved to the plugin install directory |
 
-Import everything from the SDK entry point:
-
-```typescript
-import { DCMClient, DCMWebSocket } from "./context-manager/src/sdk";
-import type { ActionInput, MessageInput, DCMConfig } from "./context-manager/src/sdk";
-```
-
-### REST client
-
-`DCMClient` wraps all REST endpoints with typed methods, automatic retries, and configurable timeouts.
-
-#### Initialization
-
-```typescript
-const client = new DCMClient({
-  apiUrl: "http://127.0.0.1:3847",
-  timeout: 5000,    // Request timeout in ms (default: 5000)
-  retries: 2,       // Retry count on failure (default: 2)
-  authToken: "",    // Optional Bearer token
-});
-```
-
-All config fields are optional. Defaults connect to `localhost:3847` with a 5-second timeout and 2 retries.
-
-#### Health check
-
-```typescript
-const health = await client.health();
-// { status: "healthy", database: { healthy: true } }
-
-const ok = await client.isHealthy();
-// true
-```
-
-#### Recording actions
-
-```typescript
-await client.recordAction({
-  tool_name: "Read",
-  tool_type: "builtin",
-  input: "/src/components/App.tsx",
-  exit_code: 0,
-  session_id: "my-session",
-  project_path: "/home/user/my-project",
-});
-```
-
-The `ActionInput` type accepts these fields:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `tool_name` | string | Yes | Name of the tool used |
-| `tool_type` | `"builtin" \| "agent" \| "skill" \| "command" \| "mcp"` | Yes | Category of the tool |
-| `input` | string | No | Tool input (truncated by hooks to 2 KB) |
-| `output` | string | No | Tool output |
-| `exit_code` | number | No | Exit code (0 = success) |
-| `duration_ms` | number | No | Execution duration |
-| `file_paths` | string[] | No | Files involved |
-| `session_id` | string | No | Session identifier |
-| `project_path` | string | No | Project root path |
-
-#### Tool routing
-
-Get intelligent tool suggestions based on keywords extracted from the user's request:
-
-```typescript
-const result = await client.suggestTool(["react", "component", "create"], {
-  limit: 5,
-  min_score: 0.3,
-  tool_type: "agent",
-});
-
-for (const suggestion of result.suggestions) {
-  console.log(`${suggestion.tool_name} (score: ${suggestion.score})`);
-}
-```
-
-Submit feedback to improve routing accuracy over time:
-
-```typescript
-await client.routingFeedback("frontend-react", ["react", "component"], true);
-```
-
-#### Projects and sessions
-
-```typescript
-// Create a project (upsert by path)
-const project = await client.createProject("/home/user/my-project", "my-project");
-
-// Look up a project by its filesystem path
-const found = await client.getProjectByPath("/home/user/my-project");
-
-// Create a session
-const session = await client.createSession({
-  session_id: "abc-123",
-  project_id: project.project.id,
-  cwd: "/home/user/my-project",
-});
-
-// End a session
-await client.endSession("abc-123");
-```
-
-#### Requests, tasks, and subtasks
-
-```typescript
-// Create a request (represents a user prompt)
-const request = await client.createRequest(sessionId, "Add login page", projectId);
-
-// Create a task (represents a wave of work)
-const task = await client.createTask(request.request.id, "Wave 1 - Backend");
-
-// Create a subtask (represents a delegated agent)
-const subtask = await client.createSubtask({
-  task_id: task.task.id,
-  agent_type: "backend-laravel",
-  description: "Create authentication controller",
-  status: "running",
-});
-
-// Update subtask status when agent finishes
-await client.updateSubtask(subtask.subtask.id, {
-  status: "completed",
-  result: { files_created: ["AuthController.php"] },
-});
-```
-
-#### Inter-agent messaging
-
-```typescript
-// Send a message from one agent to another
-await client.sendMessage({
-  from_agent_id: "backend-laravel",
-  to_agent_id: "frontend-react",
-  topic: "api_endpoint_created",
-  payload: {
-    endpoint: "/api/users",
-    methods: ["GET", "POST"],
-    response_schema: { id: "string", email: "string" },
-  },
-  priority: 1,
-  ttl_ms: 300000, // Expires after 5 minutes
-});
-
-// Poll messages for an agent
-const messages = await client.getMessages("frontend-react", {
-  topic: "api_endpoint_created",
-  since: "2025-01-01T00:00:00Z",
-});
-```
-
-#### Agent blocking
-
-Coordinate dependencies between agents:
-
-```typescript
-// Block an agent until a dependency completes
-await client.blockAgent("frontend-react", "backend-laravel", "Waiting for API types");
-
-// Check if an agent is blocked
-const blocked = await client.isBlocked("backend-laravel");
-
-// Unblock when ready
-await client.unblockAgent("frontend-react", "backend-laravel");
-```
-
-#### Context and compact recovery
-
-```typescript
-// Get context brief for an agent
-const context = await client.getContext("backend-laravel", {
-  session_id: "my-session",
-  format: "brief",
-  max_tokens: 2000,
-});
-
-// Restore context after a /compact
-await client.restoreAfterCompact("my-session", "backend-laravel", "Summary of work done...");
-```
-
-### WebSocket client
-
-`DCMWebSocket` provides real-time event streaming with automatic reconnection and channel-based subscriptions.
-
-#### Connection
-
-```typescript
-const ws = new DCMWebSocket({
-  wsUrl: "ws://127.0.0.1:3849",
-  agentId: "my-agent",
-  sessionId: "my-session",
-  authToken: "", // Optional HMAC token for production
-});
-
-await ws.connect();
-```
-
-On connection, the client automatically sends an `auth` message and starts a ping interval every 25 seconds to keep the connection alive.
-
-#### Channel subscriptions
-
-```typescript
-// Subscribe to channels
-ws.subscribe("global");
-ws.subscribe("sessions/my-session-id");
-ws.subscribe("agents/backend-laravel");
-
-// Unsubscribe
-ws.unsubscribe("global");
-```
-
-#### Listening for events
-
-Three patterns are available depending on how you want to filter events:
-
-```typescript
-// 1. Listen to a specific channel (auto-subscribes if needed)
-const unsub = ws.on("global", (event) => {
-  console.log(`[${event.channel}] ${event.event}:`, event.data);
-});
-
-// 2. Listen for a specific event type across all channels
-ws.onEvent("action.created", (event) => {
-  console.log("New action:", event.data.tool_name);
-});
-
-ws.onEvent("subtask.created", (event) => {
-  console.log("Agent spawned:", event.data.agent_type);
-});
-
-// 3. Listen for every event
-ws.onAny((event) => {
-  console.log(`[${event.event}] on ${event.channel}`, event.data);
-});
-```
-
-Each listener returns an unsubscribe function:
-
-```typescript
-const unsub = ws.onEvent("task.completed", handler);
-// Later:
-unsub();
-```
-
-#### Publishing events
-
-```typescript
-ws.publish("global", "custom.event", {
-  message: "Something happened",
-  source: "my-script",
-});
-```
-
-#### Connection state
-
-```typescript
-ws.getState();  // "disconnected" | "connecting" | "connected" | "authenticated"
-ws.isReady();   // true when connected or authenticated
-```
-
-#### Auto-reconnect
-
-The client automatically reconnects on unexpected disconnections using exponential backoff:
-
-- Starts at 1 second, doubles each attempt, caps at 30 seconds.
-- Stops after 10 consecutive failures.
-- Restores all channel subscriptions after reconnecting.
-- Clean disconnects (code 1000) do not trigger reconnection.
-
-#### Disconnecting
-
-```typescript
-ws.disconnect(); // Sends close code 1000, stops ping interval, clears timers
-```
-
-#### Available event types
-
-| Category | Events |
-|----------|--------|
-| Tasks | `task.created`, `task.updated`, `task.completed`, `task.failed` |
-| Subtasks | `subtask.created`, `subtask.updated`, `subtask.completed`, `subtask.failed` |
-| Messages | `message.new`, `message.read`, `message.expired` |
-| Agents | `agent.connected`, `agent.disconnected`, `agent.heartbeat`, `agent.blocked`, `agent.unblocked` |
-| Sessions | `session.created`, `session.ended` |
-| System | `metric.update`, `system.error` |
-
----
-
-## Data flow
-
-```
-Claude Code Session
-    |
-    +-- Session starts (startup)
-    |    \-- track-session.sh
-    |         +-- POST /api/projects  (find or create project)
-    |         +-- POST /api/sessions  (register session)
-    |         +-- POST /api/requests  (initial request)
-    |         +-- POST /api/tasks     (wave 0 task)
-    |         \-- Cache IDs to /tmp/.claude-context/{session_id}.json
-    |
-    +-- User types a prompt, Claude processes...
-    |    |
-    |    +-- Uses Read tool
-    |    |    +-- track-action.sh  --> POST /api/actions
-    |    |    \-- monitor-context.sh (counter++, full check every 10th)
-    |    |
-    |    +-- Uses Write tool
-    |    |    +-- track-action.sh  --> POST /api/actions
-    |    |    \-- monitor-context.sh (counter++, full check every 10th)
-    |    |
-    |    +-- Uses Task tool (spawns agent)
-    |    |    +-- track-action.sh  --> POST /api/actions
-    |    |    +-- track-agent.sh   --> POST /api/subtasks
-    |    |    \-- monitor-context.sh (counter++, full check every 10th)
-    |    |
-    |    +-- Uses Skill tool
-    |    |    +-- track-action.sh  --> POST /api/actions (effective name = skill name)
-    |    |    \-- monitor-context.sh (counter++, full check every 10th)
-    |    |
-    |    \-- Each action triggers:
-    |         +-- Row inserted in PostgreSQL
-    |         +-- Session counters updated
-    |         +-- Keywords extracted for routing intelligence
-    |         \-- NOTIFY --> WebSocket server --> Dashboard
-    |
-    +-- Subagent finishes
-    |    \-- save-agent-result.sh
-    |         +-- POST /api/messages  (broadcast agent.completed)
-    |         \-- PATCH /api/subtasks/{id}  (mark completed)
-    |
-    +-- Context grows large (monitor detects >800 KB)
-    |    \-- monitor-context.sh
-    |         \-- POST /api/compact/save  (trigger=proactive, 60s cooldown)
-    |
-    +-- Compact triggered (auto or /compact)
-    |    +-- pre-compact-save.sh (PreCompact)
-    |    |    +-- GET /api/subtasks?status=running  (active tasks)
-    |    |    +-- GET /api/actions?limit=50         (modified files)
-    |    |    +-- GET /api/agent-contexts            (agent states)
-    |    |    \-- POST /api/compact/save             (full snapshot)
-    |    |
-    |    \-- [Claude compacts the conversation]
-    |
-    +-- Session resumes after compact
-    |    \-- post-compact-restore.sh (SessionStart, compact matcher)
-    |         +-- POST /api/compact/restore  (get context brief)
-    |         +-- Fallback: GET /api/compact/snapshot/{session_id}
-    |         \-- Output JSON with hookSpecificOutput.additionalContext
-    |              \-- Claude sees restored context immediately
-    |
-    \-- Dashboard (http://localhost:3848)
-         +-- Real-time event stream
-         +-- Session list with action counters
-         +-- Agent activity and subtask tracking
-         \-- Tool usage analytics and routing tester
-```
-
----
-
-## Environment variables
+### Service Configuration (ensure-services.sh and dcm CLI)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CONTEXT_MANAGER_URL` | `http://127.0.0.1:3847` | API URL used by hooks |
+| `PORT` | `3847` | API server port |
+| `WS_PORT` | `3849` | WebSocket server port |
+| `DASHBOARD_PORT` | `3848` | Dashboard port (CLI only) |
+| `DB_USER` | `dcm` | PostgreSQL username |
+| `DB_NAME` | `claude_context` | PostgreSQL database name |
+| `DB_HOST` | `127.0.0.1` | PostgreSQL host |
+| `DB_PORT` | `5432` | PostgreSQL port |
 
-The hooks read this variable at runtime. Set it in your shell profile if the API runs on a non-default host or port:
+### Setting a Custom API URL
+
+If the DCM API runs on a non-default host or port, set `CONTEXT_MANAGER_URL` in your shell profile:
 
 ```bash
 export CONTEXT_MANAGER_URL="http://192.168.1.50:3847"
 ```
 
-For the TypeScript SDK, pass the URL through the `DCMConfig` object:
-
-```typescript
-const client = new DCMClient({ apiUrl: "http://192.168.1.50:3847" });
-const ws = new DCMWebSocket({ wsUrl: "ws://192.168.1.50:3849" });
-```
+All hooks read this variable at runtime. For the `ensure-services.sh` hook, configure the `PORT` and `WS_PORT` variables in the `.env` file instead (it manages service startup directly).
 
 ---
 
 ## Troubleshooting
 
-### Hooks are not sending data
+### Services not starting automatically
+
+If `ensure-services.sh` does not launch the services on session start:
+
+1. **Check PostgreSQL:** The hook requires PostgreSQL to be running. Verify: `pg_isready -h 127.0.0.1 -p 5432 -U dcm`
+2. **Check the lock file:** A stale lock at `/tmp/.dcm-autostart.lock` (older than 30 seconds) should be auto-removed, but you can delete it manually: `rm -f /tmp/.dcm-autostart.lock`
+3. **Check logs:** Review `/tmp/dcm-api.log` and `/tmp/dcm-ws.log` for startup errors.
+4. **Check the .env file:** Ensure `context-manager/.env` has correct database credentials.
+5. **Check Bun:** Verify Bun is installed and in PATH: `bun --version`
+
+### Hooks not sending data
 
 1. Verify the API is running: `curl http://localhost:3847/health`
-2. Check that the hook scripts are executable: `ls -la context-manager/hooks/*.sh`
+2. Check that hook scripts are executable: `ls -la context-manager/hooks/*.sh`
 3. Run a hook manually to see errors:
    ```bash
-   echo '{"tool_name":"Read","tool_input":{},"session_id":"test","cwd":"/tmp"}' | bash context-manager/hooks/track-action.sh 0
+   echo '{"tool_name":"Read","tool_input":{},"session_id":"test","cwd":"/tmp"}' | \
+     bash context-manager/hooks/track-action.sh 0
    ```
-4. Confirm `jq` is installed: `jq --version`
+4. Confirm jq is installed: `jq --version`
+5. If using global mode, verify hooks are in `~/.claude/settings.json`:
+   ```bash
+   jq '.hooks' ~/.claude/settings.json
+   ```
 
 ### Actions appear in the API but not on the dashboard
 
-The dashboard receives events through the WebSocket server. Make sure the WebSocket process is running on port 3849 and that PostgreSQL `LISTEN/NOTIFY` is functioning:
+The dashboard receives events through the WebSocket server. Verify the WebSocket process is running and that PostgreSQL LISTEN/NOTIFY is functioning:
 
 ```bash
 # Check WebSocket server
+lsof -i :3849
+
+# Check via health endpoint
 curl -s http://localhost:3847/health | jq .websocket
 
 # Test WebSocket connection
 npx wscat -c ws://localhost:3849
 ```
 
-### Agent subtasks are not tracked
+### Agent subtasks not tracked
 
-`track-agent.sh` only fires when the `Task` tool is used. Verify the matcher in `settings.json` is set to `"Task"` (case-sensitive). Also confirm the cache directory `/tmp/.claude-context/` is writable.
+`track-agent.sh` only fires for `Task` tool calls. Check:
+
+1. The matcher in settings.json is `"Task"` (case-sensitive).
+2. The cache directory `/tmp/.claude-context/` exists and is writable.
+3. The Task tool input includes `subagent_type` (required for subtask creation).
 
 ### Context not restored after compact
 
-1. Check that `pre-compact-save.sh` ran before compact. Look for a snapshot: `curl http://localhost:3847/api/compact/snapshot/<session_id>`
-2. Check that `post-compact-restore.sh` is registered under `SessionStart` with matcher `"compact"`.
+1. Verify `pre-compact-save.sh` ran before compact. Check for a snapshot:
+   ```bash
+   curl http://localhost:3847/api/compact/snapshot/<session_id>
+   ```
+2. Confirm `post-compact-restore.sh` is registered under `SessionStart` with matcher `"compact"`.
 3. Test the restore endpoint directly:
    ```bash
    curl -s -X POST http://localhost:3847/api/compact/restore \
@@ -889,7 +872,7 @@ npx wscat -c ws://localhost:3849
 
 ### Monitor hook not triggering snapshots
 
-The monitor only runs a full check every 10th tool call. To verify it is counting:
+The monitor only runs a full check every 10th tool call. Verify it is counting:
 
 ```bash
 cat /tmp/.dcm-monitor-counter
@@ -903,7 +886,7 @@ The 60-second cooldown may also prevent repeated snapshots. Check the last trigg
 cat /tmp/.dcm-last-proactive
 ```
 
-Review the monitor log for warnings and alerts:
+Review the monitor log:
 
 ```bash
 cat /tmp/dcm-monitor.log
@@ -911,14 +894,27 @@ cat /tmp/dcm-monitor.log
 
 ### Agent results not shared
 
-`save-agent-result.sh` fires on SubagentStop. It reads the transcript file to find the last Task tool result. If the transcript is not accessible or contains no Task results, the hook exits silently. Verify the hook is registered under `SubagentStop` in settings.json and that the transcript path is valid.
+`save-agent-result.sh` fires on SubagentStop. It reads the transcript file to find the last Task tool result. If the transcript is not accessible or contains no Task results, the hook exits silently. Verify:
 
-### SDK connection refused
+1. The hook is registered under `SubagentStop` in settings.json or hooks.json.
+2. The transcript path is valid and readable.
+3. The transcript contains Task tool entries (JSONL with `type: "tool_result"` and `tool_name: "Task"`).
 
-Verify the API and WebSocket ports are open and not blocked by a firewall:
+### Resetting all temporary state
+
+To clear all DCM hook state and start fresh:
 
 ```bash
-ss -tlnp | grep -E '3847|3849'
+rm -rf /tmp/.claude-context/
+rm -f /tmp/.dcm-monitor-counter
+rm -f /tmp/.dcm-last-proactive
+rm -f /tmp/.dcm-autostart.lock
+rm -rf /tmp/.dcm-pids/
+rm -f /tmp/dcm-monitor.log
 ```
 
-If running in Docker, confirm the ports are mapped in `docker-compose.yml`.
+This does not affect data stored in PostgreSQL. To reset the database as well:
+
+```bash
+./dcm db:reset
+```

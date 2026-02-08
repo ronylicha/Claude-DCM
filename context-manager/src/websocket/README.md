@@ -1,267 +1,221 @@
-# WebSocket Server - Phase 8
+# DCM WebSocket Server
 
-Real-time communication system for the Context Dashboard and inter-agent messaging.
+Real-time event streaming for the Distributed Context Manager, built on Bun native WebSocket.
 
-## Architecture
+Runs on port **3849** alongside the API server (3847) and dashboard (3848). Events flow from PostgreSQL LISTEN/NOTIFY through the bridge layer and out to all subscribed clients.
 
-```
-                    +-----------------+
-                    |   Dashboard     |
-                    |  (port 3848)    |
-                    +--------+--------+
-                             |
-                             | WebSocket
-                             |
-                    +--------v--------+
-                    |   WS Server     |
-                    |  (port 3849)    |
-                    +--------+--------+
-                             |
-              +--------------+--------------+
-              |                             |
-     +--------v--------+           +--------v--------+
-     |   API Server    |           |    Database     |
-     |  (port 3847)    |           |   (PostgreSQL)  |
-     +-----------------+           +-----------------+
-```
+## Connection
 
-## Quick Start
+    ws://127.0.0.1:3849?agent_id=<agent_id>&session_id=<session_id>
 
-### Start WebSocket Server Only
+Both query parameters are optional. On connection, the server assigns a unique client ID and auto-subscribes the client to the `global` channel.
 
-```bash
-cd ~/.claude/services/context-manager
-bun run ws
-```
-
-### Start Both API and WebSocket Servers
-
-```bash
-cd ~/.claude/services/context-manager
-bun run start
-# Or
-bun run dev:all
-```
-
-### Start API Server Only
-
-```bash
-bun run dev
-```
+Upgrade paths: `/` or `/ws`.
 
 ## Channels
 
-| Channel | Description | Example |
-|---------|-------------|---------|
-| `global` | System-wide broadcasts | All events |
-| `metrics` | KPI updates (every 5s) | Performance metrics |
-| `agents/{agent_id}` | Agent-specific messages | `agents/backend-laravel` |
-| `sessions/{session_id}` | Session events | `sessions/abc123` |
-| `topics/{topic}` | Topic-based messages | `topics/deployments` |
+| Channel | Pattern | Description |
+|---------|---------|-------------|
+| `global` | -- | All events, auto-subscribed on connect |
+| `metrics` | -- | KPI snapshots every 5 seconds |
+| `agents/{id}` | `agents/backend-laravel` | Agent-scoped events, auto-subscribed on auth |
+| `sessions/{id}` | `sessions/abc123` | Session-scoped events, auto-subscribed on auth |
+| `topics/{topic}` | `topics/deployments` | Arbitrary topic-based grouping |
+
+Agent channels are private: subscribing to another agent's channel requires authentication.
 
 ## Events
 
-### Task Events
-- `task.created` - New task added to queue
-- `task.updated` - Task status changed
-- `task.completed` - Task finished successfully
-- `task.failed` - Task failed
+| Category | Events |
+|----------|--------|
+| Task | `task.created`, `task.updated`, `task.completed`, `task.failed` |
+| Subtask | `subtask.created`, `subtask.updated`, `subtask.completed`, `subtask.failed`, `subtask.running` |
+| Message | `message.new`, `message.read`, `message.expired` |
+| Agent | `agent.connected`, `agent.disconnected`, `agent.heartbeat`, `agent.blocked`, `agent.unblocked` |
+| Session | `session.created`, `session.ended` |
+| Metric | `metric.update` |
+| System | `system.error`, `system.info` |
 
-### Subtask Events
-- `subtask.created` - New subtask created
-- `subtask.updated` - Subtask in progress
-- `subtask.completed` - Subtask finished
-- `subtask.failed` - Subtask failed
+Task, subtask, and message events use at-least-once delivery with retry (up to 3 attempts, 5s ack timeout).
 
-### Message Events
-- `message.new` - New inter-agent message
-- `message.read` - Message was read
-- `message.expired` - Message TTL expired
-
-### Agent Events
-- `agent.connected` - Agent joined
-- `agent.disconnected` - Agent left
-- `agent.heartbeat` - Agent keepalive
-
-### Metric Events
-- `metric.update` - Real-time KPI snapshot
-
-## Client Usage
-
-### JavaScript/TypeScript
-
-```typescript
-// Connect
-const ws = new WebSocket('ws://127.0.0.1:3849?agent_id=my-agent&session_id=abc123');
-
-// On connected
-ws.onopen = () => {
-  // Subscribe to a channel
-  ws.send(JSON.stringify({
-    type: 'subscribe',
-    channel: 'global',
-    id: 'sub-1',
-    timestamp: Date.now()
-  }));
-
-  // Authenticate (optional, for private channels)
-  ws.send(JSON.stringify({
-    type: 'auth',
-    agent_id: 'my-agent',
-    session_id: 'abc123',
-    timestamp: Date.now()
-  }));
-};
-
-// Handle events
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-
-  if (data.event) {
-    console.log(`Event: ${data.event}`, data.data);
-  }
-};
-
-// Publish an event
-ws.send(JSON.stringify({
-  type: 'publish',
-  channel: 'agents/other-agent',
-  event: 'message.new',
-  data: { content: 'Hello!' },
-  id: 'pub-1',
-  timestamp: Date.now()
-}));
-
-// Keepalive ping
-setInterval(() => {
-  ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
-}, 25000);
-```
-
-### React Hook (Dashboard)
-
-```typescript
-import { useWebSocket, useRealtimeMetrics } from '@/hooks/useWebSocket';
-
-// Basic connection
-const { connected, lastMessage, send } = useWebSocket({
-  channels: ['global'],
-  onEvent: (event) => console.log(event)
-});
-
-// Real-time metrics
-const { metrics, connected } = useRealtimeMetrics();
-// metrics: { active_sessions, active_agents, actions_per_minute, ... }
-```
-
-## API Endpoints
-
-### Health Check
-```
-GET http://127.0.0.1:3849/health
-```
-
-Response:
-```json
-{
-  "status": "healthy",
-  "type": "websocket",
-  "port": 3849,
-  "connectedClients": 5,
-  "activeChannels": 3,
-  "channelStats": {
-    "global": 5,
-    "metrics": 2
-  },
-  "timestamp": "2026-01-30T12:00:00.000Z"
-}
-```
-
-### Stats
-```
-GET http://127.0.0.1:3849/stats
-```
-
-## Message Format
+## Wire Protocol
 
 ### Client to Server
 
-```typescript
-// Subscribe
-{ type: 'subscribe', channel: 'global', id: 'msg-1', timestamp: 1234567890 }
+Subscribe to a channel:
 
-// Unsubscribe
-{ type: 'unsubscribe', channel: 'global', id: 'msg-2', timestamp: 1234567890 }
+    { "type": "subscribe", "channel": "metrics", "id": "sub-1", "timestamp": 1706000000000 }
 
-// Publish
-{
-  type: 'publish',
-  channel: 'agents/target',
-  event: 'message.new',
-  data: { ... },
-  id: 'msg-3',
-  timestamp: 1234567890
-}
+Unsubscribe:
 
-// Auth
-{ type: 'auth', agent_id: 'my-agent', session_id: 'abc123', timestamp: 1234567890 }
+    { "type": "unsubscribe", "channel": "metrics", "id": "unsub-1", "timestamp": 1706000000000 }
 
-// Ping
-{ type: 'ping', timestamp: 1234567890 }
-```
+Publish an event to a channel:
+
+    {
+      "type": "publish",
+      "channel": "agents/frontend",
+      "event": "message.new",
+      "data": { "content": "hello" },
+      "id": "pub-1",
+      "timestamp": 1706000000000
+    }
+
+Authenticate (token required in production, agent_id alone accepted in dev):
+
+    {
+      "type": "auth",
+      "agent_id": "my-agent",
+      "session_id": "sess-1",
+      "token": "...",
+      "timestamp": 1706000000000
+    }
+
+Keepalive ping:
+
+    { "type": "ping", "timestamp": 1706000000000 }
+
+Acknowledge a tracked message:
+
+    { "type": "ack", "message_id": "msg_abc123", "timestamp": 1706000000000 }
 
 ### Server to Client
 
+Connection confirmation:
+
+    { "type": "connected", "client_id": "ws_m1abc_x7k9f2", "timestamp": 1706000000000 }
+
+Event delivery:
+
+    {
+      "id": "msg_abc123",
+      "channel": "global",
+      "event": "task.completed",
+      "data": { "task_id": "...", "status": "completed" },
+      "timestamp": 1706000000000
+    }
+
+Operation acknowledgment:
+
+    { "type": "ack", "id": "sub-1", "success": true, "timestamp": 1706000000000 }
+
+Pong:
+
+    { "type": "pong", "timestamp": 1706000000000 }
+
+Error:
+
+    { "error": "Invalid channel format: bad/channel/path", "code": "INVALID_CHANNEL", "timestamp": 1706000000000 }
+
+## Client Examples
+
+### TypeScript -- Connect, Subscribe, Handle Events
+
 ```typescript
-// Connected
-{ type: 'connected', client_id: 'ws_abc123_def456', timestamp: 1234567890 }
+const ws = new WebSocket("ws://127.0.0.1:3849?agent_id=my-agent&session_id=sess-1");
 
-// Event
-{
-  channel: 'global',
-  event: 'task.completed',
-  data: { task_id: '...', status: 'completed' },
-  timestamp: 1234567890
-}
+ws.onopen = () => {
+  // Authenticate (required for private channel access)
+  ws.send(JSON.stringify({
+    type: "auth",
+    agent_id: "my-agent",
+    session_id: "sess-1",
+    timestamp: Date.now(),
+  }));
 
-// Ack
-{ type: 'ack', id: 'msg-1', success: true, timestamp: 1234567890 }
+  // Subscribe to metrics
+  ws.send(JSON.stringify({
+    type: "subscribe",
+    channel: "metrics",
+    id: "sub-metrics",
+    timestamp: Date.now(),
+  }));
+};
 
-// Pong
-{ type: 'pong', timestamp: 1234567890 }
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
 
-// Error
-{ error: 'Invalid channel', code: 'INVALID_CHANNEL', timestamp: 1234567890 }
+  switch (msg.type) {
+    case "connected":
+      console.log("Connected as", msg.client_id);
+      break;
+    case "ack":
+      console.log("Ack:", msg.id, msg.success);
+      break;
+    case "ping":
+      ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+      break;
+    default:
+      if (msg.event) {
+        console.log("[" + msg.channel + "] " + msg.event, msg.data);
+        // Acknowledge tracked messages
+        if (msg.id) {
+          ws.send(JSON.stringify({ type: "ack", message_id: msg.id, timestamp: Date.now() }));
+        }
+      }
+  }
+};
 ```
 
-## Configuration
+### TypeScript -- Publish an Event
 
-Environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WS_PORT` | 3849 | WebSocket server port |
-| `HOST` | 127.0.0.1 | Bind address |
-
-## Files
-
-| File | Description |
-|------|-------------|
-| `src/websocket/types.ts` | TypeScript type definitions |
-| `src/websocket/handlers.ts` | Connection/message handlers |
-| `src/websocket/bridge.ts` | Database to WebSocket bridge |
-| `src/websocket/server.ts` | Bun WebSocket server |
-| `src/websocket-server.ts` | Entry point |
+```typescript
+ws.send(JSON.stringify({
+  type: "publish",
+  channel: "agents/backend-laravel",
+  event: "message.new",
+  data: { content: "Migration complete", priority: 1 },
+  id: "pub-1",
+  timestamp: Date.now(),
+}));
+```
 
 ## Dashboard Integration
 
-The dashboard uses these hooks in `src/hooks/useWebSocket.ts`:
+The Next.js dashboard (port 3848) connects via React hooks defined in `src/hooks/useWebSocket.ts`:
 
-- `useWebSocket()` - Basic WebSocket connection
-- `useRealtimeMetrics()` - Subscribe to metrics channel
-- `useRealtimeEvents()` - Subscribe to event stream
-- `useAgentChannel()` - Agent-specific communication
+| Hook | Purpose |
+|------|---------|
+| `useWebSocket({ channels, onEvent })` | Manages connection lifecycle and channel subscriptions |
+| `useRealtimeMetrics()` | Subscribes to the `metrics` channel, returns live KPI data |
+| `useRealtimeEvents()` | Subscribes to the event stream for the `/live` page |
+| `useAgentChannel(agentId)` | Subscribes to a specific agent channel |
 
-Pages updated:
-- `/live` - Real-time event stream with filtering
-- `/dashboard` - Live KPI cards with WebSocket indicator
+The dashboard pages `/live` (event stream with filtering) and `/dashboard` (KPI cards) consume these hooks.
+
+## HTTP Endpoints
+
+The WebSocket server also serves two HTTP endpoints on the same port:
+
+| Endpoint | Response |
+|----------|----------|
+| `GET /health` | Server status, connected client count, active channels, channel subscriber counts |
+| `GET /stats` | Connected clients, active channels, channel stats, pending delivery count |
+
+## Authentication
+
+HMAC-SHA256 tokens with 1-hour TTL. Token format: `base64url(payload).signature`.
+
+- **Development**: `agent_id` alone is accepted without a token.
+- **Production**: A valid token is required (`WS_AUTH_SECRET` env var must be set).
+
+On successful auth, the server auto-subscribes the client to `agents/{agent_id}` and `sessions/{session_id}`, and restores any previous subscriptions from a prior connection.
+
+## Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WS_PORT` | `3849` | WebSocket server port |
+| `HOST` | `127.0.0.1` | Bind address |
+| `WS_AUTH_SECRET` | `dcm-dev-secret-change-me` | HMAC signing secret |
+
+## Internals
+
+| File | Role |
+|------|------|
+| `server.ts` | Bun.serve setup, HTTP upgrade, heartbeat loop (30s interval, 60s timeout) |
+| `handlers.ts` | Client registry, channel management, message routing, delivery retry |
+| `bridge.ts` | PostgreSQL LISTEN/NOTIFY to WebSocket bridge, metrics polling (5s) |
+| `auth.ts` | HMAC-SHA256 token generation and validation |
+| `types.ts` | TypeScript types for channels, events, and wire protocol |
+| `index.ts` | Module re-exports |
