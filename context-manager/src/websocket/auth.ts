@@ -3,8 +3,12 @@
  * Uses HMAC-SHA256 tokens for agent authentication
  */
 import { config } from "../config";
+import { createHmac, timingSafeEqual } from "crypto";
 
-const AUTH_SECRET = process.env["WS_AUTH_SECRET"] || "dcm-dev-secret-change-me";
+const AUTH_SECRET = process.env["WS_AUTH_SECRET"];
+if (!AUTH_SECRET) {
+  throw new Error("WS_AUTH_SECRET environment variable is required for secure authentication");
+}
 const TOKEN_TTL_MS = 3600000; // 1 hour
 
 interface TokenPayload {
@@ -18,6 +22,11 @@ interface TokenPayload {
  * Generate an auth token for an agent
  */
 export function generateToken(agentId: string, sessionId?: string): string {
+  // Validate agent_id format (alphanumeric, hyphens, underscores only)
+  if (!agentId || !/^[a-zA-Z0-9_-]+$/.test(agentId)) {
+    throw new Error("Invalid agent_id format");
+  }
+  
   const payload: TokenPayload = {
     agent_id: agentId,
     session_id: sessionId,
@@ -25,9 +34,10 @@ export function generateToken(agentId: string, sessionId?: string): string {
     expires_at: Date.now() + TOKEN_TTL_MS,
   };
   const data = JSON.stringify(payload);
-  const hasher = new Bun.CryptoHasher("sha256");
-  hasher.update(AUTH_SECRET + data);
-  const signature = hasher.digest("hex");
+  // Use proper HMAC instead of string concatenation
+  const signature = createHmac("sha256", AUTH_SECRET)
+    .update(data)
+    .digest("hex");
   // Token format: base64(payload).signature
   const encoded = Buffer.from(data).toString("base64url");
   return `${encoded}.${signature}`;
@@ -42,14 +52,25 @@ export function validateToken(token: string): TokenPayload | null {
     if (!encoded || !signature) return null;
 
     const data = Buffer.from(encoded, "base64url").toString();
-    const hasher = new Bun.CryptoHasher("sha256");
-    hasher.update(AUTH_SECRET + data);
-    const expectedSig = hasher.digest("hex");
+    // Use proper HMAC instead of string concatenation
+    const expectedSig = createHmac("sha256", AUTH_SECRET)
+      .update(data)
+      .digest("hex");
 
-    if (signature !== expectedSig) return null;
+    // Use constant-time comparison to prevent timing attacks
+    const sigBuffer = Buffer.from(signature, "hex");
+    const expectedBuffer = Buffer.from(expectedSig, "hex");
+    
+    if (sigBuffer.length !== expectedBuffer.length) return null;
+    if (!timingSafeEqual(sigBuffer, expectedBuffer)) return null;
 
     const payload: TokenPayload = JSON.parse(data);
     if (payload.expires_at < Date.now()) return null;
+
+    // Validate agent_id format
+    if (!payload.agent_id || !/^[a-zA-Z0-9_-]+$/.test(payload.agent_id)) {
+      return null;
+    }
 
     return payload;
   } catch {

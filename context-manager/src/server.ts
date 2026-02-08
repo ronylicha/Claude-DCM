@@ -827,13 +827,34 @@ app.get("/stats/tools-summary", getToolsSummary);
 app.post("/api/auth/token", async (c) => {
   try {
     const body = await c.req.json() as { agent_id: string; session_id?: string };
+    
+    // Validate agent_id is provided and format
     if (!body.agent_id) {
       return c.json({ error: "Missing agent_id" }, 400);
     }
+    
+    // Validate agent_id format (alphanumeric, hyphens, underscores, max 64 chars)
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(body.agent_id)) {
+      return c.json({ 
+        error: "Invalid agent_id format. Must be alphanumeric with hyphens/underscores, max 64 characters" 
+      }, 400);
+    }
+    
+    // Validate session_id format if provided
+    if (body.session_id && !/^[a-zA-Z0-9_-]{1,128}$/.test(body.session_id)) {
+      return c.json({ 
+        error: "Invalid session_id format. Must be alphanumeric with hyphens/underscores, max 128 characters" 
+      }, 400);
+    }
+    
     const token = generateToken(body.agent_id, body.session_id);
     return c.json({ token, expires_in: 3600 });
   } catch (error) {
-    return c.json({ error: "Failed to generate token" }, 500);
+    console.error("[API] POST /api/auth/token error:", error);
+    return c.json({ 
+      error: "Failed to generate token",
+      message: error instanceof Error ? error.message : "Unknown error"
+    }, 500);
   }
 });
 
