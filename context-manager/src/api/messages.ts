@@ -232,7 +232,7 @@ export async function getMessages(c: Context): Promise<Response> {
     if (messageIds.length > 0) {
       await sql`
         UPDATE agent_messages
-        SET read_by = array_append(read_by, ${agentId})
+        SET read_by = array_append(COALESCE(read_by, '{}'::text[]), ${agentId})
         WHERE id = ANY(${messageIds})
           AND (read_by IS NULL OR NOT (${agentId} = ANY(read_by)))
       `;
