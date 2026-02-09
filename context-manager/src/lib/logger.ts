@@ -1,26 +1,42 @@
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+const LOG_LEVELS: Record<LogLevel, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+};
+
 export function getLogLevel(): LogLevel {
   const level = process.env.LOG_LEVEL?.toLowerCase() as LogLevel | undefined;
   return level && ['debug', 'info', 'warn', 'error'].includes(level) ? level : 'info';
 }
 
+function shouldLog(configuredLevel: LogLevel, messageLevel: LogLevel): boolean {
+  return LOG_LEVELS[messageLevel] >= LOG_LEVELS[configuredLevel];
+}
+
 export function createLogger(tag: string) {
   const logLevel = getLogLevel();
-  const shouldDebug = logLevel === 'debug' || process.env.DEBUG;
 
   return {
     info(...args: unknown[]) {
-      console.log(`[${tag}]`, ...args);
+      if (shouldLog(logLevel, 'info')) {
+        console.log(`[${tag}]`, ...args);
+      }
     },
     warn(...args: unknown[]) {
-      console.warn(`[${tag}]`, ...args);
+      if (shouldLog(logLevel, 'warn')) {
+        console.warn(`[${tag}]`, ...args);
+      }
     },
     error(...args: unknown[]) {
-      console.error(`[${tag}]`, ...args);
+      if (shouldLog(logLevel, 'error')) {
+        console.error(`[${tag}]`, ...args);
+      }
     },
     debug(...args: unknown[]) {
-      if (shouldDebug) {
+      if (shouldLog(logLevel, 'debug') || process.env.DEBUG) {
         console.debug(`[${tag}]`, ...args);
       }
     },
