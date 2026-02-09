@@ -6,8 +6,6 @@
 
 import { createLogger } from "./lib/logger";
 import { getDb } from "./db/client";
-
-const log = createLogger("ContextGenerator");
 import { generateBrief } from "./templates";
 import type {
   ContextBrief,
@@ -21,6 +19,8 @@ import type {
   SessionContext,
   ProjectContext,
 } from "./context/types";
+
+const log = createLogger("ContextGenerator");
 
 /** Characters per token for estimation (optimized for English text/code) */
 const CHARS_PER_TOKEN = 3.5;
