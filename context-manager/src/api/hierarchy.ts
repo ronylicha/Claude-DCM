@@ -184,7 +184,7 @@ export async function getHierarchy(c: Context): Promise<Response> {
       task.subtasks.push({
         id: row['subtask_id'] as string,
         task_list_id: row['task_list_id'] as string,
-        task_id: row['task_list_id'] as string,
+        task_id: taskId,
         agent_type: row['agent_type'] as string | null,
         agent_id: row['agent_id'] as string | null,
         description: row['subtask_description'] as string,
