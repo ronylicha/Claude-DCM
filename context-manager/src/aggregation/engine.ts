@@ -5,6 +5,10 @@
  */
 
 import { getDb, publishEvent } from "../db/client";
+import { createLogger } from "../lib/logger";
+import { completeTask as completeWaveTask } from "../waves/manager";
+
+const log = createLogger("AGGREGATION");
 
 export interface Synthesis {
   summary: string;
@@ -223,12 +227,73 @@ export async function checkBatchCompletion(batchId: string): Promise<boolean> {
     WHERE id = ${batchId}
   `;
 
+  // Get parent context for cascade updates
+  const parentInfo = await sql<{ request_id: string; wave_number: number; session_id: string }[]>`
+    SELECT tl.request_id, tl.wave_number, r.session_id
+    FROM task_lists tl
+    JOIN requests r ON r.id = tl.request_id
+    WHERE tl.id = ${batchId}
+  `;
+
+  // Update wave_states counters (fire and forget)
+  if (parentInfo[0]) {
+    completeWaveTask(parentInfo[0].session_id, parentInfo[0].wave_number, failed > 0).catch(err =>
+      log.error("Wave state update error:", err)
+    );
+  }
+
   // Publish batch completion event
   await publishEvent("global", "batch.completed", {
     batch_id: batchId,
     total: subtasks.length,
     completed,
     failed,
+  });
+
+  // Auto-complete parent request if all tasks are done
+  if (parentInfo[0]?.request_id) {
+    checkRequestCompletion(parentInfo[0].request_id).catch(err =>
+      log.error("Request completion check error:", err)
+    );
+  }
+
+  return true;
+}
+
+/**
+ * Check if all tasks in a request are completed or failed
+ * Auto-completes the parent request when done
+ */
+export async function checkRequestCompletion(requestId: string): Promise<boolean> {
+  const sql = getDb();
+
+  const tasks = await sql<{ id: string; status: string }[]>`
+    SELECT id, status FROM task_lists WHERE request_id = ${requestId}
+  `;
+
+  if (tasks.length === 0) return false;
+
+  const allDone = tasks.every(
+    (t) => t.status === "completed" || t.status === "failed"
+  );
+
+  if (!allDone) return false;
+
+  const failed = tasks.filter((t) => t.status === "failed").length;
+  const finalStatus = failed > 0 ? "failed" : "completed";
+
+  await sql`
+    UPDATE requests
+    SET status = ${finalStatus}, completed_at = NOW()
+    WHERE id = ${requestId} AND status != ${finalStatus}
+  `;
+
+  await publishEvent("global", "request.completed", {
+    request_id: requestId,
+    total_tasks: tasks.length,
+    completed: tasks.length - failed,
+    failed,
+    status: finalStatus,
   });
 
   return true;

@@ -8,6 +8,7 @@ import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
 import { createLogger } from "../lib/logger";
+import { checkBatchCompletion } from "../aggregation/engine";
 
 const log = createLogger("API");
 
@@ -530,6 +531,13 @@ export async function patchSubtask(c: Context): Promise<Response> {
     if (subtask.agent_id && (body.status === "completed" || body.status === "failed")) {
       updateAgentContextOnComplete(sql, subtask, body.result).catch(err =>
         log.error("Agent context update error:", err)
+      );
+    }
+
+    // Auto-complete parent task when all subtasks are done (fire and forget)
+    if (body.status === "completed" || body.status === "failed") {
+      checkBatchCompletion(subtask.task_list_id).catch(err =>
+        log.error("Batch completion check error:", err)
       );
     }
 

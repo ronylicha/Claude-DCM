@@ -1,0 +1,207 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" role="img" aria-label="Database schema ERD">
+  <defs>
+    <style>
+      .title { font: 700 28px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .tbl-name { font: 700 14px "Inter", "Segoe UI", Arial, sans-serif; fill: #ffffff; }
+      .col { font: 400 11px "Inter", "Segoe UI", Consolas, monospace; fill: #334155; }
+      .col-pk { font: 600 11px "Inter", "Segoe UI", Consolas, monospace; fill: #0f172a; }
+      .col-fk { font: 400 11px "Inter", "Segoe UI", Consolas, monospace; fill: #3b82f6; }
+      .small { font: 400 11px "Inter", "Segoe UI", Arial, sans-serif; fill: #64748b; }
+      .view-name { font: 600 12px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .tbl-header { rx: 8; ry: 0; }
+      .tbl-body { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1.5; }
+      .rel { stroke: #94a3b8; stroke-width: 1.5; fill: none; marker-end: url(#fk-arrow); }
+    </style>
+    <marker id="fk-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,10 L10,5 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="900" fill="#ffffff"/>
+  <text x="40" y="42" class="title">Database Schema</text>
+  <text x="40" y="66" class="small">PostgreSQL 16 - claude_context - 10 tables, 4 views</text>
+
+  <!-- Table: projects -->
+  <g transform="translate(40,100)">
+    <rect x="0" y="0" width="200" height="26" rx="8" fill="#3b82f6"/>
+    <text x="100" y="18" text-anchor="middle" class="tbl-name">projects</text>
+    <rect x="0" y="24" width="200" height="100" class="tbl-body" rx="0"/>
+    <text x="10" y="44" class="col-pk">id         uuid PK</text>
+    <text x="10" y="60" class="col">path       text UNIQUE</text>
+    <text x="10" y="76" class="col">name       text</text>
+    <text x="10" y="92" class="col">metadata   jsonb</text>
+    <text x="10" y="108" class="col">updated_at timestamptz</text>
+  </g>
+
+  <!-- Table: sessions -->
+  <g transform="translate(40,260)">
+    <rect x="0" y="0" width="200" height="26" rx="8" fill="#3b82f6"/>
+    <text x="100" y="18" text-anchor="middle" class="tbl-name">sessions</text>
+    <rect x="0" y="24" width="200" height="132" class="tbl-body" rx="0"/>
+    <text x="10" y="44" class="col-pk">id             text PK</text>
+    <text x="10" y="60" class="col-fk">project_id     uuid FK</text>
+    <text x="10" y="76" class="col">started_at     timestamptz</text>
+    <text x="10" y="92" class="col">ended_at       timestamptz</text>
+    <text x="10" y="108" class="col">total_tools    int</text>
+    <text x="10" y="124" class="col">total_success  int</text>
+    <text x="10" y="140" class="col">total_errors   int</text>
+  </g>
+
+  <!-- Table: requests -->
+  <g transform="translate(300,100)">
+    <rect x="0" y="0" width="200" height="26" rx="8" fill="#22c55e"/>
+    <text x="100" y="18" text-anchor="middle" class="tbl-name">requests</text>
+    <rect x="0" y="24" width="200" height="116" class="tbl-body" rx="0"/>
+    <text x="10" y="44" class="col-pk">id           uuid PK</text>
+    <text x="10" y="60" class="col-fk">session_id   text FK</text>
+    <text x="10" y="76" class="col-fk">project_id   uuid FK</text>
+    <text x="10" y="92" class="col">prompt_type  text</text>
+    <text x="10" y="108" class="col">status       text</text>
+    <text x="10" y="124" class="col">metadata     jsonb</text>
+  </g>
+
+  <!-- Table: task_lists -->
+  <g transform="translate(560,100)">
+    <rect x="0" y="0" width="200" height="26" rx="8" fill="#22c55e"/>
+    <text x="100" y="18" text-anchor="middle" class="tbl-name">task_lists</text>
+    <rect x="0" y="24" width="200" height="100" class="tbl-body" rx="0"/>
+    <text x="10" y="44" class="col-pk">id           uuid PK</text>
+    <text x="10" y="60" class="col-fk">request_id   uuid FK</text>
+    <text x="10" y="76" class="col">wave_number  int</text>
+    <text x="10" y="92" class="col">status       text</text>
+    <text x="10" y="108" class="col">objectives   jsonb</text>
+  </g>
+
+  <!-- Table: subtasks -->
+  <g transform="translate(820,100)">
+    <rect x="0" y="0" width="200" height="26" rx="8" fill="#22c55e"/>
+    <text x="100" y="18" text-anchor="middle" class="tbl-name">subtasks</text>
+    <rect x="0" y="24" width="200" height="148" class="tbl-body" rx="0"/>
+    <text x="10" y="44" class="col-pk">id              uuid PK</text>
+    <text x="10" y="60" class="col-fk">task_list_id    uuid FK</text>
+    <text x="10" y="76" class="col">agent_type      text</text>
+    <text x="10" y="92" class="col">agent_id        text</text>
+    <text x="10" y="108" class="col">status          text</text>
+    <text x="10" y="124" class="col">blocked_by      uuid[]</text>
+    <text x="10" y="140" class="col">result          jsonb</text>
+    <text x="10" y="156" class="col">context_snapshot jsonb</text>
+  </g>
+
+  <!-- Table: actions -->
+  <g transform="translate(560,290)">
+    <rect x="0" y="0" width="200" height="26" rx="8" fill="#a855f7"/>
+    <text x="100" y="18" text-anchor="middle" class="tbl-name">actions</text>
+    <rect x="0" y="24" width="200" height="132" class="tbl-body" rx="0"/>
+    <text x="10" y="44" class="col-pk">id          uuid PK</text>
+    <text x="10" y="60" class="col-fk">subtask_id  uuid FK</text>
+    <text x="10" y="76" class="col">tool_name   text</text>
+    <text x="10" y="92" class="col">tool_type   text</text>
+    <text x="10" y="108" class="col">input       text</text>
+    <text x="10" y="124" class="col">output      text</text>
+    <text x="10" y="140" class="col">exit_code   int</text>
+  </g>
+
+  <!-- Table: agent_messages -->
+  <g transform="translate(300,440)">
+    <rect x="0" y="0" width="220" height="26" rx="8" fill="#f59e0b"/>
+    <text x="110" y="18" text-anchor="middle" class="tbl-name">agent_messages</text>
+    <rect x="0" y="24" width="220" height="148" class="tbl-body" rx="0"/>
+    <text x="10" y="44" class="col-pk">id             uuid PK</text>
+    <text x="10" y="60" class="col-fk">project_id     uuid FK</text>
+    <text x="10" y="76" class="col">from_agent_id  text</text>
+    <text x="10" y="92" class="col">to_agent_id    text</text>
+    <text x="10" y="108" class="col">topic          text</text>
+    <text x="10" y="124" class="col">payload        jsonb</text>
+    <text x="10" y="140" class="col">expires_at     timestamptz</text>
+    <text x="10" y="156" class="col">read_by        text[]</text>
+  </g>
+
+  <!-- Table: agent_contexts -->
+  <g transform="translate(580,440)">
+    <rect x="0" y="0" width="220" height="26" rx="8" fill="#f59e0b"/>
+    <text x="110" y="18" text-anchor="middle" class="tbl-name">agent_contexts</text>
+    <rect x="0" y="24" width="220" height="132" class="tbl-body" rx="0"/>
+    <text x="10" y="44" class="col-pk">id              uuid PK</text>
+    <text x="10" y="60" class="col-fk">project_id      uuid FK</text>
+    <text x="10" y="76" class="col">agent_type      text</text>
+    <text x="10" y="92" class="col">agent_id        text</text>
+    <text x="10" y="108" class="col">role_context     jsonb</text>
+    <text x="10" y="124" class="col">skills_to_restore text[]</text>
+    <text x="10" y="140" class="col">tools_used       jsonb</text>
+  </g>
+
+  <!-- Table: keyword_tool_scores -->
+  <g transform="translate(860,440)">
+    <rect x="0" y="0" width="200" height="26" rx="8" fill="#f59e0b"/>
+    <text x="100" y="18" text-anchor="middle" class="tbl-name">keyword_tool_scores</text>
+    <rect x="0" y="24" width="200" height="100" class="tbl-body" rx="0"/>
+    <text x="10" y="44" class="col-pk">id            uuid PK</text>
+    <text x="10" y="60" class="col">keyword       text</text>
+    <text x="10" y="76" class="col">tool_name     text</text>
+    <text x="10" y="92" class="col">score         float</text>
+    <text x="10" y="108" class="col">usage_count   int</text>
+  </g>
+
+  <!-- Table: schema_version -->
+  <g transform="translate(40,470)">
+    <rect x="0" y="0" width="200" height="26" rx="8" fill="#64748b"/>
+    <text x="100" y="18" text-anchor="middle" class="tbl-name">schema_version</text>
+    <rect x="0" y="24" width="200" height="52" class="tbl-body" rx="0"/>
+    <text x="10" y="44" class="col-pk">version    int PK</text>
+    <text x="10" y="60" class="col">applied_at timestamptz</text>
+  </g>
+
+  <!-- Relationship lines -->
+  <!-- projects -> sessions -->
+  <path d="M 140 224 L 140 260" class="rel"/>
+
+  <!-- sessions -> requests -->
+  <path d="M 240 310 L 300 175" class="rel"/>
+
+  <!-- projects -> requests -->
+  <path d="M 240 145 L 300 155" class="rel"/>
+
+  <!-- requests -> task_lists -->
+  <path d="M 500 155 L 560 140" class="rel"/>
+
+  <!-- task_lists -> subtasks -->
+  <path d="M 760 145 L 820 140" class="rel"/>
+
+  <!-- subtasks -> actions -->
+  <path d="M 920 274 L 760 310" class="rel"/>
+
+  <!-- projects -> agent_messages -->
+  <path d="M 140 224 C 140 380, 300 400, 370 440" class="rel"/>
+
+  <!-- projects -> agent_contexts -->
+  <path d="M 200 200 C 280 380, 580 400, 650 440" class="rel"/>
+
+  <!-- Views section -->
+  <text x="40" y="660" style="font: 700 18px 'Inter', sans-serif; fill: #0f172a;">Views</text>
+
+  <rect x="40" y="680" width="260" height="80" rx="10" fill="#faf5ff" stroke="#a855f7" stroke-width="1.5"/>
+  <text x="170" y="702" text-anchor="middle" class="view-name">v_actions_full</text>
+  <text x="170" y="720" text-anchor="middle" class="small">JOIN actions + subtasks + task_lists</text>
+  <text x="170" y="736" text-anchor="middle" class="small">+ requests + sessions + projects</text>
+
+  <rect x="320" y="680" width="260" height="80" rx="10" fill="#faf5ff" stroke="#a855f7" stroke-width="1.5"/>
+  <text x="450" y="702" text-anchor="middle" class="view-name">v_active_agents</text>
+  <text x="450" y="720" text-anchor="middle" class="small">Subtasks with status = 'running'</text>
+  <text x="450" y="736" text-anchor="middle" class="small">joined to task hierarchy</text>
+
+  <rect x="600" y="680" width="260" height="80" rx="10" fill="#faf5ff" stroke="#a855f7" stroke-width="1.5"/>
+  <text x="730" y="702" text-anchor="middle" class="view-name">v_unread_messages</text>
+  <text x="730" y="720" text-anchor="middle" class="small">Messages where read_by is</text>
+  <text x="730" y="736" text-anchor="middle" class="small">empty or NULL</text>
+
+  <rect x="880" y="680" width="260" height="80" rx="10" fill="#faf5ff" stroke="#a855f7" stroke-width="1.5"/>
+  <text x="1010" y="702" text-anchor="middle" class="view-name">v_project_stats</text>
+  <text x="1010" y="720" text-anchor="middle" class="small">Aggregated project-level</text>
+  <text x="1010" y="736" text-anchor="middle" class="small">session and action counts</text>
+
+  <!-- Hierarchy legend -->
+  <rect x="40" y="790" width="1120" height="90" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="60" y="816" style="font: 600 14px 'Inter', sans-serif; fill: #0f172a;">Data Hierarchy</text>
+  <text x="60" y="840" class="col" style="font-size:13px">project  ->  session  ->  request  ->  task_list  ->  subtask  ->  action</text>
+  <text x="60" y="860" class="small">Each level nests within its parent. The full hierarchy is queryable via GET /api/hierarchy/tree.</text>
+</svg>

@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-label="Context generation flowchart">
+  <defs>
+    <style>
+      .title { font: 700 28px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .label { font: 600 16px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .sub { font: 400 14px "Inter", "Segoe UI", Arial, sans-serif; fill: #334155; }
+      .small { font: 400 11px "Inter", "Segoe UI", Arial, sans-serif; fill: #64748b; }
+      .box { fill: #f8fafc; stroke: #94a3b8; stroke-width: 2; rx: 12; }
+      .box-blue { fill: #eff6ff; stroke: #3b82f6; stroke-width: 2; rx: 12; }
+      .box-green { fill: #f0fdf4; stroke: #22c55e; stroke-width: 2; rx: 12; }
+      .box-amber { fill: #fffbeb; stroke: #f59e0b; stroke-width: 2; rx: 12; }
+      .diamond { fill: #fef3c7; stroke: #f59e0b; stroke-width: 2; }
+      .line { stroke: #64748b; stroke-width: 2; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="620" fill="#ffffff"/>
+  <text x="40" y="42" class="title">Context Brief Generation</text>
+  <text x="40" y="66" class="sub">POST /api/compact/restore - context-generator.ts</text>
+
+  <!-- Step 1: API Entry -->
+  <rect x="40" y="100" width="250" height="60" class="box-blue"/>
+  <text x="165" y="128" text-anchor="middle" class="label">POST /api/compact/restore</text>
+  <text x="165" y="148" text-anchor="middle" class="small">agent_id, session_id, max_tokens</text>
+
+  <!-- Step 2: Validate -->
+  <rect x="340" y="100" width="180" height="60" class="box"/>
+  <text x="430" y="128" text-anchor="middle" class="label">Validate (Zod)</text>
+  <text x="430" y="148" text-anchor="middle" class="small">schema + defaults</text>
+
+  <!-- Arrow 1->2 -->
+  <line x1="290" y1="130" x2="340" y2="130" class="line"/>
+
+  <!-- Step 3: Parallel data fetch - 6 boxes -->
+  <text x="60" y="210" class="label">Parallel Data Fetch</text>
+  <rect x="40" y="218" width="1120" height="180" rx="12" fill="none" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="6,4"/>
+
+  <!-- Arrow 2->3 -->
+  <line x1="430" y1="160" x2="430" y2="218" class="line"/>
+
+  <!-- Source 1 -->
+  <rect x="60" y="240" width="160" height="60" class="box-green"/>
+  <text x="140" y="264" text-anchor="middle" class="label" style="font-size:13px">Assigned Tasks</text>
+  <text x="140" y="284" text-anchor="middle" class="small">subtasks by agent</text>
+
+  <!-- Source 2 -->
+  <rect x="240" y="240" width="160" height="60" class="box-green"/>
+  <text x="320" y="264" text-anchor="middle" class="label" style="font-size:13px">Unread Messages</text>
+  <text x="320" y="284" text-anchor="middle" class="small">to_agent_id match</text>
+
+  <!-- Source 3 -->
+  <rect x="420" y="240" width="160" height="60" class="box-green"/>
+  <text x="500" y="264" text-anchor="middle" class="label" style="font-size:13px">Active Blockings</text>
+  <text x="500" y="284" text-anchor="middle" class="small">unresolved deps</text>
+
+  <!-- Source 4 -->
+  <rect x="600" y="240" width="160" height="60" class="box-green"/>
+  <text x="680" y="264" text-anchor="middle" class="label" style="font-size:13px">Action History</text>
+  <text x="680" y="284" text-anchor="middle" class="small">recent tool calls</text>
+
+  <!-- Source 5 -->
+  <rect x="780" y="240" width="160" height="60" class="box-green"/>
+  <text x="860" y="264" text-anchor="middle" class="label" style="font-size:13px">Session Info</text>
+  <text x="860" y="284" text-anchor="middle" class="small">latest request</text>
+
+  <!-- Source 6 -->
+  <rect x="960" y="240" width="160" height="60" class="box-green"/>
+  <text x="1040" y="264" text-anchor="middle" class="label" style="font-size:13px">Project Info</text>
+  <text x="1040" y="284" text-anchor="middle" class="small">name, path</text>
+
+  <!-- Relevance scores -->
+  <text x="140" y="316" text-anchor="middle" class="small" style="fill:#22c55e">score: 0.8-1.0</text>
+  <text x="320" y="316" text-anchor="middle" class="small" style="fill:#22c55e">score: 0.6-1.0</text>
+  <text x="500" y="316" text-anchor="middle" class="small" style="fill:#22c55e">score: 0.9</text>
+  <text x="680" y="316" text-anchor="middle" class="small" style="fill:#22c55e">score: 0.7</text>
+  <text x="860" y="316" text-anchor="middle" class="small" style="fill:#22c55e">score: 0.8</text>
+  <text x="1040" y="316" text-anchor="middle" class="small" style="fill:#22c55e">score: 0.7</text>
+
+  <!-- Relevance sub-labels -->
+  <text x="140" y="340" text-anchor="middle" class="small">running=1.0</text>
+  <text x="140" y="354" text-anchor="middle" class="small">pending=0.8</text>
+  <text x="320" y="340" text-anchor="middle" class="small">priority>=5: 1.0</text>
+  <text x="320" y="354" text-anchor="middle" class="small">normal: 0.6</text>
+
+  <!-- Step 4: Generate brief -->
+  <rect x="380" y="420" width="240" height="60" class="box-blue"/>
+  <text x="500" y="448" text-anchor="middle" class="label">Generate Brief</text>
+  <text x="500" y="468" text-anchor="middle" class="small">template engine, markdown format</text>
+
+  <!-- Arrow 3->4 -->
+  <line x1="500" y1="398" x2="500" y2="420" class="line"/>
+
+  <!-- Step 5: Token check (diamond) -->
+  <polygon points="770,430 850,450 770,470 690,450" class="diamond"/>
+  <text x="770" y="454" text-anchor="middle" class="label" style="font-size:12px">tokens > max?</text>
+
+  <!-- Arrow 4->5 -->
+  <line x1="620" y1="450" x2="690" y2="450" class="line"/>
+
+  <!-- Yes path: truncate -->
+  <rect x="890" y="420" width="180" height="60" class="box-amber"/>
+  <text x="980" y="446" text-anchor="middle" class="label" style="font-size:14px">Truncate</text>
+  <text x="980" y="466" text-anchor="middle" class="small">preserve headers (##)</text>
+
+  <!-- Arrow 5->truncate -->
+  <line x1="850" y1="450" x2="890" y2="450" class="line"/>
+  <text x="870" y="440" class="small" style="fill:#f59e0b">Yes</text>
+
+  <!-- No path: return -->
+  <rect x="380" y="530" width="240" height="60" class="box-green"/>
+  <text x="500" y="556" text-anchor="middle" class="label">Return Brief</text>
+  <text x="500" y="576" text-anchor="middle" class="small">JSON response with sources</text>
+
+  <!-- Arrow 5->return (no) -->
+  <line x1="770" y1="470" x2="770" y2="560" style="stroke:#64748b;stroke-width:2"/>
+  <line x1="770" y1="560" x2="620" y2="560" class="line"/>
+  <text x="780" y="500" class="small">No</text>
+
+  <!-- Arrow truncate->return -->
+  <line x1="980" y1="480" x2="980" y2="560" style="stroke:#64748b;stroke-width:2"/>
+  <line x1="980" y1="560" x2="620" y2="560" class="line"/>
+
+  <!-- Default options box -->
+  <rect x="40" y="420" width="290" height="180" rx="12" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="60" y="446" class="label" style="font-size:14px">Default Options</text>
+  <line x1="40" y1="456" x2="330" y2="456" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="60" y="476" class="small">max_tokens: 2000 (1 token ~ 3.5 chars)</text>
+  <text x="60" y="496" class="small">include_history: true</text>
+  <text x="60" y="516" class="small">history_limit: 10 (15 after compact)</text>
+  <text x="60" y="536" class="small">include_messages: true</text>
+  <text x="60" y="556" class="small">include_blockings: true</text>
+  <text x="60" y="576" class="small">Truncation: remove lines from end,</text>
+  <text x="60" y="592" class="small">preserve ## headers, add notice</text>
+</svg>
