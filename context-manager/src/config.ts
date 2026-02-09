@@ -3,6 +3,10 @@
  * @module config
  */
 
+import { createLogger } from "./lib/logger";
+
+const log = createLogger("Config");
+
 export interface Config {
   /** PostgreSQL connection settings */
   database: {
@@ -31,6 +35,19 @@ export interface Config {
     /** Maximum retries for database operations */
     maxDbRetries: number;
   };
+  /** Session and snapshot cleanup settings */
+  cleanup: {
+    /** How old a session/agent must be before eligible for cleanup (hours) */
+    staleThresholdHours: number;
+    /** How long without activity before considered inactive (minutes) */
+    inactiveMinutes: number;
+    /** Max age for compact snapshots (hours) */
+    snapshotMaxAgeHours: number;
+    /** Cleanup interval (milliseconds) */
+    intervalMs: number;
+    /** Max age for read broadcast messages (hours) */
+    readMessageMaxAgeHours: number;
+  };
 }
 
 /**
@@ -57,6 +74,13 @@ function loadConfig(): Config {
       messageTtlMs: parseInt(process.env["MESSAGE_TTL_MS"] ?? "3600000", 10), // 1 hour
       healthcheckIntervalMs: parseInt(process.env["HEALTHCHECK_INTERVAL_MS"] ?? "30000", 10), // 30s
       maxDbRetries: parseInt(process.env["MAX_DB_RETRIES"] ?? "3", 10),
+    },
+    cleanup: {
+      staleThresholdHours: parseFloat(process.env["CLEANUP_STALE_HOURS"] ?? "0.5"),
+      inactiveMinutes: parseInt(process.env["CLEANUP_INACTIVE_MINUTES"] ?? "10", 10),
+      snapshotMaxAgeHours: parseInt(process.env["CLEANUP_SNAPSHOT_MAX_HOURS"] ?? "24", 10),
+      intervalMs: parseInt(process.env["CLEANUP_INTERVAL_MS"] ?? "60000", 10),
+      readMessageMaxAgeHours: parseInt(process.env["CLEANUP_READ_MSG_MAX_HOURS"] ?? "24", 10),
     },
   };
 }
@@ -98,9 +122,7 @@ export function validateConfig(): void {
         "WS_AUTH_SECRET environment variable is required in production. Set it in your .env file with a strong random value."
       );
     } else {
-      console.warn(
-        "[WARN] WS_AUTH_SECRET is not set. WebSocket authentication will fail. Set it in your .env file."
-      );
+      log.warn("WS_AUTH_SECRET is not set. WebSocket authentication will fail. Set it in your .env file.");
     }
   } else if (wsAuthSecret.length < 32) {
     if (isProduction) {
@@ -108,9 +130,7 @@ export function validateConfig(): void {
         "WS_AUTH_SECRET must be at least 32 characters long in production for secure authentication."
       );
     } else {
-      console.warn(
-        "[WARN] WS_AUTH_SECRET is shorter than 32 characters. For production use, ensure it is at least 32 characters long."
-      );
+      log.warn("WS_AUTH_SECRET is shorter than 32 characters. For production use, ensure it is at least 32 characters long.");
     }
   }
   

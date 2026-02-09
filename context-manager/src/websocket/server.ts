@@ -5,10 +5,13 @@
  */
 
 import type { ServerWebSocket } from "bun";
+import { createLogger } from "../lib/logger";
 import { config } from "../config";
 import type { WSClientData } from "./types";
 import { handleConnection, handleMessage, handleClose, getWSStats, clients, startDeliveryRetry } from "./handlers";
 import { startDatabaseBridge, stopDatabaseBridge } from "./bridge";
+
+const log = createLogger("WSServer");
 
 // ============================================
 // Server State
@@ -42,7 +45,7 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve> {
   const port = config.websocket.port;
   const host = config.server.host;
 
-  console.log(`[WS Server] Starting WebSocket server on ws://${host}:${port}`);
+  log.info(`Starting WebSocket server on ws://${host}:${port}`);
 
   wsServer = Bun.serve({
     hostname: host,
@@ -139,13 +142,13 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve> {
       },
 
       drain(ws: ServerWebSocket<WSClientData>) {
-        console.log(`[WS Server] Socket drain: ${ws.data.id}`);
+        log.info(`Socket drain: ${ws.data.id}`);
       },
     },
 
     // Error handler
     error(error) {
-      console.error("[WS Server] Server error:", error);
+      log.error("Server error:", error);
       return new Response("Internal Server Error", { status: 500 });
     },
   });
@@ -159,7 +162,7 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve> {
   // Start delivery retry interval (at-least-once semantics)
   deliveryRetryInterval = startDeliveryRetry();
 
-  console.log(`[WS Server] WebSocket server listening on ws://${host}:${port}`);
+  log.info(`WebSocket server listening on ws://${host}:${port}`);
 
   return wsServer;
 }
@@ -168,7 +171,7 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve> {
  * Stop the WebSocket server
  */
 export async function stopWebSocketServer(): Promise<void> {
-  console.log("[WS Server] Stopping WebSocket server...");
+  log.info("Stopping WebSocket server...");
 
   // Stop heartbeat
   if (heartbeatInterval) {
@@ -191,7 +194,7 @@ export async function stopWebSocketServer(): Promise<void> {
     wsServer = null;
   }
 
-  console.log("[WS Server] WebSocket server stopped");
+  log.info("WebSocket server stopped");
 }
 
 // ============================================
@@ -206,7 +209,7 @@ function startHeartbeat(): void {
     for (const [clientId, client] of clients.entries()) {
       // Check if client is alive (responded to last ping within 60s)
       if (now - client.data.lastPing > 60000) {
-        console.log(`[WS] Client ${clientId} timed out, closing`);
+        log.info(`Client ${clientId} timed out, closing`);
         try { client.close(4000, "Ping timeout"); } catch { /* ignore */ }
         clients.delete(clientId);
         continue;
@@ -215,12 +218,12 @@ function startHeartbeat(): void {
       try {
         client.send(JSON.stringify({ type: "ping", timestamp: now }));
       } catch (error) {
-        console.error(`[WS] Failed to ping ${clientId}, removing`);
+        log.error(`Failed to ping ${clientId}, removing`);
         clients.delete(clientId);
       }
     }
 
-    console.log(`[WS Server] Heartbeat - Clients: ${stats.connectedClients}, Channels: ${stats.activeChannels}`);
+    log.info(`Heartbeat - Clients: ${stats.connectedClients}, Channels: ${stats.activeChannels}`);
   }, HEARTBEAT_INTERVAL_MS);
 }
 

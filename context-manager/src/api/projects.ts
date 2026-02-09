@@ -7,6 +7,9 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("API");
 
 /** Input schema for project creation */
 export interface ProjectInput {
@@ -88,7 +91,7 @@ export async function postProject(c: Context): Promise<Response> {
       },
     }, 201);
   } catch (error) {
-    console.error("[API] POST /api/projects error:", error);
+    log.error("POST /api/projects error:", error);
     return c.json(
       {
         error: "Failed to create project",
@@ -131,7 +134,7 @@ export async function getProjects(c: Context): Promise<Response> {
       offset,
     });
   } catch (error) {
-    console.error("[API] GET /api/projects error:", error);
+    log.error("GET /api/projects error:", error);
     return c.json(
       {
         error: "Failed to fetch projects",
@@ -190,7 +193,7 @@ export async function getProjectById(c: Context): Promise<Response> {
       },
     });
   } catch (error) {
-    console.error("[API] GET /api/projects/:id error:", error);
+    log.error("GET /api/projects/:id error:", error);
     return c.json(
       {
         error: "Failed to fetch project",
@@ -231,7 +234,7 @@ export async function getProjectByPath(c: Context): Promise<Response> {
 
     return c.json({ project });
   } catch (error) {
-    console.error("[API] GET /api/projects/by-path error:", error);
+    log.error("GET /api/projects/by-path error:", error);
     return c.json(
       {
         error: "Failed to fetch project",
@@ -271,7 +274,7 @@ export async function deleteProject(c: Context): Promise<Response> {
 
     return new Response(null, { status: 204 });
   } catch (error) {
-    console.error("[API] DELETE /api/projects/:id error:", error);
+    log.error("DELETE /api/projects/:id error:", error);
     return c.json(
       {
         error: "Failed to delete project",

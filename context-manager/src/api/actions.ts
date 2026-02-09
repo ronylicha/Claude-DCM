@@ -7,6 +7,9 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, compressData, publishEvent } from "../db/client";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("API");
 
 /** Input schema for action tracking */
 export interface ActionInput {
@@ -217,7 +220,7 @@ export async function postAction(c: Context): Promise<Response> {
         `;
       } catch (sessionErr) {
         // Non-blocking: session tracking failure should not break action recording
-        console.error("[API] Session auto-upsert error:", sessionErr);
+        log.error("Session auto-upsert error:", sessionErr);
       }
     }
 
@@ -244,7 +247,7 @@ export async function postAction(c: Context): Promise<Response> {
       },
     }, 201);
   } catch (error) {
-    console.error("[API] POST /api/actions error:", error);
+    log.error("POST /api/actions error:", error);
     return c.json(
       {
         error: "Failed to record action",
@@ -273,8 +276,7 @@ export async function getActionsHourly(c: Context): Promise<Response> {
       ORDER BY hour ASC
     `;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = results.map((row: any) => ({
+    const data = results.map((row: Record<string, unknown>) => ({
       hour: row.hour instanceof Date ? row.hour.toISOString() : String(row.hour),
       count: Number(row.count),
     }));
@@ -284,7 +286,7 @@ export async function getActionsHourly(c: Context): Promise<Response> {
       period: "24h",
     });
   } catch (error) {
-    console.error("[API] GET /api/actions/hourly error:", error);
+    log.error("GET /api/actions/hourly error:", error);
     return c.json(
       {
         error: "Failed to fetch hourly actions",
@@ -353,7 +355,7 @@ export async function getActions(c: Context): Promise<Response> {
       offset,
     });
   } catch (error) {
-    console.error("[API] GET /api/actions error:", error);
+    log.error("GET /api/actions error:", error);
     return c.json(
       {
         error: "Failed to fetch actions",
@@ -388,7 +390,7 @@ export async function deleteAction(c: Context): Promise<Response> {
 
     return new Response(null, { status: 204 });
   } catch (error) {
-    console.error("[API] DELETE /api/actions/:id error:", error);
+    log.error("DELETE /api/actions/:id error:", error);
     return c.json(
       {
         error: "Failed to delete action",
@@ -437,7 +439,7 @@ export async function deleteActionsBySession(c: Context): Promise<Response> {
       session_id: sessionId,
     });
   } catch (error) {
-    console.error("[API] DELETE /api/actions/by-session/:session_id error:", error);
+    log.error("DELETE /api/actions/by-session/:session_id error:", error);
     return c.json(
       {
         error: "Failed to delete actions by session",

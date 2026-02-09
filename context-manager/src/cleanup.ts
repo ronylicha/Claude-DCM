@@ -4,7 +4,11 @@
  * @module cleanup
  */
 
+import { config } from "./config";
 import { getDb } from "./db/client";
+import { createLogger } from "./lib/logger";
+
+const log = createLogger("Cleanup");
 
 /** Cleanup statistics */
 interface CleanupStats {
@@ -44,7 +48,7 @@ export async function deleteExpiredMessages(): Promise<number> {
  * @param inactiveMinutes - No activity for this many minutes (default: 10)
  * @returns Number of closed sessions
  */
-export async function closeOrphanedSessions(maxAgeHours: number = 0.5, inactiveMinutes: number = 10): Promise<number> {
+export async function closeOrphanedSessions(maxAgeHours: number = config.cleanup.staleThresholdHours, inactiveMinutes: number = config.cleanup.inactiveMinutes): Promise<number> {
   const sql = getDb();
 
   const result = await sql`
@@ -64,7 +68,7 @@ export async function closeOrphanedSessions(maxAgeHours: number = 0.5, inactiveM
   `;
 
   if (result.length > 0) {
-    console.log(`[Cleanup] Closed ${result.length} orphaned sessions (older than ${maxAgeHours}h, inactive ${inactiveMinutes}min)`);
+    log.info(`Closed ${result.length} orphaned sessions (older than ${maxAgeHours}h, inactive ${inactiveMinutes}min)`);
   }
 
   return result.length;
@@ -77,7 +81,7 @@ export async function closeOrphanedSessions(maxAgeHours: number = 0.5, inactiveM
  * @param inactiveMinutes - No activity for this many minutes (default: 10)
  * @returns Number of deleted agent contexts
  */
-export async function deleteStaleAgentContexts(maxAgeHours: number = 0.5, inactiveMinutes: number = 10): Promise<number> {
+export async function deleteStaleAgentContexts(maxAgeHours: number = config.cleanup.staleThresholdHours, inactiveMinutes: number = config.cleanup.inactiveMinutes): Promise<number> {
   const sql = getDb();
 
   const result = await sql`
@@ -99,7 +103,7 @@ export async function deleteStaleAgentContexts(maxAgeHours: number = 0.5, inacti
   `;
 
   if (result.length > 0) {
-    console.log(`[Cleanup] Deleted ${result.length} stale agent contexts (older than ${maxAgeHours}h, inactive ${inactiveMinutes}min)`);
+    log.info(`Deleted ${result.length} stale agent contexts (older than ${maxAgeHours}h, inactive ${inactiveMinutes}min)`);
   }
 
   return result.length;
@@ -112,7 +116,7 @@ export async function deleteStaleAgentContexts(maxAgeHours: number = 0.5, inacti
  * @param inactiveMinutes - No activity for this many minutes (default: 10)
  * @returns Number of failed subtasks
  */
-export async function failStuckSubtasks(maxAgeHours: number = 0.5, inactiveMinutes: number = 10): Promise<number> {
+export async function failStuckSubtasks(maxAgeHours: number = config.cleanup.staleThresholdHours, inactiveMinutes: number = config.cleanup.inactiveMinutes): Promise<number> {
   const sql = getDb();
 
   const result = await sql`
@@ -132,7 +136,7 @@ export async function failStuckSubtasks(maxAgeHours: number = 0.5, inactiveMinut
   `;
 
   if (result.length > 0) {
-    console.log(`[Cleanup] Failed ${result.length} stuck subtasks (older than ${maxAgeHours}h, inactive ${inactiveMinutes}min)`);
+    log.info(`Failed ${result.length} stuck subtasks (older than ${maxAgeHours}h, inactive ${inactiveMinutes}min)`);
   }
 
   return result.length;
@@ -144,7 +148,7 @@ export async function failStuckSubtasks(maxAgeHours: number = 0.5, inactiveMinut
  * @param maxAgeHours - Maximum age in hours (default: 24)
  * @returns Number of deleted snapshots
  */
-export async function deleteOldCompactSnapshots(maxAgeHours: number = 24): Promise<number> {
+export async function deleteOldCompactSnapshots(maxAgeHours: number = config.cleanup.snapshotMaxAgeHours): Promise<number> {
   const sql = getDb();
 
   const result = await sql`
@@ -155,7 +159,7 @@ export async function deleteOldCompactSnapshots(maxAgeHours: number = 24): Promi
   `;
 
   if (result.length > 0) {
-    console.log(`[Cleanup] Deleted ${result.length} old compact snapshots (older than ${maxAgeHours}h)`);
+    log.info(`Deleted ${result.length} old compact snapshots (older than ${maxAgeHours}h)`);
   }
 
   return result.length;
@@ -172,16 +176,16 @@ export async function runCleanup(): Promise<CleanupStats> {
     const [deletedMessages, closedSessions, deletedAgentContexts, failedSubtasks] =
       await Promise.all([
         deleteExpiredMessages(),
-        closeOrphanedSessions(0.5),  // 30min instead of 2h - sessions rarely last that long
-        deleteStaleAgentContexts(0.5),
-        failStuckSubtasks(0.5),
+        closeOrphanedSessions(),  // 30min instead of 2h - sessions rarely last that long
+        deleteStaleAgentContexts(),
+        failStuckSubtasks(),
       ]);
 
     // Run less frequent cleanup (snapshots) only every ~10 runs
     // Use a simple modulo on the minute to approximate
     const minute = new Date().getMinutes();
     if (minute % 10 === 0) {
-      await deleteOldCompactSnapshots(24);
+      await deleteOldCompactSnapshots();
     }
 
     const durationMs = Math.round(performance.now() - startTime);
@@ -199,15 +203,15 @@ export async function runCleanup(): Promise<CleanupStats> {
 
     const totalCleaned = deletedMessages + closedSessions + deletedAgentContexts + failedSubtasks;
     if (totalCleaned > 0) {
-      console.log(
-        `[Cleanup] Cleaned ${totalCleaned} records in ${durationMs}ms ` +
+      log.info(
+        `Cleaned ${totalCleaned} records in ${durationMs}ms ` +
         `(msgs:${deletedMessages} sessions:${closedSessions} agents:${deletedAgentContexts} subtasks:${failedSubtasks})`
       );
     }
 
     return stats;
   } catch (error) {
-    console.error("[Cleanup] Error during cleanup:", error);
+    log.error("Error during cleanup:", error);
     throw error;
   }
 }
@@ -216,25 +220,25 @@ export async function runCleanup(): Promise<CleanupStats> {
  * Start the cleanup interval
  * @param intervalMs - Interval in milliseconds (default: 60000 = 1 minute)
  */
-export function startCleanupInterval(intervalMs: number = 60000): void {
+export function startCleanupInterval(intervalMs: number = config.cleanup.intervalMs): void {
   if (cleanupInterval) {
-    console.warn("[Cleanup] Cleanup interval already running");
+    log.warn("Cleanup interval already running");
     return;
   }
 
   // Run immediately on start
   runCleanup().catch((error) => {
-    console.error("[Cleanup] Initial cleanup failed:", error);
+    log.error("Initial cleanup failed:", error);
   });
 
   // Set up recurring cleanup
   cleanupInterval = setInterval(() => {
     runCleanup().catch((error) => {
-      console.error("[Cleanup] Scheduled cleanup failed:", error);
+      log.error("Scheduled cleanup failed:", error);
     });
   }, intervalMs);
 
-  console.log(`[Cleanup] Started cleanup interval (every ${intervalMs}ms)`);
+  log.info(`Started cleanup interval (every ${intervalMs}ms)`);
 }
 
 /**
@@ -244,7 +248,7 @@ export function stopCleanupInterval(): void {
   if (cleanupInterval) {
     clearInterval(cleanupInterval);
     cleanupInterval = null;
-    console.log("[Cleanup] Stopped cleanup interval");
+    log.info("Stopped cleanup interval");
   }
 }
 
@@ -270,7 +274,7 @@ export function isCleanupRunning(): boolean {
  * @param maxAgeHours - Maximum age in hours for read messages (default: 24)
  * @returns Number of deleted messages
  */
-export async function deleteOldReadMessages(maxAgeHours: number = 24): Promise<number> {
+export async function deleteOldReadMessages(maxAgeHours: number = config.cleanup.readMessageMaxAgeHours): Promise<number> {
   const sql = getDb();
 
   // Delete messages that:
@@ -286,7 +290,7 @@ export async function deleteOldReadMessages(maxAgeHours: number = 24): Promise<n
   `;
 
   if (result.length > 0) {
-    console.log(`[Cleanup] Deleted ${result.length} old read broadcast messages`);
+    log.info(`Deleted ${result.length} old read broadcast messages`);
   }
 
   return result.length;

@@ -16,7 +16,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { KPICard } from "@/components/charts/KPICard";
 import {
   Route,
   Search,
@@ -113,6 +112,34 @@ async function submitFeedback(feedback: RoutingFeedbackRequest): Promise<{ succe
   return res.json();
 }
 
+// Premium KPI Card Component
+function PremiumKPICard({
+  title,
+  value,
+  icon,
+  iconGradient,
+  description,
+}: {
+  title: string;
+  value: string | number;
+  icon: React.ReactNode;
+  iconGradient: string;
+  description?: string;
+}) {
+  return (
+    <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
+      <div className="flex items-center gap-2.5">
+        <div className={`flex items-center justify-center h-8 w-8 rounded-lg ${iconGradient}`}>
+          {icon}
+        </div>
+        <span className="text-sm font-medium text-muted-foreground">{title}</span>
+      </div>
+      <div className="text-3xl font-bold tracking-tight">{value}</div>
+      {description && <span className="text-xs text-muted-foreground">{description}</span>}
+    </div>
+  );
+}
+
 // Type badge color helper
 function getTypeBadgeVariant(type: string): "default" | "secondary" | "outline" | "destructive" {
   switch (type) {
@@ -152,33 +179,33 @@ function getTypeColor(type: string): string {
 function StatsCards({ stats, isLoading }: { stats?: RoutingStats; isLoading: boolean }) {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 stagger-children">
-      <KPICard
+      <PremiumKPICard
         title="Total Keywords"
         value={stats?.totals?.unique_keywords ?? 0}
-        icon={<Hash className="h-4 w-4" />}
+        icon={<Hash className="h-4 w-4 text-white" />}
+        iconGradient="bg-gradient-to-br from-indigo-500 to-purple-600"
         description="Indexed for routing"
-        loading={isLoading}
       />
-      <KPICard
+      <PremiumKPICard
         title="Total Tools"
         value={stats?.totals?.unique_tools ?? 0}
-        icon={<Route className="h-4 w-4" />}
+        icon={<Route className="h-4 w-4 text-white" />}
+        iconGradient="bg-gradient-to-br from-violet-500 to-pink-600"
         description="Available for routing"
-        loading={isLoading}
       />
-      <KPICard
+      <PremiumKPICard
         title="Average Score"
         value={stats?.totals?.avg_score ? Number(stats.totals.avg_score).toFixed(2) : "N/A"}
-        icon={<Target className="h-4 w-4" />}
+        icon={<Target className="h-4 w-4 text-white" />}
+        iconGradient="bg-gradient-to-br from-blue-500 to-cyan-500"
         description="Overall suggestion quality"
-        loading={isLoading}
       />
-      <KPICard
+      <PremiumKPICard
         title="Total Records"
         value={stats?.totals?.total_records ?? 0}
-        icon={<Zap className="h-4 w-4" />}
+        icon={<Zap className="h-4 w-4 text-white" />}
+        iconGradient="bg-gradient-to-br from-amber-500 to-orange-600"
         description="Keyword-tool mappings"
-        loading={isLoading}
       />
     </div>
   );

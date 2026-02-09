@@ -4,7 +4,10 @@
  * @module context-generator
  */
 
+import { createLogger } from "./lib/logger";
 import { getDb } from "./db/client";
+
+const log = createLogger("ContextGenerator");
 import { generateBrief } from "./templates";
 import type {
   ContextBrief,
@@ -18,6 +21,9 @@ import type {
   SessionContext,
   ProjectContext,
 } from "./context/types";
+
+/** Characters per token for estimation (optimized for English text/code) */
+const CHARS_PER_TOKEN = 3.5;
 
 /** Default options for context generation */
 const DEFAULT_OPTIONS: Required<ContextGenerationOptions> = {
@@ -57,13 +63,13 @@ export async function generateContextBrief(
   // Generate brief using appropriate template
   let brief = generateBrief(agentType, data, agentId, sessionId);
 
-  // Estimate token count (rough: 1 token ~ 4 chars)
-  let tokenCount = Math.ceil(brief.length / 4);
+  // Estimate token count
+  let tokenCount = Math.ceil(brief.length / CHARS_PER_TOKEN);
   let truncated = false;
 
   // Truncate if exceeds max tokens
   if (tokenCount > opts.maxTokens) {
-    const maxChars = opts.maxTokens * 4;
+    const maxChars = opts.maxTokens * CHARS_PER_TOKEN;
     brief = truncateBrief(brief, maxChars);
     tokenCount = opts.maxTokens;
     truncated = true;
@@ -203,7 +209,7 @@ async function fetchAgentTasks(
       ...(t.wave_number !== null ? { wave_number: t.wave_number } : {}),
     }));
   } catch (error) {
-    console.error("[ContextGenerator] Error fetching tasks:", error);
+    log.error("Error fetching tasks:", error);
     return [];
   }
 }
@@ -263,7 +269,7 @@ async function fetchAgentMessages(
       is_broadcast: m.to_agent_id === null,
     }));
   } catch (error) {
-    console.error("[ContextGenerator] Error fetching messages:", error);
+    log.error("Error fetching messages:", error);
     return [];
   }
 }
@@ -308,7 +314,7 @@ async function fetchAgentBlockings(
 
     return blockings;
   } catch (error) {
-    console.error("[ContextGenerator] Error fetching blockings:", error);
+    log.error("Error fetching blockings:", error);
     return [];
   }
 }
@@ -360,7 +366,7 @@ async function fetchAgentHistory(
 
     return actions;
   } catch (error) {
-    console.error("[ContextGenerator] Error fetching history:", error);
+    log.error("Error fetching history:", error);
     return [];
   }
 }
@@ -415,7 +421,7 @@ async function fetchSessionInfo(
 
     return undefined;
   } catch (error) {
-    console.error("[ContextGenerator] Error fetching session:", error);
+    log.error("Error fetching session:", error);
     return undefined;
   }
 }
@@ -455,7 +461,7 @@ async function fetchProjectInfo(
 
     return undefined;
   } catch (error) {
-    console.error("[ContextGenerator] Error fetching project:", error);
+    log.error("Error fetching project:", error);
     return undefined;
   }
 }
@@ -496,7 +502,7 @@ async function fetchProjectFromSession(
 
     return undefined;
   } catch (error) {
-    console.error("[ContextGenerator] Error fetching project from session:", error);
+    log.error("Error fetching project from session:", error);
     return undefined;
   }
 }

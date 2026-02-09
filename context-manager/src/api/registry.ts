@@ -6,6 +6,9 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("API");
 
 /** Valid agent categories */
 const AGENT_CATEGORIES = ["orchestrator", "developer", "validator", "specialist", "researcher", "writer"] as const;
@@ -92,7 +95,7 @@ export async function getRegistry(c: Context): Promise<Response> {
       offset,
     });
   } catch (error) {
-    console.error("[API] GET /api/registry error:", error);
+    log.error("GET /api/registry error:", error);
     return c.json(
       {
         error: "Failed to fetch agents",
@@ -133,7 +136,7 @@ export async function getRegistryAgent(c: Context): Promise<Response> {
 
     return c.json({ agent });
   } catch (error) {
-    console.error("[API] GET /api/registry/:agent_type error:", error);
+    log.error("GET /api/registry/:agent_type error:", error);
     return c.json(
       {
         error: "Failed to fetch agent",
@@ -192,7 +195,7 @@ export async function putRegistryAgent(c: Context): Promise<Response> {
         ${input.agent_type},
         ${input.category},
         ${input.display_name ?? null},
-        ${sql.json(input.default_scope as any)},
+        ${sql.json(input.default_scope as Record<string, unknown>)},
         ${input.allowed_tools ? sql.array(input.allowed_tools) : null},
         ${input.forbidden_actions ? sql.array(input.forbidden_actions) : null},
         ${input.max_files},
@@ -230,7 +233,7 @@ export async function putRegistryAgent(c: Context): Promise<Response> {
       agent,
     });
   } catch (error) {
-    console.error("[API] PUT /api/registry/:agent_type error:", error);
+    log.error("PUT /api/registry/:agent_type error:", error);
     return c.json(
       {
         error: "Failed to update agent",
@@ -290,7 +293,7 @@ export async function postRegistryImport(c: Context): Promise<Response> {
             ${input.agent_type},
             ${input.category},
             ${input.display_name ?? null},
-            ${sql.json(input.default_scope as any)},
+            ${sql.json(input.default_scope as Record<string, unknown>)},
             ${input.allowed_tools ? sql.array(input.allowed_tools) : null},
             ${input.forbidden_actions ? sql.array(input.forbidden_actions) : null},
             ${input.max_files},
@@ -330,7 +333,7 @@ export async function postRegistryImport(c: Context): Promise<Response> {
       errors: errors.length > 0 ? errors : undefined,
     }, 201);
   } catch (error) {
-    console.error("[API] POST /api/registry/import error:", error);
+    log.error("POST /api/registry/import error:", error);
     return c.json(
       {
         error: "Failed to import agents",
@@ -513,7 +516,7 @@ export async function postRegistryEnrichContext(c: Context): Promise<Response> {
       enriched_context_markdown: enrichedContextMarkdown,
     });
   } catch (error) {
-    console.error("[API] POST /api/registry/enrich-context error:", error);
+    log.error("POST /api/registry/enrich-context error:", error);
     return c.json(
       {
         error: "Failed to enrich context",

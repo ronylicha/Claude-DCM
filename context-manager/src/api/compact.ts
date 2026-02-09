@@ -10,6 +10,9 @@ import { z } from "zod";
 import { getDb } from "../db/client";
 import { generateContextBrief } from "../context-generator";
 import type { CompactRestoreResponse } from "../context/types";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("Compact");
 
 /** Zod schema for compact restore input validation */
 const CompactRestoreInputSchema = z.object({
@@ -59,8 +62,8 @@ export async function postCompactRestore(c: Context): Promise<Response> {
     const input: CompactRestoreInput = parseResult.data;
     const sql = getDb();
 
-    console.log(
-      `[Compact] Restoring context for agent=${input.agent_id}, session=${input.session_id}`
+    log.info(
+      `Restoring context for agent=${input.agent_id}, session=${input.session_id}`
     );
 
     // 1. Mark session as compacted (create marker if needed)
@@ -91,12 +94,12 @@ export async function postCompactRestore(c: Context): Promise<Response> {
       }
 
       // Log the compact event
-      console.log(
-        `[Compact] Session ${input.session_id} marked as compacted`
+      log.info(
+        `Session ${input.session_id} marked as compacted`
       );
     } catch (error) {
-      console.warn(
-        "[Compact] Could not mark session as compacted:",
+      log.warn(
+        "Could not mark session as compacted:",
         error
       );
       // Continue anyway - we can still generate the brief
@@ -136,13 +139,13 @@ export async function postCompactRestore(c: Context): Promise<Response> {
       restored_at: new Date().toISOString(),
     };
 
-    console.log(
-      `[Compact] Context restored: ${contextBrief.token_count} tokens, ${contextBrief.sources.length} sources`
+    log.info(
+      `Context restored: ${contextBrief.token_count} tokens, ${contextBrief.sources.length} sources`
     );
 
     return c.json(response, 200);
   } catch (error) {
-    console.error("[API] POST /api/compact/restore error:", error);
+    log.error("POST /api/compact/restore error:", error);
     return c.json(
       {
         error: "Failed to restore context",
@@ -207,7 +210,7 @@ export async function getCompactStatus(c: Context): Promise<Response> {
       compact_agent: request.metadata?.compact_agent ?? null,
     });
   } catch (error) {
-    console.error("[API] GET /api/compact/status error:", error);
+    log.error("GET /api/compact/status error:", error);
     return c.json(
       {
         error: "Failed to get compact status",
@@ -264,8 +267,8 @@ export async function postCompactSave(c: Context): Promise<Response> {
     const input = parseResult.data;
     const sql = getDb();
 
-    console.log(
-      `[Compact] Saving snapshot for session=${input.session_id}, trigger=${input.trigger}`
+    log.info(
+      `Saving snapshot for session=${input.session_id}, trigger=${input.trigger}`
     );
 
     // 1. Find session's project
@@ -289,6 +292,9 @@ export async function postCompactSave(c: Context): Promise<Response> {
     };
 
     // Upsert: one snapshot per session
+    // TODO(schema): tools_used column is repurposed to store modified_files (compact snapshot metadata).
+    // This should be migrated to a dedicated column (e.g., snapshot_tags TEXT[] or snapshot_files TEXT[])
+    // to avoid confusion with actual tool usage tracking in agent_contexts table.
     await sql`
       INSERT INTO agent_contexts (
         project_id,
@@ -325,8 +331,8 @@ export async function postCompactSave(c: Context): Promise<Response> {
       WHERE session_id = ${input.session_id}
     `;
 
-    console.log(
-      `[Compact] Snapshot saved: ${input.active_tasks.length} tasks, ${input.modified_files.length} files, ${input.key_decisions.length} decisions`
+    log.info(
+      `Snapshot saved: ${input.active_tasks.length} tasks, ${input.modified_files.length} files, ${input.key_decisions.length} decisions`
     );
 
     return c.json({
@@ -342,7 +348,7 @@ export async function postCompactSave(c: Context): Promise<Response> {
       saved_at: new Date().toISOString(),
     }, 201);
   } catch (error) {
-    console.error("[API] POST /api/compact/save error:", error);
+    log.error("POST /api/compact/save error:", error);
     return c.json(
       {
         error: "Failed to save compact snapshot",
@@ -384,6 +390,8 @@ export async function getCompactSnapshot(c: Context): Promise<Response> {
     }
 
     const row = results[0];
+    // TODO(schema): tools_used column is repurposed for modified_files in compact snapshots.
+    // Once schema is migrated to a dedicated snapshot_files column, update this query accordingly.
     return c.json({
       session_id: sessionId,
       exists: true,
@@ -393,7 +401,7 @@ export async function getCompactSnapshot(c: Context): Promise<Response> {
       saved_at: row.last_updated,
     });
   } catch (error) {
-    console.error("[API] GET /api/compact/snapshot error:", error);
+    log.error("GET /api/compact/snapshot error:", error);
     return c.json(
       {
         error: "Failed to get compact snapshot",

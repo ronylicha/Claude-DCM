@@ -5,6 +5,9 @@
 
 import postgres from "postgres";
 import { config, getDatabaseUrl } from "../config";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("DB");
 
 /** Database connection instance */
 let sql: postgres.Sql | null = null;
@@ -32,7 +35,7 @@ export async function closeDb(): Promise<void> {
   if (sql) {
     await sql.end();
     sql = null;
-    console.log("[DB] Connection closed");
+    log.info("Connection closed");
   }
 }
 
@@ -46,7 +49,7 @@ export async function testConnection(): Promise<boolean> {
     const result = await db`SELECT 1 as connected`;
     return result[0]?.connected === 1;
   } catch (error) {
-    console.error("[DB] Connection test failed:", error);
+    log.error("Connection test failed:", error);
     return false;
   }
 }
@@ -110,15 +113,6 @@ export function compressData(data: string): Buffer {
   return Buffer.from(Bun.gzipSync(new TextEncoder().encode(data)));
 }
 
-/**
- * Decompress data
- * @param data - Compressed buffer
- * @returns Decompressed string
- */
-export function decompressData(data: Buffer): string {
-  return new TextDecoder().decode(Bun.gunzipSync(data));
-}
-
 // Export getDb as sql for convenience
 export { getDb as sql };
 
@@ -138,6 +132,6 @@ export async function publishEvent(channel: string, event: string, data: Record<
       : payload;
     await db.notify('dcm_events', truncated);
   } catch (error) {
-    console.error("[DB] Failed to publish event:", error);
+    log.error("Failed to publish event:", error);
   }
 }

@@ -8,6 +8,9 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { generateContextBrief, getAgentContextData } from "../context-generator";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("Context");
 
 /** Query params schema for GET context */
 const GetContextQuerySchema = z.object({
@@ -133,7 +136,7 @@ export async function getContext(c: Context): Promise<Response> {
       sources: brief.sources,
     });
   } catch (error) {
-    console.error("[API] GET /api/context/:agent_id error:", error);
+    log.error("GET /api/context/:agent_id error:", error);
     return c.json(
       {
         error: "Failed to get context",
@@ -204,7 +207,7 @@ export async function postContextGenerate(c: Context): Promise<Response> {
       sources: brief.sources,
     }, 201);
   } catch (error) {
-    console.error("[API] POST /api/context/generate error:", error);
+    log.error("POST /api/context/generate error:", error);
     return c.json(
       {
         error: "Failed to generate context",
@@ -242,7 +245,7 @@ async function findActiveSession(agentId: string): Promise<string | null> {
 
     return results[0]?.session_id ?? null;
   } catch (error) {
-    console.error("[Context] Error finding active session:", error);
+    log.error("Error finding active session:", error);
     return null;
   }
 }

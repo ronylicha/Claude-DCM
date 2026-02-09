@@ -7,6 +7,9 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("API");
 
 /** Valid message topics */
 const VALID_TOPICS = [
@@ -152,7 +155,7 @@ export async function postMessage(c: Context): Promise<Response> {
       201
     );
   } catch (error) {
-    console.error("[API] POST /api/messages error:", error);
+    log.error("POST /api/messages error:", error);
     return c.json(
       {
         error: "Failed to publish message",
@@ -203,89 +206,35 @@ export async function getMessages(c: Context): Promise<Response> {
     const includeBroadcasts = query.include_broadcasts === "true";
     const sinceDate = query.since ? new Date(query.since) : null;
 
-    if (query.topic && sinceDate) {
-      // Filter by topic and since
-      messages = await sql<MessageRow[]>`
-        SELECT
-          id, project_id, from_agent_id, to_agent_id,
-          message_type, topic, payload, priority,
-          read_by, created_at, expires_at
-        FROM agent_messages
-        WHERE (expires_at IS NULL OR expires_at > NOW())
-          AND topic = ${query.topic}
-          AND created_at > ${sinceDate.toISOString()}
-          AND (
-            to_agent_id = ${agentId}
-            ${includeBroadcasts ? sql`OR to_agent_id IS NULL` : sql``}
-          )
-        ORDER BY priority DESC, created_at ASC
-        LIMIT ${query.limit}
-      `;
-    } else if (query.topic) {
-      // Filter by topic only
-      messages = await sql<MessageRow[]>`
-        SELECT
-          id, project_id, from_agent_id, to_agent_id,
-          message_type, topic, payload, priority,
-          read_by, created_at, expires_at
-        FROM agent_messages
-        WHERE (expires_at IS NULL OR expires_at > NOW())
-          AND topic = ${query.topic}
-          AND (
-            to_agent_id = ${agentId}
-            ${includeBroadcasts ? sql`OR to_agent_id IS NULL` : sql``}
-          )
-        ORDER BY priority DESC, created_at ASC
-        LIMIT ${query.limit}
-      `;
-    } else if (sinceDate) {
-      // Filter by since only
-      messages = await sql<MessageRow[]>`
-        SELECT
-          id, project_id, from_agent_id, to_agent_id,
-          message_type, topic, payload, priority,
-          read_by, created_at, expires_at
-        FROM agent_messages
-        WHERE (expires_at IS NULL OR expires_at > NOW())
-          AND created_at > ${sinceDate.toISOString()}
-          AND (
-            to_agent_id = ${agentId}
-            ${includeBroadcasts ? sql`OR to_agent_id IS NULL` : sql``}
-          )
-        ORDER BY priority DESC, created_at ASC
-        LIMIT ${query.limit}
-      `;
-    } else {
-      // No filters
-      messages = await sql<MessageRow[]>`
-        SELECT
-          id, project_id, from_agent_id, to_agent_id,
-          message_type, topic, payload, priority,
-          read_by, created_at, expires_at
-        FROM agent_messages
-        WHERE (expires_at IS NULL OR expires_at > NOW())
-          AND (
-            to_agent_id = ${agentId}
-            ${includeBroadcasts ? sql`OR to_agent_id IS NULL` : sql``}
-          )
-        ORDER BY priority DESC, created_at ASC
-        LIMIT ${query.limit}
-      `;
-    }
+    // Build dynamic query with optional filters
+    const topicFilter = query.topic ? sql`AND topic = ${query.topic}` : sql``;
+    const sinceFilter = sinceDate ? sql`AND created_at > ${sinceDate.toISOString()}` : sql``;
+
+    messages = await sql<MessageRow[]>`
+      SELECT
+        id, project_id, from_agent_id, to_agent_id,
+        message_type, topic, payload, priority,
+        read_by, created_at, expires_at
+      FROM agent_messages
+      WHERE (expires_at IS NULL OR expires_at > NOW())
+        ${topicFilter}
+        ${sinceFilter}
+        AND (
+          to_agent_id = ${agentId}
+          ${includeBroadcasts ? sql`OR to_agent_id IS NULL` : sql``}
+        )
+      ORDER BY priority DESC, created_at ASC
+      LIMIT ${query.limit}
+    `;
 
     // Mark messages as read by this agent
     const messageIds = messages.map((m) => m.id);
     if (messageIds.length > 0) {
       await sql`
         UPDATE agent_messages
-        SET read_by = array_append(
-          CASE WHEN ${agentId} = ANY(read_by) THEN read_by
-               ELSE read_by END,
-          CASE WHEN ${agentId} = ANY(read_by) THEN NULL
-               ELSE ${agentId} END
-        )
+        SET read_by = array_append(COALESCE(read_by, '{}'::text[]), ${agentId})
         WHERE id = ANY(${messageIds})
-          AND NOT (${agentId} = ANY(read_by))
+          AND (read_by IS NULL OR NOT (${agentId} = ANY(read_by)))
       `;
     }
 
@@ -295,7 +244,7 @@ export async function getMessages(c: Context): Promise<Response> {
       FROM agent_messages
       WHERE (expires_at IS NULL OR expires_at > NOW())
         AND (to_agent_id = ${agentId} OR to_agent_id IS NULL)
-        AND NOT (${agentId} = ANY(read_by))
+        AND (read_by IS NULL OR NOT (${agentId} = ANY(read_by)))
     `;
 
     return c.json({
@@ -316,7 +265,7 @@ export async function getMessages(c: Context): Promise<Response> {
       unread_remaining: Number(unread_count),
     });
   } catch (error) {
-    console.error("[API] GET /api/messages/:agent_id error:", error);
+    log.error("GET /api/messages/:agent_id error:", error);
     return c.json(
       {
         error: "Failed to fetch messages",
@@ -324,6 +273,29 @@ export async function getMessages(c: Context): Promise<Response> {
       },
       500
     );
+  }
+}
+
+/**
+ * GET /api/messages - Get all messages (for dashboard)
+ */
+export async function getAllMessages(c: Context): Promise<Response> {
+  try {
+    const sql = getDb();
+    const limit = Number(c.req.query("limit") ?? "100");
+    const offset = Number(c.req.query("offset") ?? "0");
+    const messages = await sql`
+      SELECT id, project_id, from_agent_id, to_agent_id,
+        message_type, topic, payload, priority,
+        read_by, created_at, expires_at
+      FROM agent_messages
+      ORDER BY created_at DESC
+      LIMIT ${limit} OFFSET ${offset}`;
+    const [{ total }] = await sql`SELECT COUNT(*) as total FROM agent_messages`;
+    return c.json({ messages, count: Number(total), limit, offset });
+  } catch (error) {
+    log.error("GET /api/messages error:", error);
+    return c.json({ error: "Failed to get messages" }, 500);
   }
 }
 

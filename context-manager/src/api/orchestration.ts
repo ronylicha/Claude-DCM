@@ -7,6 +7,9 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("Orchestration");
 
 /** Zod schema for batch submission input validation */
 const BatchSubmitInputSchema = z.object({
@@ -76,8 +79,8 @@ export async function postBatchSubmit(c: Context): Promise<Response> {
     const input: BatchSubmitInput = parseResult.data;
     const sql = getDb();
 
-    console.log(
-      `[Orchestration] Submitting batch: session=${input.session_id}, wave=${input.wave_number}, tasks=${input.tasks.length}`
+    log.info(
+      `Submitting batch: session=${input.session_id}, wave=${input.wave_number}, tasks=${input.tasks.length}`
     );
 
     // 1. Create orchestration_batches row
@@ -138,8 +141,8 @@ export async function postBatchSubmit(c: Context): Promise<Response> {
       subtask_ids: subtaskIds,
     });
 
-    console.log(
-      `[Orchestration] Batch created: id=${batch.id}, subtasks=${subtaskIds.length}`
+    log.info(
+      `Batch created: id=${batch.id}, subtasks=${subtaskIds.length}`
     );
 
     // 4. Return batch with subtask IDs
@@ -158,7 +161,7 @@ export async function postBatchSubmit(c: Context): Promise<Response> {
       },
     }, 201);
   } catch (error) {
-    console.error("[API] POST /api/orchestration/batch-submit error:", error);
+    log.error("POST /api/orchestration/batch-submit error:", error);
     return c.json(
       {
         error: "Failed to create batch",
@@ -232,7 +235,7 @@ export async function getBatch(c: Context): Promise<Response> {
       },
     });
   } catch (error) {
-    console.error("[API] GET /api/orchestration/batch/:id error:", error);
+    log.error("GET /api/orchestration/batch/:id error:", error);
     return c.json(
       {
         error: "Failed to fetch batch",
@@ -277,7 +280,7 @@ export async function getSynthesis(c: Context): Promise<Response> {
 
     return c.json(batch.synthesis);
   } catch (error) {
-    console.error("[API] GET /api/orchestration/synthesis/:id error:", error);
+    log.error("GET /api/orchestration/synthesis/:id error:", error);
     return c.json(
       {
         error: "Failed to fetch synthesis",
@@ -394,7 +397,7 @@ export async function getConflicts(c: Context): Promise<Response> {
       conflict_count: conflicts.length,
     });
   } catch (error) {
-    console.error("[API] GET /api/orchestration/conflicts/:id error:", error);
+    log.error("GET /api/orchestration/conflicts/:id error:", error);
     return c.json(
       {
         error: "Failed to analyze conflicts",
@@ -519,8 +522,8 @@ export async function postBatchComplete(c: Context): Promise<Response> {
       next_wave_ready: synthesis.next_wave_ready,
     });
 
-    console.log(
-      `[Orchestration] Batch completed: id=${batchId}, ${completedCount}/${batch.total_tasks} tasks, ${filesChanged.size} files, ${Math.round(totalDurationMs / 1000)}s`
+    log.info(
+      `Batch completed: id=${batchId}, ${completedCount}/${batch.total_tasks} tasks, ${filesChanged.size} files, ${Math.round(totalDurationMs / 1000)}s`
     );
 
     return c.json({
@@ -528,7 +531,7 @@ export async function postBatchComplete(c: Context): Promise<Response> {
       synthesis,
     });
   } catch (error) {
-    console.error("[API] POST /api/orchestration/batch/:id/complete error:", error);
+    log.error("POST /api/orchestration/batch/:id/complete error:", error);
     return c.json(
       {
         error: "Failed to complete batch",

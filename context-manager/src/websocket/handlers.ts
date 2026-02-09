@@ -3,6 +3,7 @@
  * @module websocket/handlers
  */
 
+import { createLogger } from "../lib/logger";
 import type {
   WSClient,
   WSClientData,
@@ -19,6 +20,8 @@ import type {
 } from "./types";
 import { parseChannel } from "./types";
 import { validateToken } from "./auth";
+
+const log = createLogger("WS");
 
 // ============================================
 // Client Registry
@@ -59,7 +62,7 @@ export function handleConnection(ws: WSClient): void {
   // Register client
   clients.set(clientId, ws);
 
-  console.log(`[WS] Client connected: ${clientId}`);
+  log.info(`Client connected: ${clientId}`);
 
   // Send connected message
   const connectedMsg: WSConnected = {
@@ -108,7 +111,7 @@ export function handleMessage(ws: WSClient, message: string | Buffer): void {
         sendError(ws, "UNKNOWN_MESSAGE_TYPE", `Unknown message type: ${(parsed as { type: string }).type}`);
     }
   } catch (error) {
-    console.error("[WS] Failed to parse message:", error);
+    log.error("Failed to parse message:", error);
     sendError(ws, "PARSE_ERROR", "Failed to parse message");
   }
 }
@@ -119,7 +122,7 @@ export function handleMessage(ws: WSClient, message: string | Buffer): void {
 export function handleClose(ws: WSClient): void {
   const clientId = ws.data.id;
 
-  console.log(`[WS] Client disconnected: ${clientId}`);
+  log.info(`Client disconnected: ${clientId}`);
 
   // Unsubscribe from all channels
   for (const channel of ws.data.subscriptions) {
@@ -174,7 +177,7 @@ function handleSubscribe(ws: WSClient, msg: WSSubscribe): void {
   subscribeToChannel(ws, channel);
   sendAck(ws, msg.id, true);
 
-  console.log(`[WS] Client ${ws.data.id} subscribed to ${channel}`);
+  log.info(`Client ${ws.data.id} subscribed to ${channel}`);
 }
 
 function handleUnsubscribe(ws: WSClient, msg: WSUnsubscribe): void {
@@ -183,7 +186,7 @@ function handleUnsubscribe(ws: WSClient, msg: WSUnsubscribe): void {
   unsubscribeFromChannel(ws, channel);
   sendAck(ws, msg.id, true);
 
-  console.log(`[WS] Client ${ws.data.id} unsubscribed from ${channel}`);
+  log.info(`Client ${ws.data.id} unsubscribed from ${channel}`);
 }
 
 function handlePublish(ws: WSClient, msg: WSPublish): void {
@@ -205,7 +208,7 @@ function handlePublish(ws: WSClient, msg: WSPublish): void {
   broadcast(msg.channel, msg.event, msg.data);
   sendAck(ws, msg.id, true);
 
-  console.log(`[WS] Client ${ws.data.id} published ${msg.event} to ${msg.channel}`);
+  log.info(`Client ${ws.data.id} published ${msg.event} to ${msg.channel}`);
 }
 
 function handleAuth(ws: WSClient, msg: WSAuth): void {
@@ -242,7 +245,7 @@ function handleAuth(ws: WSClient, msg: WSAuth): void {
     for (const channel of previousSubs) {
       subscribeToChannel(ws, channel);
     }
-    console.log(`[WS] Restored ${previousSubs.size} subscriptions for ${ws.data.agent_id}`);
+    log.info(`Restored ${previousSubs.size} subscriptions for ${ws.data.agent_id}`);
   }
 
   // Broadcast agent.connected
@@ -254,7 +257,7 @@ function handleAuth(ws: WSClient, msg: WSAuth): void {
     });
   }
 
-  console.log(`[WS] Client ${ws.data.id} authenticated as agent: ${ws.data.agent_id}`);
+  log.info(`Client ${ws.data.id} authenticated as agent: ${ws.data.agent_id}`);
 }
 
 function handlePing(ws: WSClient): void {
@@ -334,7 +337,7 @@ export function broadcast(channel: string, event: EventType, data: unknown): voi
           pendingMessages.set(`${msgId}:${clientId}`, { msg: msgStr, clientId, attempts: 1, sentAt: Date.now() });
         }
       } catch (error) {
-        console.error(`[WS] Failed to send to client ${clientId}:`, error);
+        log.error(`Failed to send to client ${clientId}:`, error);
         // Remove failed client
         clients.delete(clientId);
         subscribers.delete(clientId);
@@ -360,7 +363,7 @@ export function broadcastAll(event: EventType, data: unknown): void {
     try {
       client.send(msgStr);
     } catch (error) {
-      console.error(`[WS] Failed to broadcast to client:`, error);
+      log.error(`Failed to broadcast to client:`, error);
     }
   }
 }

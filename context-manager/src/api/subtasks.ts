@@ -7,6 +7,9 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("API");
 
 /** Input schema for subtask creation */
 export interface SubtaskInput {
@@ -165,7 +168,7 @@ export async function postSubtask(c: Context): Promise<Response> {
     // Auto-populate agent_contexts table (fire and forget)
     if (subtask.agent_type && subtask.agent_id) {
       populateAgentContext(sql, subtask).catch(err =>
-        console.error("[API] Agent context auto-population error:", err)
+        log.error("Agent context auto-population error:", err)
       );
     }
 
@@ -188,7 +191,7 @@ export async function postSubtask(c: Context): Promise<Response> {
       },
     }, 201);
   } catch (error) {
-    console.error("[API] POST /api/subtasks error:", error);
+    log.error("POST /api/subtasks error:", error);
     return c.json(
       {
         error: "Failed to create subtask",
@@ -301,7 +304,7 @@ export async function getSubtasks(c: Context): Promise<Response> {
       offset,
     });
   } catch (error) {
-    console.error("[API] GET /api/subtasks error:", error);
+    log.error("GET /api/subtasks error:", error);
     return c.json(
       {
         error: "Failed to fetch subtasks",
@@ -357,7 +360,7 @@ export async function getSubtaskById(c: Context): Promise<Response> {
       },
     });
   } catch (error) {
-    console.error("[API] GET /api/subtasks/:id error:", error);
+    log.error("GET /api/subtasks/:id error:", error);
     return c.json(
       {
         error: "Failed to fetch subtask",
@@ -519,14 +522,14 @@ export async function patchSubtask(c: Context): Promise<Response> {
 
       // Auto-send inter-agent message with result for other agents to consume
       broadcastAgentResult(sql, subtask, body.result).catch(err =>
-        console.error("[API] Inter-agent message error:", err)
+        log.error("Inter-agent message error:", err)
       );
     }
 
     // Update agent_contexts when subtask completes or fails (fire and forget)
     if (subtask.agent_id && (body.status === "completed" || body.status === "failed")) {
       updateAgentContextOnComplete(sql, subtask, body.result).catch(err =>
-        console.error("[API] Agent context update error:", err)
+        log.error("Agent context update error:", err)
       );
     }
 
@@ -538,7 +541,7 @@ export async function patchSubtask(c: Context): Promise<Response> {
       },
     });
   } catch (error) {
-    console.error("[API] PATCH /api/subtasks/:id error:", error);
+    log.error("PATCH /api/subtasks/:id error:", error);
     return c.json(
       {
         error: "Failed to update subtask",
@@ -767,7 +770,7 @@ export async function deleteSubtask(c: Context): Promise<Response> {
 
     return new Response(null, { status: 204 });
   } catch (error) {
-    console.error("[API] DELETE /api/subtasks/:id error:", error);
+    log.error("DELETE /api/subtasks/:id error:", error);
     return c.json(
       {
         error: "Failed to delete subtask",
@@ -820,7 +823,7 @@ export async function closeSessionSubtasks(c: Context): Promise<Response> {
         `;
       }
 
-      console.log(`[API] Closed ${result.length} orphan subtasks for session ${sessionId}`);
+      log.info(`Closed ${result.length} orphan subtasks for session ${sessionId}`);
     }
 
     return c.json({
@@ -828,7 +831,7 @@ export async function closeSessionSubtasks(c: Context): Promise<Response> {
       session_id: sessionId,
     });
   } catch (error) {
-    console.error("[API] POST /api/subtasks/close-session error:", error);
+    log.error("POST /api/subtasks/close-session error:", error);
     return c.json({ error: "Failed to close session subtasks" }, 500);
   }
 }
