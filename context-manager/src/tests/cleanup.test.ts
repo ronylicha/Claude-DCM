@@ -510,12 +510,6 @@ describe("Cleanup Module", () => {
       expect(isCleanupRunning()).toBe(false);
     });
 
-    test("getLastCleanupStats returns null before any cleanup has run", () => {
-      // Note: if prior tests in this suite called runCleanup, lastCleanupStats
-      // will be set. This test documents the expected initial behavior.
-      // In a fresh module load it would be null.
-    });
-
     test("startCleanupInterval sets isCleanupRunning to true", () => {
       startCleanupInterval(600_000); // long interval to avoid execution during test
       expect(isCleanupRunning()).toBe(true);
