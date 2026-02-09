@@ -18,7 +18,6 @@ function shouldLog(configuredLevel: LogLevel, messageLevel: LogLevel): boolean {
 
 export function createLogger(tag: string) {
   const logLevel = getLogLevel();
-  const shouldDebug = logLevel === 'debug' || process.env.DEBUG;
 
   return {
     info(...args: unknown[]) {
@@ -37,7 +36,7 @@ export function createLogger(tag: string) {
       }
     },
     debug(...args: unknown[]) {
-      if (shouldDebug) {
+      if (shouldLog(logLevel, 'debug') || process.env.DEBUG) {
         console.debug(`[${tag}]`, ...args);
       }
     },
