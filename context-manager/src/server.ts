@@ -9,8 +9,6 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { config, validateConfig } from "./config";
 import { createLogger } from "./lib/logger";
-
-const log = createLogger("Server");
 import { getDb, closeDb, testConnection, healthCheck, getDbStats } from "./db/client";
 import { postAction, getActions, getActionsHourly, deleteAction, deleteActionsBySession } from "./api/actions";
 import { suggestRouting, getRoutingStats, postRoutingFeedback } from "./api/routing";
@@ -60,6 +58,9 @@ import { trackTokens, getCapacity, resetCapacity } from "./api/tokens";
 import { getRegistry, getRegistryAgent, putRegistryAgent, postRegistryImport, postRegistryEnrichContext } from "./api/registry";
 import { postBatchSubmit, getBatch, getSynthesis, getConflicts, postBatchComplete } from "./api/orchestration";
 import { getWaveCurrent, getWaveHistoryHandler, postWaveTransition, postWaveCreate, postWaveStart } from "./api/waves";
+
+// Initialize logger after imports
+const log = createLogger("Server");
 
 // Validate configuration at startup
 validateConfig();
