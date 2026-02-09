@@ -552,19 +552,34 @@ export async function patchSubtask(c: Context): Promise<Response> {
 /**
  * Clean up agent_contexts when a subtask completes or fails.
  * Removes the row so completed agents do not appear as active.
+ * Uses multiple match strategies for reliability.
  */
 async function updateAgentContextOnComplete(
   sql: ReturnType<typeof getDb>,
   subtask: SubtaskRow,
   _result?: Record<string, unknown>
 ): Promise<void> {
-  if (!subtask.agent_id) return;
+  // Strategy 1: Delete by agent_id (exact match)
+  if (subtask.agent_id) {
+    const deleted = await sql`
+      DELETE FROM agent_contexts
+      WHERE agent_id = ${subtask.agent_id}
+        AND agent_type != 'compact-snapshot'
+      RETURNING id
+    `;
+    if (deleted.length > 0) return;
+  }
 
-  // Delete agent context row - agent is done
-  await sql`
-    DELETE FROM agent_contexts
-    WHERE agent_id = ${subtask.agent_id}
-  `;
+  // Strategy 2: Delete by agent_type + subtask_id in role_context (fallback)
+  if (subtask.agent_type) {
+    await sql`
+      DELETE FROM agent_contexts
+      WHERE agent_type = ${subtask.agent_type}
+        AND agent_type != 'compact-snapshot'
+        AND role_context->>'subtask_id' = ${subtask.id}
+      RETURNING id
+    `;
+  }
 }
 
 /**
@@ -760,5 +775,60 @@ export async function deleteSubtask(c: Context): Promise<Response> {
       },
       500
     );
+  }
+}
+
+/**
+ * POST /api/subtasks/close-session - Close all running subtasks for a session
+ * Called by track-session-end.sh to prevent orphan subtasks
+ * @param c - Hono context
+ */
+export async function closeSessionSubtasks(c: Context): Promise<Response> {
+  try {
+    const body = await c.req.json();
+    const sessionId = body.session_id;
+
+    if (!sessionId) {
+      return c.json({ error: "Missing session_id" }, 400);
+    }
+
+    const sql = getDb();
+
+    // Close all running/paused/blocked subtasks linked to this session's requests
+    const result = await sql`
+      UPDATE subtasks
+      SET status = 'completed', completed_at = NOW(),
+          result = jsonb_build_object('reason', 'session_ended')
+      WHERE status IN ('running', 'paused', 'blocked')
+        AND task_list_id IN (
+          SELECT tl.id FROM task_lists tl
+          JOIN requests r ON tl.request_id = r.id
+          WHERE r.session_id = ${sessionId}
+        )
+      RETURNING id, agent_type
+    `;
+
+    // Also clean up agent_contexts for these agents
+    if (result.length > 0) {
+      const agentTypes = [...new Set(result.map((r: { agent_type: string | null }) => r.agent_type).filter(Boolean))];
+      for (const agentType of agentTypes) {
+        await sql`
+          DELETE FROM agent_contexts
+          WHERE agent_type = ${agentType}
+            AND agent_type != 'compact-snapshot'
+            AND (role_context->>'status' IS NULL OR role_context->>'status' IN ('running', 'paused', 'blocked'))
+        `;
+      }
+
+      console.log(`[API] Closed ${result.length} orphan subtasks for session ${sessionId}`);
+    }
+
+    return c.json({
+      closed: result.length,
+      session_id: sessionId,
+    });
+  } catch (error) {
+    console.error("[API] POST /api/subtasks/close-session error:", error);
+    return c.json({ error: "Failed to close session subtasks" }, 500);
   }
 }

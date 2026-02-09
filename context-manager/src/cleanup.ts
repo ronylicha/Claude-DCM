@@ -1,6 +1,6 @@
 /**
- * Cleanup Module - TTL-based message expiration
- * Phase 4 - Automatic cleanup of expired messages
+ * Cleanup Module - TTL-based message expiration + stale record cleanup
+ * Phase 4 - Automatic cleanup of expired messages, orphaned agents/sessions
  * @module cleanup
  */
 
@@ -9,6 +9,9 @@ import { getDb } from "./db/client";
 /** Cleanup statistics */
 interface CleanupStats {
   deletedMessages: number;
+  closedSessions: number;
+  deletedAgentContexts: number;
+  failedSubtasks: number;
   deletedAt: string;
   durationMs: number;
 }
@@ -34,6 +37,131 @@ export async function deleteExpiredMessages(): Promise<number> {
 }
 
 /**
+ * Close orphaned sessions (ended_at IS NULL) that have no recent activity.
+ * Only closes if: started > maxAgeHours ago AND no actions in last inactiveMinutes.
+ * This avoids killing long-running but still-active sessions.
+ * @param maxAgeHours - Minimum age in hours (default: 0.5)
+ * @param inactiveMinutes - No activity for this many minutes (default: 10)
+ * @returns Number of closed sessions
+ */
+export async function closeOrphanedSessions(maxAgeHours: number = 0.5, inactiveMinutes: number = 10): Promise<number> {
+  const sql = getDb();
+
+  const result = await sql`
+    UPDATE sessions s
+    SET ended_at = NOW()
+    WHERE s.ended_at IS NULL
+      AND s.started_at < NOW() - INTERVAL '1 hour' * ${maxAgeHours}
+      AND NOT EXISTS (
+        SELECT 1 FROM actions a
+        JOIN subtasks st ON a.subtask_id = st.id
+        JOIN task_lists tl ON st.task_list_id = tl.id
+        JOIN requests r ON tl.request_id = r.id
+        WHERE r.session_id = s.id
+          AND a.created_at > NOW() - INTERVAL '1 minute' * ${inactiveMinutes}
+      )
+    RETURNING id
+  `;
+
+  if (result.length > 0) {
+    console.log(`[Cleanup] Closed ${result.length} orphaned sessions (older than ${maxAgeHours}h, inactive ${inactiveMinutes}min)`);
+  }
+
+  return result.length;
+}
+
+/**
+ * Delete stale agent_contexts where role_context.status is still 'running'
+ * but last_updated is older than maxAgeHours AND no recent activity.
+ * @param maxAgeHours - Minimum age in hours (default: 0.5)
+ * @param inactiveMinutes - No activity for this many minutes (default: 10)
+ * @returns Number of deleted agent contexts
+ */
+export async function deleteStaleAgentContexts(maxAgeHours: number = 0.5, inactiveMinutes: number = 10): Promise<number> {
+  const sql = getDb();
+
+  const result = await sql`
+    DELETE FROM agent_contexts ac
+    WHERE (
+      ac.role_context->>'status' IN ('running', 'paused', 'blocked')
+      OR ac.role_context->>'status' IS NULL
+    )
+    AND ac.last_updated < NOW() - INTERVAL '1 hour' * ${maxAgeHours}
+    AND ac.agent_type != 'compact-snapshot'
+    AND NOT EXISTS (
+      SELECT 1 FROM subtasks st
+      JOIN actions a ON a.subtask_id = st.id
+      WHERE st.agent_id = ac.agent_id
+        AND st.status = 'running'
+        AND a.created_at > NOW() - INTERVAL '1 minute' * ${inactiveMinutes}
+    )
+    RETURNING id, agent_id, agent_type
+  `;
+
+  if (result.length > 0) {
+    console.log(`[Cleanup] Deleted ${result.length} stale agent contexts (older than ${maxAgeHours}h, inactive ${inactiveMinutes}min)`);
+  }
+
+  return result.length;
+}
+
+/**
+ * Mark stuck subtasks as failed, but only if they have no recent activity.
+ * A subtask with recent actions is still alive even if started long ago.
+ * @param maxAgeHours - Minimum age in hours (default: 0.5)
+ * @param inactiveMinutes - No activity for this many minutes (default: 10)
+ * @returns Number of failed subtasks
+ */
+export async function failStuckSubtasks(maxAgeHours: number = 0.5, inactiveMinutes: number = 10): Promise<number> {
+  const sql = getDb();
+
+  const result = await sql`
+    UPDATE subtasks st
+    SET
+      status = 'failed',
+      completed_at = NOW(),
+      result = jsonb_build_object('error', 'Timed out: no completion event received')
+    WHERE st.status IN ('running', 'paused', 'blocked')
+      AND st.started_at < NOW() - INTERVAL '1 hour' * ${maxAgeHours}
+      AND NOT EXISTS (
+        SELECT 1 FROM actions a
+        WHERE a.subtask_id = st.id
+          AND a.created_at > NOW() - INTERVAL '1 minute' * ${inactiveMinutes}
+      )
+    RETURNING id, agent_type
+  `;
+
+  if (result.length > 0) {
+    console.log(`[Cleanup] Failed ${result.length} stuck subtasks (older than ${maxAgeHours}h, inactive ${inactiveMinutes}min)`);
+  }
+
+  return result.length;
+}
+
+/**
+ * Delete old compact snapshots from agent_contexts
+ * These are created by pre-compact-save but never used by context restoration
+ * @param maxAgeHours - Maximum age in hours (default: 24)
+ * @returns Number of deleted snapshots
+ */
+export async function deleteOldCompactSnapshots(maxAgeHours: number = 24): Promise<number> {
+  const sql = getDb();
+
+  const result = await sql`
+    DELETE FROM agent_contexts
+    WHERE agent_type = 'compact-snapshot'
+      AND last_updated < NOW() - INTERVAL '1 hour' * ${maxAgeHours}
+    RETURNING id
+  `;
+
+  if (result.length > 0) {
+    console.log(`[Cleanup] Deleted ${result.length} old compact snapshots (older than ${maxAgeHours}h)`);
+  }
+
+  return result.length;
+}
+
+/**
  * Run cleanup and record statistics
  * @returns Cleanup statistics
  */
@@ -41,20 +169,39 @@ export async function runCleanup(): Promise<CleanupStats> {
   const startTime = performance.now();
 
   try {
-    const deletedMessages = await deleteExpiredMessages();
+    const [deletedMessages, closedSessions, deletedAgentContexts, failedSubtasks] =
+      await Promise.all([
+        deleteExpiredMessages(),
+        closeOrphanedSessions(0.5),  // 30min instead of 2h - sessions rarely last that long
+        deleteStaleAgentContexts(0.5),
+        failStuckSubtasks(0.5),
+      ]);
+
+    // Run less frequent cleanup (snapshots) only every ~10 runs
+    // Use a simple modulo on the minute to approximate
+    const minute = new Date().getMinutes();
+    if (minute % 10 === 0) {
+      await deleteOldCompactSnapshots(24);
+    }
+
     const durationMs = Math.round(performance.now() - startTime);
 
     const stats: CleanupStats = {
       deletedMessages,
+      closedSessions,
+      deletedAgentContexts,
+      failedSubtasks,
       deletedAt: new Date().toISOString(),
       durationMs,
     };
 
     lastCleanupStats = stats;
 
-    if (deletedMessages > 0) {
+    const totalCleaned = deletedMessages + closedSessions + deletedAgentContexts + failedSubtasks;
+    if (totalCleaned > 0) {
       console.log(
-        `[Cleanup] Deleted ${deletedMessages} expired messages in ${durationMs}ms`
+        `[Cleanup] Cleaned ${totalCleaned} records in ${durationMs}ms ` +
+        `(msgs:${deletedMessages} sessions:${closedSessions} agents:${deletedAgentContexts} subtasks:${failedSubtasks})`
       );
     }
 

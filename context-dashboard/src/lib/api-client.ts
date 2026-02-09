@@ -482,6 +482,73 @@ export interface AgentContextsStatsResponse {
   timestamp: string;
 }
 
+// Token tracking
+export interface AgentCapacity {
+  agent_id: string;
+  current_usage: number;
+  max_capacity: number;
+  usage_percent: number;
+  consumption_rate: number;
+  zone: "green" | "yellow" | "orange" | "red" | "critical";
+  minutes_remaining: string;
+  shouldIntervene: boolean;
+  compact_count: number;
+  last_compact_at: string | null;
+  last_updated_at: string | null;
+}
+
+// Agent registry
+export interface AgentRegistryEntry {
+  agent_type: string;
+  category: string;
+  display_name: string | null;
+  default_scope: Record<string, unknown>;
+  allowed_tools: string[] | null;
+  forbidden_actions: string[] | null;
+  max_files: number | null;
+  wave_assignments: number[] | null;
+  recommended_model: string | null;
+  created_at: string;
+}
+
+// Orchestration batch
+export interface OrchestrationBatch {
+  id: string;
+  session_id: string;
+  wave_number: number;
+  status: "pending" | "running" | "completed" | "failed";
+  total_tasks: number;
+  completed_tasks: number;
+  failed_tasks: number;
+  synthesis: Record<string, unknown> | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+// Wave state
+export interface WaveState {
+  id: string;
+  session_id: string;
+  wave_number: number;
+  status: "pending" | "running" | "completed" | "failed" | "blocked";
+  total_tasks: number;
+  completed_tasks: number;
+  failed_tasks: number;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+// Compact snapshot
+export interface CompactEvent {
+  id: string;
+  session_id: string;
+  agent_type: string;
+  trigger: string;
+  snapshot: Record<string, unknown>;
+  summary: string;
+  created_at: string;
+}
+
 // ============================================
 // API Error
 // ============================================
@@ -910,6 +977,61 @@ export const apiClient = {
       method: "POST",
       body: JSON.stringify({ agent_id: agentId, session_id: sessionId }),
     }),
+
+  // ==========================================
+  // Token Tracking - /api/capacity
+  // ==========================================
+  getCapacity: (agentId: string) =>
+    apiFetch<AgentCapacity>(`/api/capacity/${agentId}`),
+
+  // ==========================================
+  // Agent Registry - /api/registry
+  // ==========================================
+  getRegistry: (params?: { category?: string; limit?: number; offset?: number }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.category) searchParams.set("category", params.category);
+    if (params?.limit) searchParams.set("limit", params.limit.toString());
+    if (params?.offset) searchParams.set("offset", params.offset.toString());
+    const query = searchParams.toString();
+    return apiFetch<{ agents: AgentRegistryEntry[]; total: number }>(
+      `/api/registry${query ? `?${query}` : ""}`
+    );
+  },
+  getRegistryAgent: (agentType: string) =>
+    apiFetch<{ agent: AgentRegistryEntry }>(`/api/registry/${agentType}`),
+
+  // ==========================================
+  // Orchestration - /api/orchestration
+  // ==========================================
+  getBatch: (batchId: string) =>
+    apiFetch<{ batch: OrchestrationBatch & { subtasks: unknown[] } }>(
+      `/api/orchestration/batch/${batchId}`
+    ),
+  getSynthesis: (batchId: string) =>
+    apiFetch<Record<string, unknown>>(`/api/orchestration/synthesis/${batchId}`),
+  getConflicts: (batchId: string) =>
+    apiFetch<{ conflicts: unknown[]; conflict_count: number }>(
+      `/api/orchestration/conflicts/${batchId}`
+    ),
+
+  // ==========================================
+  // Waves - /api/waves
+  // ==========================================
+  getWaveCurrent: (sessionId: string) =>
+    apiFetch<{ wave: WaveState }>(`/api/waves/${sessionId}/current`),
+  getWaveHistory: (sessionId: string) =>
+    apiFetch<{ waves: WaveState[]; count: number }>(`/api/waves/${sessionId}/history`),
+
+  // ==========================================
+  // Compact Snapshots - /api/agent-contexts
+  // ==========================================
+  getCompactSnapshots: (sessionId?: string) => {
+    const searchParams = new URLSearchParams({ agent_type: "compact-snapshot" });
+    if (sessionId) searchParams.set("session_id", sessionId);
+    return apiFetch<{ snapshots: CompactEvent[] }>(
+      `/api/agent-contexts?${searchParams}`
+    );
+  },
 };
 
 export default apiClient;

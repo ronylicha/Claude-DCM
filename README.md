@@ -21,11 +21,19 @@ The system consists of three services: a REST API for tracking and context manag
 
 ## Key Features
 
-![DCM key features overview](docs/assets/key-features.svg)
+- **Compact save/restore** -- Automatically saves context snapshots before compaction and restores them afterward, so sessions never lose track of work in progress
+- **Cross-agent sharing** -- When a subagent finishes, its result is broadcast so other agents can access it through the context API
+- **Proactive monitoring** -- Monitors transcript size every 10th tool call and triggers early snapshots when nearing the context limit
+- **Real-time event streaming** -- WebSocket server with LISTEN/NOTIFY bridge for live activity feeds
+- **Tool and session tracking** -- Records every tool invocation, agent delegation, and session lifecycle event
+- **Routing intelligence** -- Keyword-based tool suggestion with feedback-driven weight adjustment
+- **Inter-agent messaging** -- Pub/sub messaging system for agent coordination
+- **Auto-start services** -- In both CLI and plugin mode, DCM auto-launches when Claude Code starts a session
+- **Monitoring dashboard** -- Next.js UI with live activity feeds, session timelines, agent statistics, and tool analytics
 
 ## Architecture Overview
 
-![DCM architecture overview](docs/assets/architecture.svg)
+
 
 | Component         | Stack                                      | Port | Description                                         |
 | ----------------- | ------------------------------------------ | ---- | --------------------------------------------------- |
@@ -40,114 +48,107 @@ The system consists of three services: a REST API for tracking and context manag
 
 - [Bun](https://bun.sh) 1.x
 - [PostgreSQL](https://www.postgresql.org/) 16+
-- `jq` and `curl` (standard on most Linux/macOS systems)
+-  and  (standard on most Linux/macOS systems)
 - [Node.js](https://nodejs.org/) 22+ (for the dashboard only)
 
 ### One-command install
 
-```bash
-git clone git@github.com:ronylicha/Claude-DCM.git
-cd Claude-DCM/context-manager
 
-# Install deps, create database, inject Claude Code hooks
-./dcm install
-
-# Start API + WebSocket + Dashboard
-./dcm start
-```
 
 Restart Claude Code to pick up the new hooks. From that point on, DCM tracks every session automatically.
 
 ### Auto-start via plugin
 
-When installed as a Claude Code plugin, DCM auto-launches its services the moment Claude Code starts a session. No manual `dcm start` needed.
+When installed as a Claude Code plugin, DCM auto-launches its services the moment Claude Code starts a session. No manual  needed.
 
-```bash
-# Symlink into your plugins directory
-ln -s /path/to/Claude-DCM/context-manager ~/.claude/plugins/dcm
-```
 
-On the next Claude Code session, the `ensure-services.sh` hook detects that DCM is not running, starts the API and WebSocket servers, and waits for health confirmation -- all within the SessionStart hook timeout.
+
+On the next Claude Code session, the  hook detects that DCM is not running, starts the API and WebSocket servers, and waits for health confirmation -- all within the SessionStart hook timeout.
 
 **Prerequisite**: PostgreSQL must be running before Claude Code starts. Using systemd to manage PostgreSQL is recommended so it starts at boot.
 
 ## Installation Methods
 
-| Feature                | CLI Mode (`dcm install`)                     | Plugin Mode (auto-discovery)                      |
-| ---------------------- | -------------------------------------------- | ------------------------------------------------- |
-| **Setup**              | `./dcm install` then `./dcm start`           | Symlink into `~/.claude/plugins/dcm`              |
-| **Hook injection**     | Merges into `~/.claude/settings.json`         | Plugin's `hooks/hooks.json` loaded by Claude Code |
-| **Service startup**    | `./dcm start` or auto via ensure-services.sh  | Auto via `ensure-services.sh` on SessionStart     |
-| **Hook paths**         | Absolute paths to hooks directory             | `${CLAUDE_PLUGIN_ROOT}/hooks/` variable paths     |
-| **Scope**              | Global (all projects)                         | Per-plugin                                        |
-| **Uninstall**          | `./dcm unhook`                                | Remove the symlink                                |
+| Feature                      | CLI Mode ()                    | Plugin Mode (auto-discovery)                     |
+| ---------------------------- | ------------------------------------------- | ------------------------------------------------ |
+| **Setup**                    |  then           | Symlink into              |
+| **Hook injection**           | Merges into         | Plugin's  loaded by Claude Code |
+| **Service startup**          |  or auto via ensure-services.sh | Auto via  on SessionStart    |
+| **Hook paths**               | Absolute paths to hooks directory            |  variable paths    |
+| **Scope**                    | Global (all projects)                        | Per-plugin                                       |
+| **Uninstall**                |                                | Remove the symlink                               |
 
-Both modes include the `ensure-services.sh` hook, which auto-starts DCM services if they are not already running when a Claude Code session begins.
+Both modes include the  hook, which auto-starts DCM services if they are not already running when a Claude Code session begins.
 
 ## How It Works
 
 DCM uses Claude Code's hooks system to track and manage context. All hooks are fire-and-forget with short timeouts -- they never block Claude.
 
-![Hooks lifecycle flow](docs/assets/hooks-flow.svg)
+
 
 ### Compact save/restore
 
 When Claude's context window fills up, the conversation compacts. Without DCM, agents lose track of what happened before. DCM handles this automatically:
 
-![Compact save and restore sequence](docs/assets/compact-sequence.svg)
+1. **Before compact**:  saves active tasks, modified files, agent states, and key decisions to the database
+2. **After compact**:  fetches a context brief and injects it back into the session via 
+3. **Proactive monitoring**:  runs every 10th tool call; if the transcript exceeds 800 KB, it triggers an early snapshot so data is saved even if compaction happens unexpectedly
 
 ### Cross-agent sharing
 
-![Cross-agent sharing](docs/assets/cross-agent-sharing.svg)
+When a subagent finishes,  broadcasts its result as a message. Other agents pick this up through the context API, preventing work from getting siloed.
 
 ## Auto-Start Feature
 
-![Auto-start sequence](docs/assets/auto-start.svg)
+In both CLI and plugin installation modes, the  hook runs on every  event. It performs the following:
+
+1. **Health check** -- Calls  on the API. If healthy, exits immediately (no-op).
+2. **Lock acquisition** -- Creates a lock file to prevent concurrent auto-starts when multiple Claude sessions launch simultaneously.
+3. **PostgreSQL check** -- Verifies PostgreSQL is reachable via /var/run/postgresql:5432 - accepting connections. If not, logs a warning and exits gracefully.
+4. **Service start** -- Launches the API and WebSocket servers as background processes.
+5. **Readiness wait** -- Polls the health endpoint for up to 5 seconds until the API confirms healthy status.
 
 The hook is idempotent: if services are already running, it exits in under 50 ms. If PostgreSQL is not available, it skips startup without error.
 
 **Recommended setup**: Configure PostgreSQL to start at boot via systemd so it is always available when Claude Code launches:
 
-```bash
-sudo systemctl enable postgresql
-sudo systemctl start postgresql
-```
+
 
 ## CLI Commands
 
 | Command          | Description                                           |
 | ---------------- | ----------------------------------------------------- |
-| `dcm install`    | Full setup: dependencies, database, hooks             |
-| `dcm start`      | Start API + WebSocket + Dashboard                     |
-| `dcm stop`       | Stop all DCM services                                 |
-| `dcm restart`    | Restart all services                                  |
-| `dcm status`     | Health check for all components                       |
-| `dcm hooks`      | Install or update Claude Code hooks                   |
-| `dcm unhook`     | Remove DCM hooks from `~/.claude/settings.json`       |
-| `dcm logs <svc>` | Tail logs for a service (`api`, `ws`, or `dashboard`) |
-| `dcm snapshot`   | Trigger a manual context snapshot                     |
-| `dcm context`    | Get context brief for an agent                        |
-| `dcm health`     | Quick API health check (JSON output)                  |
-| `dcm db:setup`   | Initialize database schema                            |
-| `dcm db:reset`   | Drop and recreate database (destructive)              |
-| `dcm version`    | Show DCM version                                      |
+|     | Full setup: dependencies, database, hooks             |
+|       | Start API + WebSocket + Dashboard                     |
+|        | Stop all DCM services                                 |
+|     | Restart all services                                  |
+|      | Health check for all components                       |
+|       | Install or update Claude Code hooks                   |
+|      | Remove DCM hooks from        |
+|  | Tail logs for a service (, , or ) |
+|    | Trigger a manual context snapshot                     |
+|     | Get context brief for an agent                        |
+|      | Quick API health check (JSON output)                  |
+|    | Initialize database schema                            |
+|    | Drop and recreate database (destructive)              |
+|     | Show DCM version                                      |
 
 ## Documentation
 
 | Document                                                         | Description                                     |
 | ---------------------------------------------------------------- | ----------------------------------------------- |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)                   | System design, data flow, database schema, ADRs |
-| [`docs/API.md`](docs/API.md)                                     | Full API reference with examples                |
-| [`docs/INTEGRATION.md`](docs/INTEGRATION.md)                     | Claude Code hooks setup, SDK usage              |
-| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)                       | Docker, systemd, manual deployment guides       |
-| [`context-manager/openapi.yaml`](context-manager/openapi.yaml)   | OpenAPI 3.0 specification                       |
+| [](docs/ARCHITECTURE.md)                   | System design, data flow, database schema, ADRs |
+| [](docs/API.md)                                     | Full API reference with examples                |
+| [](docs/INTEGRATION.md)                     | Claude Code hooks setup, SDK usage              |
+| [](docs/DEPLOYMENT.md)                       | Docker, systemd, manual deployment guides       |
+| [](context-manager/openapi.yaml)   | OpenAPI 3.0 specification                       |
 
 ## Dashboard
 
 <!-- TODO: Add dashboard screenshot -->
 <!-- ![DCM Dashboard](docs/assets/dashboard-screenshot.png) -->
 
-The monitoring dashboard is available at `http://localhost:3848` and updates in real time via WebSocket.
+The monitoring dashboard is available at  and updates in real time via WebSocket.
 
 | Page               | Features                                                                 |
 | ------------------ | ------------------------------------------------------------------------ |
@@ -166,43 +167,61 @@ Built with shadcn/ui, Radix UI, and Tailwind CSS. Dark mode with glassmorphism c
 
 ## Configuration
 
-Copy `.env.example` to `.env` and edit:
+Copy  to  and edit:
 
-```bash
-cp context-manager/.env.example context-manager/.env
-```
+
 
 | Variable           | Default          | Description                                            |
 | ------------------ | ---------------- | ------------------------------------------------------ |
-| `DB_HOST`          | `localhost`      | PostgreSQL host                                        |
-| `DB_PORT`          | `5432`           | PostgreSQL port                                        |
-| `DB_NAME`          | `claude_context` | Database name                                          |
-| `DB_USER`          | *(required)*     | Database user                                          |
-| `DB_PASSWORD`      | *(required)*     | Database password                                      |
-| `PORT`             | `3847`           | API server port                                        |
-| `WS_PORT`          | `3849`           | WebSocket server port                                  |
-| `DASHBOARD_PORT`   | `3848`           | Dashboard port                                         |
-| `WS_AUTH_SECRET`   | --               | HMAC secret for WebSocket auth (required in production)|
-| `DCM_HOST`         | `127.0.0.1`     | External host for dashboard API URLs                   |
-| `NODE_ENV`         | `production`     | Environment (`production` enforces WS auth)            |
+|           |       | PostgreSQL host                                        |
+|           |            | PostgreSQL port                                        |
+|           |  | Database name                                          |
+|           | *(required)*     | Database user                                          |
+|       | *(required)*     | Database password                                      |
+|              |            | API server port                                        |
+|           |            | WebSocket server port                                  |
+|    |            | Dashboard port                                         |
+|    | --               | HMAC secret for WebSocket auth (required in production)|
+|          |      | External host for dashboard API URLs                   |
+|          |      | Environment ( enforces WS auth)            |
 
 ## Tests
 
-```bash
-cd context-manager
-bun test                   # Run all tests
-bun test src/tests/api     # API tests only
-bun test src/tests/ws      # WebSocket tests only
-```
+bun test v1.3.6 (d530ed99)
+bun test v1.3.6 (d530ed99)
+bun test v1.3.6 (d530ed99)
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
+2. Create a feature branch ()
 3. Make your changes and add tests
-4. Run the test suite (`bun test`)
-5. Commit your changes (`git commit -m "Add my feature"`)
-6. Push to the branch (`git push origin feature/my-feature`)
+4. Run the test suite (bun test v1.3.6 (d530ed99))
+5. Commit your changes (Sur la branche feature/my-feature
+Modifications qui ne seront pas validées :
+  (utilisez "git add <fichier>..." pour mettre à jour ce qui sera validé)
+  (utilisez "git restore <fichier>..." pour annuler les modifications dans le répertoire de travail)
+	modifié :         docs/ARCHITECTURE.md
+
+Fichiers non suivis:
+  (utilisez "git add <fichier>..." pour inclure dans ce qui sera validé)
+	B{Lock
+	D
+	D[Exit]
+	G{pg_isready?}
+	K
+	LISTEN dcm_events
+	M
+	No
+	N{API
+	Yes
+	global
+	metrics
+	parse
+	pg_notify('dcm_events', json)
+
+aucune modification n'a été ajoutée à la validation (utilisez "git add" ou "git commit -a"))
+6. Push to the branch ()
 7. Open a Pull Request
 
 Please ensure all tests pass and follow the existing code style.

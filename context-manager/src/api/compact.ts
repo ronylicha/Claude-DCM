@@ -124,38 +124,8 @@ export async function postCompactRestore(c: Context): Promise<Response> {
       finalBrief += input.compact_summary;
     }
 
-    // 4. Publish context.generated event (for pub/sub integration)
-    try {
-      await sql`
-        INSERT INTO agent_messages (
-          from_agent_id,
-          to_agent_id,
-          message_type,
-          topic,
-          payload,
-          priority,
-          expires_at
-        ) VALUES (
-          'context-manager',
-          ${input.agent_id},
-          'context.generated',
-          'context.generated',
-          ${sql.json({
-            session_id: input.session_id,
-            agent_id: input.agent_id,
-            brief_id: contextBrief.id,
-            token_count: contextBrief.token_count,
-            truncated: contextBrief.truncated,
-            sources_count: contextBrief.sources.length,
-          })},
-          5,
-          ${new Date(Date.now() + 3600000).toISOString()}
-        )
-      `;
-    } catch (error) {
-      console.warn("[Compact] Could not publish context.generated event:", error);
-      // Non-critical - continue
-    }
+    // 4. context.generated message removed - was never consumed by any agent
+    // Context is delivered via additionalContext in the hook response
 
     // 5. Return response
     const response: CompactRestoreResponse = {

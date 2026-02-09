@@ -28,7 +28,18 @@ export type EventType =
   | "session.ended"
   | "metric.update"
   | "system.error"
-  | "system.info";
+  | "system.info"
+  | "wave.transitioned"
+  | "wave.completed"
+  | "wave.failed"
+  | "batch.created"
+  | "batch.completed"
+  | "capacity.warning"
+  | "conflict.detected"
+  | "proactive.compact"
+  | "scope.injected"
+  | "registry.updated"
+  | "registry.bulk_import";
 
 export interface WSEvent {
   channel: string;
@@ -487,5 +498,107 @@ export function useAgentChannel(
     connected,
     messages,
     sendMessage,
+  };
+}
+
+// ============================================
+// useWaveEvents Hook
+// ============================================
+
+const WAVE_EVENT_TYPES: EventType[] = [
+  "wave.transitioned",
+  "wave.completed",
+  "wave.failed",
+  "batch.created",
+  "batch.completed",
+  "capacity.warning",
+];
+
+export interface UseWaveEventsReturn {
+  events: WSEvent[];
+  connected: boolean;
+  error: string | null;
+  clearEvents: () => void;
+}
+
+export function useWaveEvents(sessionId?: string): UseWaveEventsReturn {
+  const [events, setEvents] = useState<WSEvent[]>([]);
+
+  const handleEvent = useCallback(
+    (event: WSEvent) => {
+      // Only accept wave.*, batch.*, and capacity.* events
+      if (!WAVE_EVENT_TYPES.includes(event.event)) {
+        return;
+      }
+
+      // Filter by sessionId if provided
+      if (sessionId) {
+        const data = event.data as Record<string, unknown> | null;
+        if (data && "session_id" in data && data.session_id !== sessionId) {
+          return;
+        }
+      }
+
+      setEvents((prev) => {
+        const newEvents = [event, ...prev];
+        // Keep last 50 events
+        return newEvents.slice(0, 50);
+      });
+    },
+    [sessionId]
+  );
+
+  const { connected, error } = useWebSocket({
+    channels: sessionId ? [`session/${sessionId}`, "global"] : ["global"],
+    sessionId,
+    onEvent: handleEvent,
+  });
+
+  const clearEvents = useCallback(() => {
+    setEvents([]);
+  }, []);
+
+  return {
+    events,
+    connected,
+    error,
+    clearEvents,
+  };
+}
+
+// ============================================
+// useCapacityAlerts Hook
+// ============================================
+
+export interface UseCapacityAlertsReturn {
+  alerts: WSEvent[];
+  connected: boolean;
+  hasActiveAlerts: boolean;
+}
+
+export function useCapacityAlerts(): UseCapacityAlertsReturn {
+  const [alerts, setAlerts] = useState<WSEvent[]>([]);
+
+  const handleEvent = useCallback((event: WSEvent) => {
+    if (event.event !== "capacity.warning") {
+      return;
+    }
+
+    setAlerts((prev) => {
+      const newAlerts = [event, ...prev];
+      // Keep last 20 alerts
+      return newAlerts.slice(0, 20);
+    });
+  }, []);
+
+  const { connected } = useWebSocket({
+    channels: ["global"],
+    onEvent: handleEvent,
+  });
+
+  return {
+    alerts,
+    connected,
+    hasActiveAlerts: alerts.length > 0,
   };
 }

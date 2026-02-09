@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 #
-# monitor-context.sh - PostToolUse hook for proactive context snapshot
+# monitor-context.sh - PostToolUse hook for proactive context management
 #
-# Purpose: Monitor transcript size and trigger proactive snapshot before auto-compact
-# Execution: PostToolUse (after every tool call, but full check every 10th call)
+# v3.0: Replaced stat-based transcript size check with API-based capacity tracking.
+# Queries DCM predictive capacity endpoint instead of raw file size.
+#
+# Execution: PostToolUse (after every tool call, full check every 10th call)
 # Timeout: Must complete in < 2 seconds
 #
 set -uo pipefail
@@ -14,9 +16,7 @@ readonly COUNTER_FILE="/tmp/.dcm-monitor-counter"
 readonly COOLDOWN_FILE="/tmp/.dcm-last-proactive"
 readonly LOG_FILE="/tmp/dcm-monitor.log"
 readonly CHECK_INTERVAL=10
-readonly COOLDOWN_SECONDS=60
-readonly THRESHOLD_YELLOW=512000  # 500KB in bytes
-readonly THRESHOLD_RED=819200     # 800KB in bytes
+readonly COOLDOWN_SECONDS=120
 
 # Logging helper
 log_message() {
@@ -29,15 +29,12 @@ log_message() {
 RAW_INPUT=$(cat 2>/dev/null || echo "")
 [[ -z "$RAW_INPUT" ]] && exit 0
 
-# Extract fields with jq (fail silently if jq not available or invalid JSON)
+# Extract fields with jq
 session_id=$(echo "$RAW_INPUT" | jq -r '.session_id // empty' 2>/dev/null)
-transcript_path=$(echo "$RAW_INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
 tool_name=$(echo "$RAW_INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
 
 # Exit if missing critical data
 [[ -z "$session_id" ]] && exit 0
-[[ -z "$transcript_path" ]] && exit 0
-[[ ! -f "$transcript_path" ]] && exit 0
 
 # Counter mechanism: increment and check modulo
 current_count=0
@@ -52,58 +49,74 @@ if (( next_count % CHECK_INTERVAL != 0 )); then
     exit 0
 fi
 
-# Get transcript size in bytes
-transcript_size=$(stat -f%z "$transcript_path" 2>/dev/null || stat -c%s "$transcript_path" 2>/dev/null || echo "0")
+# Query DCM capacity API for this agent (use session_id as agent_id for orchestrator)
+agent_id="${AGENT_ID:-$session_id}"
+capacity_response=$(timeout 1.5s curl -s "${API_URL}/api/capacity/${agent_id}" \
+    --connect-timeout 1 \
+    --max-time 1.5 2>/dev/null || echo "")
 
-# Size-based actions
-if (( transcript_size < THRESHOLD_YELLOW )); then
-    # GREEN zone: do nothing
-    exit 0
-elif (( transcript_size < THRESHOLD_RED )); then
-    # YELLOW zone: log warning
-    log_message "WARN" "Session $session_id transcript at ${transcript_size} bytes (${tool_name})"
-    exit 0
-fi
+# If API unreachable, exit silently
+[[ -z "$capacity_response" ]] && exit 0
 
-# RED zone: check cooldown before triggering snapshot
-if [[ -f "$COOLDOWN_FILE" ]]; then
-    last_trigger=$(cat "$COOLDOWN_FILE" 2>/dev/null || echo "0")
-    current_time=$(date +%s)
-    elapsed=$((current_time - last_trigger))
+# Parse response
+zone=$(echo "$capacity_response" | jq -r '.zone // "green"' 2>/dev/null)
+should_intervene=$(echo "$capacity_response" | jq -r '.shouldIntervene // false' 2>/dev/null)
+usage_percent=$(echo "$capacity_response" | jq -r '.usage_percent // 0' 2>/dev/null)
+minutes_remaining=$(echo "$capacity_response" | jq -r '.minutes_remaining // "unknown"' 2>/dev/null)
 
-    if (( elapsed < COOLDOWN_SECONDS )); then
-        log_message "INFO" "Proactive snapshot skipped (cooldown: ${elapsed}s/${COOLDOWN_SECONDS}s)"
+# Zone-based actions
+case "$zone" in
+    green)
         exit 0
-    fi
-fi
+        ;;
+    yellow)
+        log_message "WARN" "Agent $agent_id at ${usage_percent}% capacity (${zone}), ~${minutes_remaining} remaining"
+        exit 0
+        ;;
+    orange|red|critical)
+        # Check if intervention is recommended by API (includes cooldown check)
+        if [[ "$should_intervene" != "true" ]]; then
+            log_message "INFO" "Agent $agent_id at ${usage_percent}% (${zone}) but intervention skipped (cooldown)"
+            exit 0
+        fi
+        ;;
+    *)
+        exit 0
+        ;;
+esac
 
-# Extract context summary from last 50 lines of transcript
-context_summary=""
-if [[ -f "$transcript_path" ]]; then
-    context_summary=$(tail -n 50 "$transcript_path" 2>/dev/null | head -c 500 || echo "")
-fi
+# Trigger proactive compact
+log_message "ALERT" "Triggering proactive compact for agent $agent_id (${usage_percent}% - ${zone})"
 
-# Trigger proactive snapshot
-log_message "ALERT" "Triggering proactive snapshot for session $session_id (${transcript_size} bytes)"
-
-# Fire-and-forget API call with timeout
+# Fire-and-forget API call
 response=$(timeout 1.5s curl -s -X POST "${API_URL}/api/compact/save" \
     -H "Content-Type: application/json" \
     -d "$(jq -n \
         --arg sid "$session_id" \
         --arg trigger "proactive" \
-        --arg summary "$context_summary" \
+        --arg summary "Proactive save at ${usage_percent}% capacity (${zone} zone)" \
         '{session_id: $sid, trigger: $trigger, context_summary: $summary}')" \
     2>/dev/null || echo '{"status":"timeout"}')
 
-# Update cooldown timestamp
-date +%s > "$COOLDOWN_FILE" 2>/dev/null || true
+# Reset capacity after proactive compact
+timeout 1s curl -s -X POST "${API_URL}/api/capacity/${agent_id}/reset" \
+    -H "Content-Type: application/json" \
+    2>/dev/null || true
+
+# Publish proactive compact event
+timeout 1s curl -s -X POST "${API_URL}/api/tokens/track" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -n \
+        --arg agent_id "$agent_id" \
+        --arg session_id "$session_id" \
+        '{agent_id: $agent_id, session_id: $session_id, tool_name: "proactive-compact", input_size: 0, output_size: 0}')" \
+    2>/dev/null || true
 
 # Log result
-if echo "$response" | jq -e '.status == "success"' >/dev/null 2>&1; then
-    log_message "INFO" "Proactive snapshot saved successfully"
+if echo "$response" | jq -e '.success == true' >/dev/null 2>&1; then
+    log_message "INFO" "Proactive compact saved successfully for $agent_id"
 else
-    log_message "ERROR" "Proactive snapshot failed: $response"
+    log_message "ERROR" "Proactive compact failed for $agent_id: $response"
 fi
 
 exit 0

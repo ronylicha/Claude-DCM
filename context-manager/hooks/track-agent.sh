@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # track-agent.sh - Hook for tracking Claude Code Task tool usage (agent spawning)
+# v3.0: Added scope injection from agent registry
+#
 # Creates a subtask entry when an agent is spawned via the Task tool
-# Auto-creates request→task chain if none exists for the session
+# Auto-creates request->task chain if none exists for the session
+# Fetches agent scope from registry for context injection
 
 set -uo pipefail
 
@@ -108,8 +111,8 @@ if [[ -z "$task_id" ]]; then
 
     # Cache the task_id for future calls in this session
     if [[ -n "$task_id" ]]; then
-        jq -n --arg task_id "$task_id" --arg request_id "$request_id" \
-            '{task_id: $task_id, request_id: $request_id}' > "$cache_file" 2>/dev/null || true
+        jq -n --arg task_id "$task_id" --arg request_id "$request_id" --arg project_id "$project_id" \
+            '{task_id: $task_id, request_id: $request_id, project_id: $project_id}' > "$cache_file" 2>/dev/null || true
     fi
 fi
 
@@ -126,6 +129,23 @@ if [[ ${#description} -gt 500 ]]; then
     description="${description:0:497}..."
 fi
 
+# v3.0: Fetch agent scope from registry (best-effort, non-blocking)
+scope_json=""
+registry_response=$(timeout 1s curl -s "${API_URL}/api/registry/${agent_type}" \
+    --connect-timeout 0.5 --max-time 1 2>/dev/null || echo "")
+if [[ -n "$registry_response" ]]; then
+    scope_json=$(echo "$registry_response" | jq -c '.default_scope // empty' 2>/dev/null || echo "")
+fi
+
+# Build context_snapshot with scope if available
+context_snapshot="{}"
+if [[ -n "$scope_json" && "$scope_json" != "" && "$scope_json" != "null" ]]; then
+    context_snapshot=$(jq -n \
+        --argjson scope "$scope_json" \
+        --arg agent_type "$agent_type" \
+        '{agent_scope: $scope, agent_type: $agent_type, scope_injected: true}')
+fi
+
 # Create subtask via API
 curl -s -X POST "${API_URL}/api/subtasks" \
     -H "Content-Type: application/json" \
@@ -135,9 +155,24 @@ curl -s -X POST "${API_URL}/api/subtasks" \
         --arg agent_id "$agent_id" \
         --arg description "$description" \
         --arg status "$([ "$run_in_background" = "true" ] && echo running || echo completed)" \
-        '{task_id: $task_id, agent_type: $agent_type, agent_id: $agent_id, description: $description, status: $status}')" \
+        --argjson context_snapshot "$context_snapshot" \
+        '{task_id: $task_id, agent_type: $agent_type, agent_id: $agent_id, description: $description, status: $status, context_snapshot: $context_snapshot}')" \
     --connect-timeout 1 \
     --max-time 2 \
     >/dev/null 2>&1 || true
+
+# v3.0: Publish scope injection event
+if [[ -n "$scope_json" && "$scope_json" != "" && "$scope_json" != "null" ]]; then
+    curl -s -X POST "${API_URL}/api/messages" \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n \
+            --arg from "system" \
+            --arg topic "scope.injected" \
+            --arg agent_type "$agent_type" \
+            '{from_agent_id: $from, message_type: "notification", topic: $topic, payload: {agent_type: $agent_type, event: "scope_injected"}, priority: 2}')" \
+        --connect-timeout 0.5 \
+        --max-time 1 \
+        >/dev/null 2>&1 &
+fi
 
 exit 0

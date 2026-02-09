@@ -14,7 +14,7 @@ import { suggestRouting, getRoutingStats, postRoutingFeedback } from "./api/rout
 import { postProject, getProjects, getProjectById, getProjectByPath, deleteProject } from "./api/projects";
 import { postRequest, getRequests, getRequestById, patchRequest, deleteRequest } from "./api/requests";
 import { postTask, getTasks, getTaskById, patchTask, deleteTask } from "./api/tasks";
-import { postSubtask, getSubtasks, getSubtaskById, patchSubtask, deleteSubtask } from "./api/subtasks";
+import { postSubtask, getSubtasks, getSubtaskById, patchSubtask, deleteSubtask, closeSessionSubtasks } from "./api/subtasks";
 // Phase 4 - Inter-agent communication
 import { postMessage, getMessages } from "./api/messages";
 import {
@@ -48,6 +48,11 @@ import { getToolsSummary } from "./api/tools-summary";
 import { generateToken, isValidAgentId, isValidSessionId } from "./websocket/auth";
 // Rate limiting
 import { rateLimit, rateLimitPresets } from "./middleware/rate-limit";
+// Phase 9 - DCM v3.0 Proactive Triage Station
+import { trackTokens, getCapacity, resetCapacity } from "./api/tokens";
+import { getRegistry, getRegistryAgent, putRegistryAgent, postRegistryImport, postRegistryEnrichContext } from "./api/registry";
+import { postBatchSubmit, getBatch, getSynthesis, getConflicts, postBatchComplete } from "./api/orchestration";
+import { getWaveCurrent, getWaveHistoryHandler, postWaveTransition, postWaveCreate, postWaveStart } from "./api/waves";
 
 // Validate configuration at startup
 validateConfig();
@@ -154,7 +159,7 @@ app.get("/health", async (c) => {
   return c.json({
     status,
     timestamp: new Date().toISOString(),
-    version: "2.0.0",
+    version: "3.0.0",
     database: dbHealth,
     features: {
       phase1: "database",
@@ -164,7 +169,8 @@ app.get("/health", async (c) => {
       phase5: "context",
       phase6: "sessions",
       phase7: "tools-summary",
-      phase8: "websocket-auth", // NEW
+      phase8: "websocket-auth",
+      phase9: "proactive-triage",
     },
   }, dbHealth.healthy ? 200 : 503);
 });
@@ -343,6 +349,7 @@ app.delete("/api/tasks/:id", deleteTask);
 // ============================================
 
 app.post("/api/subtasks", postSubtask);
+app.post("/api/subtasks/close-session", closeSessionSubtasks);
 app.get("/api/subtasks", getSubtasks);
 app.get("/api/subtasks/:id", getSubtaskById);
 app.patch("/api/subtasks/:id", patchSubtask);
@@ -905,6 +912,76 @@ app.post("/api/auth/token", rateLimit(rateLimitPresets.auth), async (c) => {
     }, 500);
   }
 });
+
+// ============================================
+// Token Tracking API - Phase 9 (DCM v3.0)
+// ============================================
+
+// POST /api/tokens/track - Record token consumption (fire-and-forget, <5ms)
+app.post("/api/tokens/track", trackTokens);
+
+// GET /api/capacity/:agent_id - Get capacity status + prediction
+app.get("/api/capacity/:agent_id", getCapacity);
+
+// POST /api/capacity/:agent_id/reset - Reset after compact
+app.post("/api/capacity/:agent_id/reset", resetCapacity);
+
+// ============================================
+// Agent Registry API - Phase 9 (DCM v3.0)
+// ============================================
+
+// GET /api/registry - List all registered agents
+app.get("/api/registry", getRegistry);
+
+// POST /api/registry/import - Bulk import agents
+app.post("/api/registry/import", postRegistryImport);
+
+// POST /api/registry/enrich-context - Generate enriched context for agent
+app.post("/api/registry/enrich-context", postRegistryEnrichContext);
+
+// GET /api/registry/:agent_type - Get one agent scope
+app.get("/api/registry/:agent_type", getRegistryAgent);
+
+// PUT /api/registry/:agent_type - Upsert agent scope
+app.put("/api/registry/:agent_type", putRegistryAgent);
+
+// ============================================
+// Orchestration API - Phase 9 (DCM v3.0)
+// ============================================
+
+// POST /api/orchestration/batch-submit - Submit batch of tasks
+app.post("/api/orchestration/batch-submit", postBatchSubmit);
+
+// POST /api/orchestration/batch/:id/complete - Complete batch + generate synthesis
+app.post("/api/orchestration/batch/:id/complete", postBatchComplete);
+
+// GET /api/orchestration/batch/:id - Get batch status + subtasks
+app.get("/api/orchestration/batch/:id", getBatch);
+
+// GET /api/orchestration/synthesis/:id - Get synthesis only (token-optimized)
+app.get("/api/orchestration/synthesis/:id", getSynthesis);
+
+// GET /api/orchestration/conflicts/:id - Analyze conflicts
+app.get("/api/orchestration/conflicts/:id", getConflicts);
+
+// ============================================
+// Wave Management API - Phase 9 (DCM v3.0)
+// ============================================
+
+// POST /api/waves/:session_id/create - Create a new wave
+app.post("/api/waves/:session_id/create", postWaveCreate);
+
+// POST /api/waves/:session_id/start - Start a specific wave
+app.post("/api/waves/:session_id/start", postWaveStart);
+
+// POST /api/waves/:session_id/transition - Force transition to next wave
+app.post("/api/waves/:session_id/transition", postWaveTransition);
+
+// GET /api/waves/:session_id/current - Current active wave
+app.get("/api/waves/:session_id/current", getWaveCurrent);
+
+// GET /api/waves/:session_id/history - All waves for session
+app.get("/api/waves/:session_id/history", getWaveHistoryHandler);
 
 // ============================================
 // Server Startup

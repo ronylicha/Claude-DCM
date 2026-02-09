@@ -13,6 +13,10 @@ import {
   Radio,
   Zap,
   BrainCircuit,
+  Layers,
+  History,
+  BookOpen,
+  Gauge,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +31,7 @@ const navigationGroups: NavGroup[] = [
     items: [
       { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { name: "Live Activity", href: "/live", icon: Radio },
+      { name: "Waves", href: "/waves", icon: Layers },
     ],
   },
   {
@@ -36,6 +41,7 @@ const navigationGroups: NavGroup[] = [
       { name: "Sessions", href: "/sessions", icon: Clock },
       { name: "Agents", href: "/agents", icon: Users },
       { name: "Context", href: "/context", icon: BrainCircuit },
+      { name: "Compact History", href: "/compact", icon: History },
     ],
   },
   {
@@ -44,6 +50,8 @@ const navigationGroups: NavGroup[] = [
       { name: "Tools", href: "/tools", icon: Wrench },
       { name: "Routing", href: "/routing", icon: Route },
       { name: "Messages", href: "/messages", icon: MessageSquare },
+      { name: "Registry", href: "/registry", icon: BookOpen },
+      { name: "Performance", href: "/performance", icon: Gauge },
     ],
   },
 ];
@@ -114,7 +122,7 @@ export function Sidebar() {
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <div className="h-2 w-2 rounded-full dot-healthy animate-pulse" />
           <span>API Connected</span>
-          <span className="ml-auto opacity-50">v2.0.0</span>
+          <span className="ml-auto opacity-50">v3.0.0</span>
         </div>
       </div>
     </aside>
