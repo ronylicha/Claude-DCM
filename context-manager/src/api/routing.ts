@@ -6,6 +6,9 @@
 
 import type { Context } from "hono";
 import { getDb } from "../db/client";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("API");
 
 /** Tool suggestion result */
 export interface ToolSuggestion {
@@ -63,101 +66,43 @@ export async function suggestRouting(c: Context): Promise<Response> {
     const sql = getDb();
 
     // Query for matching tools with aggregated scores
-    let results;
+    // Build dynamic filter based on tool type preferences
+    const typeFilter = toolType
+      ? sql`AND tool_type = ${toolType}`
+      : excludeTypes.length > 0
+      ? sql`AND tool_type != ALL(${excludeTypes})`
+      : sql``;
 
-    if (toolType) {
-      results = await sql`
-        WITH keyword_matches AS (
-          SELECT
-            tool_name,
-            tool_type,
-            keyword,
-            score,
-            usage_count,
-            success_count
-          FROM keyword_tool_scores
-          WHERE keyword = ANY(${keywords})
-            AND tool_type = ${toolType}
-            AND score >= ${minScore}
-        )
+    const results = await sql`
+      WITH keyword_matches AS (
         SELECT
           tool_name,
           tool_type,
-          ROUND(AVG(score)::numeric, 3) as avg_score,
-          SUM(usage_count) as total_usage,
-          SUM(success_count) as total_success,
-          ARRAY_AGG(DISTINCT keyword) as matched_keywords,
-          COUNT(DISTINCT keyword) as keyword_match_count
-        FROM keyword_matches
-        GROUP BY tool_name, tool_type
-        ORDER BY
-          keyword_match_count DESC,
-          avg_score DESC,
-          total_usage DESC
-        LIMIT ${limit}
-      `;
-    } else if (excludeTypes.length > 0) {
-      results = await sql`
-        WITH keyword_matches AS (
-          SELECT
-            tool_name,
-            tool_type,
-            keyword,
-            score,
-            usage_count,
-            success_count
-          FROM keyword_tool_scores
-          WHERE keyword = ANY(${keywords})
-            AND tool_type != ALL(${excludeTypes})
-            AND score >= ${minScore}
-        )
-        SELECT
-          tool_name,
-          tool_type,
-          ROUND(AVG(score)::numeric, 3) as avg_score,
-          SUM(usage_count) as total_usage,
-          SUM(success_count) as total_success,
-          ARRAY_AGG(DISTINCT keyword) as matched_keywords,
-          COUNT(DISTINCT keyword) as keyword_match_count
-        FROM keyword_matches
-        GROUP BY tool_name, tool_type
-        ORDER BY
-          keyword_match_count DESC,
-          avg_score DESC,
-          total_usage DESC
-        LIMIT ${limit}
-      `;
-    } else {
-      results = await sql`
-        WITH keyword_matches AS (
-          SELECT
-            tool_name,
-            tool_type,
-            keyword,
-            score,
-            usage_count,
-            success_count
-          FROM keyword_tool_scores
-          WHERE keyword = ANY(${keywords})
-            AND score >= ${minScore}
-        )
-        SELECT
-          tool_name,
-          tool_type,
-          ROUND(AVG(score)::numeric, 3) as avg_score,
-          SUM(usage_count) as total_usage,
-          SUM(success_count) as total_success,
-          ARRAY_AGG(DISTINCT keyword) as matched_keywords,
-          COUNT(DISTINCT keyword) as keyword_match_count
-        FROM keyword_matches
-        GROUP BY tool_name, tool_type
-        ORDER BY
-          keyword_match_count DESC,
-          avg_score DESC,
-          total_usage DESC
-        LIMIT ${limit}
-      `;
-    }
+          keyword,
+          score,
+          usage_count,
+          success_count
+        FROM keyword_tool_scores
+        WHERE keyword = ANY(${keywords})
+          ${typeFilter}
+          AND score >= ${minScore}
+      )
+      SELECT
+        tool_name,
+        tool_type,
+        ROUND(AVG(score)::numeric, 3) as avg_score,
+        SUM(usage_count) as total_usage,
+        SUM(success_count) as total_success,
+        ARRAY_AGG(DISTINCT keyword) as matched_keywords,
+        COUNT(DISTINCT keyword) as keyword_match_count
+      FROM keyword_matches
+      GROUP BY tool_name, tool_type
+      ORDER BY
+        keyword_match_count DESC,
+        avg_score DESC,
+        total_usage DESC
+      LIMIT ${limit}
+    `;
 
     // Format response
     const suggestions: ToolSuggestion[] = results.map((r: Record<string, unknown>) => ({
@@ -184,7 +129,7 @@ export async function suggestRouting(c: Context): Promise<Response> {
       compat_output: compatOutput,
     });
   } catch (error) {
-    console.error("[API] GET /api/routing/suggest error:", error);
+    log.error("GET /api/routing/suggest error:", error);
     return c.json(
       {
         error: "Failed to suggest routing",
@@ -253,7 +198,7 @@ export async function getRoutingStats(c: Context): Promise<Response> {
       type_distribution: typeDistribution,
     });
   } catch (error) {
-    console.error("[API] GET /api/routing/stats error:", error);
+    log.error("GET /api/routing/stats error:", error);
     return c.json(
       {
         error: "Failed to get routing stats",
@@ -304,7 +249,7 @@ export async function postRoutingFeedback(c: Context): Promise<Response> {
       adjustment: scoreAdjustment,
     });
   } catch (error) {
-    console.error("[API] POST /api/routing/feedback error:", error);
+    log.error("POST /api/routing/feedback error:", error);
     return c.json(
       {
         error: "Failed to process feedback",

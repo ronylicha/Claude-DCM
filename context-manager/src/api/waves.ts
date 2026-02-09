@@ -12,6 +12,9 @@ import {
   getOrCreateWave,
   startWave,
 } from "../waves/manager";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("API");
 
 /**
  * GET /api/waves/:session_id/current - Get current active wave
@@ -30,7 +33,7 @@ export async function getWaveCurrent(c: Context): Promise<Response> {
 
     return c.json({ wave });
   } catch (error) {
-    console.error("[API] GET /api/waves/:session_id/current error:", error);
+    log.error("GET /api/waves/:session_id/current error:", error);
     return c.json({
       error: "Failed to get current wave",
       message: error instanceof Error ? error.message : "Unknown error",
@@ -55,7 +58,7 @@ export async function getWaveHistoryHandler(c: Context): Promise<Response> {
       count: waves.length,
     });
   } catch (error) {
-    console.error("[API] GET /api/waves/:session_id/history error:", error);
+    log.error("GET /api/waves/:session_id/history error:", error);
     return c.json({
       error: "Failed to get wave history",
       message: error instanceof Error ? error.message : "Unknown error",
@@ -83,7 +86,7 @@ export async function postWaveTransition(c: Context): Promise<Response> {
       wave: nextWave,
     });
   } catch (error) {
-    console.error("[API] POST /api/waves/:session_id/transition error:", error);
+    log.error("POST /api/waves/:session_id/transition error:", error);
     return c.json({
       error: "Failed to transition wave",
       message: error instanceof Error ? error.message : "Unknown error",
@@ -114,7 +117,7 @@ export async function postWaveCreate(c: Context): Promise<Response> {
       wave,
     }, 201);
   } catch (error) {
-    console.error("[API] POST /api/waves/:session_id/create error:", error);
+    log.error("POST /api/waves/:session_id/create error:", error);
     return c.json({
       error: "Failed to create wave",
       message: error instanceof Error ? error.message : "Unknown error",
@@ -145,7 +148,7 @@ export async function postWaveStart(c: Context): Promise<Response> {
       wave,
     });
   } catch (error) {
-    console.error("[API] POST /api/waves/:session_id/start error:", error);
+    log.error("POST /api/waves/:session_id/start error:", error);
     return c.json({
       error: "Failed to start wave",
       message: error instanceof Error ? error.message : "Unknown error",

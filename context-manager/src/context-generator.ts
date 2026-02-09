@@ -4,7 +4,10 @@
  * @module context-generator
  */
 
+import { createLogger } from "./lib/logger";
 import { getDb } from "./db/client";
+
+const log = createLogger("ContextGenerator");
 import { generateBrief } from "./templates";
 import type {
   ContextBrief,
@@ -203,7 +206,7 @@ async function fetchAgentTasks(
       ...(t.wave_number !== null ? { wave_number: t.wave_number } : {}),
     }));
   } catch (error) {
-    console.error("[ContextGenerator] Error fetching tasks:", error);
+    log.error("Error fetching tasks:", error);
     return [];
   }
 }
@@ -263,7 +266,7 @@ async function fetchAgentMessages(
       is_broadcast: m.to_agent_id === null,
     }));
   } catch (error) {
-    console.error("[ContextGenerator] Error fetching messages:", error);
+    log.error("Error fetching messages:", error);
     return [];
   }
 }
@@ -308,7 +311,7 @@ async function fetchAgentBlockings(
 
     return blockings;
   } catch (error) {
-    console.error("[ContextGenerator] Error fetching blockings:", error);
+    log.error("Error fetching blockings:", error);
     return [];
   }
 }
@@ -360,7 +363,7 @@ async function fetchAgentHistory(
 
     return actions;
   } catch (error) {
-    console.error("[ContextGenerator] Error fetching history:", error);
+    log.error("Error fetching history:", error);
     return [];
   }
 }
@@ -415,7 +418,7 @@ async function fetchSessionInfo(
 
     return undefined;
   } catch (error) {
-    console.error("[ContextGenerator] Error fetching session:", error);
+    log.error("Error fetching session:", error);
     return undefined;
   }
 }
@@ -455,7 +458,7 @@ async function fetchProjectInfo(
 
     return undefined;
   } catch (error) {
-    console.error("[ContextGenerator] Error fetching project:", error);
+    log.error("Error fetching project:", error);
     return undefined;
   }
 }
@@ -496,7 +499,7 @@ async function fetchProjectFromSession(
 
     return undefined;
   } catch (error) {
-    console.error("[ContextGenerator] Error fetching project from session:", error);
+    log.error("Error fetching project from session:", error);
     return undefined;
   }
 }

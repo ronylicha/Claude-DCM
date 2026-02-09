@@ -8,6 +8,9 @@ import type { Context } from "hono";
 import { z } from "zod";
 import { getDb } from "../db/client";
 import { VALID_TOPICS } from "./messages";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("API");
 
 /** Zod schema for subscription input validation */
 const SubscriptionInputSchema = z.object({
@@ -80,7 +83,7 @@ export async function postSubscription(c: Context): Promise<Response> {
       201
     );
   } catch (error) {
-    console.error("[API] POST /api/subscribe error:", error);
+    log.error("POST /api/subscribe error:", error);
     return c.json(
       {
         error: "Failed to create subscription",
@@ -138,7 +141,7 @@ export async function getSubscriptions(c: Context): Promise<Response> {
       count: subscriptions.length,
     });
   } catch (error) {
-    console.error("[API] GET /api/subscriptions error:", error);
+    log.error("GET /api/subscriptions error:", error);
     return c.json(
       {
         error: "Failed to fetch subscriptions",
@@ -177,7 +180,7 @@ export async function getAgentSubscriptions(c: Context): Promise<Response> {
       count: subscriptions.length,
     });
   } catch (error) {
-    console.error("[API] GET /api/subscriptions/:agent_id error:", error);
+    log.error("GET /api/subscriptions/:agent_id error:", error);
     return c.json(
       {
         error: "Failed to fetch agent subscriptions",
@@ -222,7 +225,7 @@ export async function deleteSubscription(c: Context): Promise<Response> {
       },
     });
   } catch (error) {
-    console.error("[API] DELETE /api/subscriptions/:id error:", error);
+    log.error("DELETE /api/subscriptions/:id error:", error);
     return c.json(
       {
         error: "Failed to delete subscription",
@@ -279,7 +282,7 @@ export async function postUnsubscribe(c: Context): Promise<Response> {
       },
     });
   } catch (error) {
-    console.error("[API] POST /api/unsubscribe error:", error);
+    log.error("POST /api/unsubscribe error:", error);
     return c.json(
       {
         error: "Failed to unsubscribe",

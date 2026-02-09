@@ -7,6 +7,9 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("API");
 
 /** Input schema for request creation */
 export interface RequestInput {
@@ -130,7 +133,7 @@ export async function postRequest(c: Context): Promise<Response> {
       },
     }, 201);
   } catch (error) {
-    console.error("[API] POST /api/requests error:", error);
+    log.error("POST /api/requests error:", error);
     return c.json(
       {
         error: "Failed to create request",
@@ -218,7 +221,7 @@ export async function getRequests(c: Context): Promise<Response> {
       offset,
     });
   } catch (error) {
-    console.error("[API] GET /api/requests error:", error);
+    log.error("GET /api/requests error:", error);
     return c.json(
       {
         error: "Failed to fetch requests",
@@ -270,7 +273,7 @@ export async function getRequestById(c: Context): Promise<Response> {
       },
     });
   } catch (error) {
-    console.error("[API] GET /api/requests/:id error:", error);
+    log.error("GET /api/requests/:id error:", error);
     return c.json(
       {
         error: "Failed to fetch request",
@@ -361,7 +364,7 @@ export async function patchRequest(c: Context): Promise<Response> {
       request,
     });
   } catch (error) {
-    console.error("[API] PATCH /api/requests/:id error:", error);
+    log.error("PATCH /api/requests/:id error:", error);
     return c.json(
       {
         error: "Failed to update request",
@@ -401,7 +404,7 @@ export async function deleteRequest(c: Context): Promise<Response> {
 
     return new Response(null, { status: 204 });
   } catch (error) {
-    console.error("[API] DELETE /api/requests/:id error:", error);
+    log.error("DELETE /api/requests/:id error:", error);
     return c.json(
       {
         error: "Failed to delete request",

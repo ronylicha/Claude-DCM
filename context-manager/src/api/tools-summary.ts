@@ -6,6 +6,9 @@
 import type { Context } from "hono";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("ToolsSummary");
 
 // ============================================
 // Types
@@ -58,7 +61,7 @@ async function countSkills(): Promise<number> {
 
     return count;
   } catch (error) {
-    console.warn("[tools-summary] Failed to count skills:", error);
+    log.warn("Failed to count skills:", error);
     return 0;
   }
 }
@@ -72,7 +75,7 @@ async function countCommands(): Promise<number> {
   try {
     return await countMdFilesRecursive(commandsDir);
   } catch (error) {
-    console.warn("[tools-summary] Failed to count commands:", error);
+    log.warn("Failed to count commands:", error);
     return 0;
   }
 }
@@ -111,7 +114,7 @@ async function countWorkflows(): Promise<number> {
     const entries = await readdir(templatesDir, { withFileTypes: true });
     return entries.filter(e => e.isFile() && e.name.endsWith(".yaml")).length;
   } catch (error) {
-    console.warn("[tools-summary] Failed to count workflows:", error);
+    log.warn("Failed to count workflows:", error);
     return 0;
   }
 }
@@ -150,7 +153,7 @@ async function countPlugins(): Promise<number> {
 
     return 0;
   } catch (error) {
-    console.warn("[tools-summary] Failed to count plugins:", error);
+    log.warn("Failed to count plugins:", error);
     return 0;
   }
 }
@@ -208,7 +211,7 @@ export async function getToolsSummary(c: Context) {
       from_cache: false,
     });
   } catch (error) {
-    console.error("[API] GET /stats/tools-summary error:", error);
+    log.error("GET /stats/tools-summary error:", error);
     return c.json(
       {
         error: "Failed to fetch tools summary",

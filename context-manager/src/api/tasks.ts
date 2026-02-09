@@ -8,6 +8,9 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("API");
 
 /** Input schema for task creation */
 export interface TaskInput {
@@ -139,7 +142,7 @@ export async function postTask(c: Context): Promise<Response> {
       },
     }, 201);
   } catch (error) {
-    console.error("[API] POST /api/tasks error:", error);
+    log.error("POST /api/tasks error:", error);
     return c.json(
       {
         error: "Failed to create task",
@@ -209,7 +212,7 @@ export async function getTasks(c: Context): Promise<Response> {
       offset,
     });
   } catch (error) {
-    console.error("[API] GET /api/tasks error:", error);
+    log.error("GET /api/tasks error:", error);
     return c.json(
       {
         error: "Failed to fetch tasks",
@@ -272,7 +275,7 @@ export async function getTaskById(c: Context): Promise<Response> {
       },
     });
   } catch (error) {
-    console.error("[API] GET /api/tasks/:id error:", error);
+    log.error("GET /api/tasks/:id error:", error);
     return c.json(
       {
         error: "Failed to fetch task",
@@ -370,7 +373,7 @@ export async function patchTask(c: Context): Promise<Response> {
       task,
     });
   } catch (error) {
-    console.error("[API] PATCH /api/tasks/:id error:", error);
+    log.error("PATCH /api/tasks/:id error:", error);
     return c.json(
       {
         error: "Failed to update task",
@@ -413,7 +416,7 @@ export async function deleteTask(c: Context): Promise<Response> {
 
     return new Response(null, { status: 204 });
   } catch (error) {
-    console.error("[API] DELETE /api/tasks/:id error:", error);
+    log.error("DELETE /api/tasks/:id error:", error);
     return c.json(
       {
         error: "Failed to delete task",

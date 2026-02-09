@@ -4,9 +4,12 @@
  * @module websocket/bridge
  */
 
+import { createLogger } from "../lib/logger";
 import { getDb } from "../db/client";
 import { broadcast } from "./handlers";
 import type { MetricSnapshot, EventType } from "./types";
+
+const log = createLogger("WSBridge");
 
 // ============================================
 // PostgreSQL LISTEN/NOTIFY Bridge
@@ -30,11 +33,11 @@ async function startListening(): Promise<void> {
         broadcast("global", event as EventType, data);
       }
     } catch (error) {
-      console.error("[Bridge] Failed to parse NOTIFY payload:", error);
+      log.error("Failed to parse NOTIFY payload:", error);
     }
   });
   listenSubscription = subscription;
-  console.log("[Bridge] Listening for dcm_events via PostgreSQL NOTIFY");
+  log.info("Listening for dcm_events via PostgreSQL NOTIFY");
 }
 
 /**
@@ -42,17 +45,17 @@ async function startListening(): Promise<void> {
  * Replaces the old 500ms polling mechanism with PostgreSQL LISTEN/NOTIFY
  */
 export function startDatabaseBridge(): void {
-  console.log("[WS Bridge] Starting database bridge (LISTEN/NOTIFY mode)...");
+  log.info("Starting database bridge (LISTEN/NOTIFY mode)...");
 
   startListening()
     .then(() => {
       // Broadcast metrics every 5 seconds (metrics don't come from NOTIFY)
       metricsInterval = setInterval(broadcastMetrics, 5000);
 
-      console.log("[WS Bridge] Database bridge started (LISTEN/NOTIFY active)");
+      log.info("Database bridge started (LISTEN/NOTIFY active)");
     })
     .catch((error) => {
-      console.error("[WS Bridge] Failed to start LISTEN/NOTIFY:", error);
+      log.error("Failed to start LISTEN/NOTIFY:", error);
     });
 }
 
@@ -64,16 +67,16 @@ export async function stopDatabaseBridge(): Promise<void> {
     try {
       await listenSubscription.unlisten();
       listenSubscription = null;
-      console.log("[WS Bridge] Stopped listening for dcm_events");
+      log.info("Stopped listening for dcm_events");
     } catch (error) {
-      console.error("[WS Bridge] Error stopping LISTEN:", error);
+      log.error("Error stopping LISTEN:", error);
     }
   }
   if (metricsInterval) {
     clearInterval(metricsInterval);
     metricsInterval = null;
   }
-  console.log("[WS Bridge] Database bridge stopped");
+  log.info("Database bridge stopped");
 }
 
 // ============================================
@@ -85,7 +88,7 @@ async function broadcastMetrics(): Promise<void> {
     const metrics = await getMetricSnapshot();
     broadcast("metrics", "metric.update", metrics);
   } catch (error) {
-    console.error("[WS Bridge] Failed to broadcast metrics:", error);
+    log.error("Failed to broadcast metrics:", error);
   }
 }
 

@@ -7,6 +7,9 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("API");
 
 /** Valid message topics */
 const VALID_TOPICS = [
@@ -152,7 +155,7 @@ export async function postMessage(c: Context): Promise<Response> {
       201
     );
   } catch (error) {
-    console.error("[API] POST /api/messages error:", error);
+    log.error("POST /api/messages error:", error);
     return c.json(
       {
         error: "Failed to publish message",
@@ -262,7 +265,7 @@ export async function getMessages(c: Context): Promise<Response> {
       unread_remaining: Number(unread_count),
     });
   } catch (error) {
-    console.error("[API] GET /api/messages/:agent_id error:", error);
+    log.error("GET /api/messages/:agent_id error:", error);
     return c.json(
       {
         error: "Failed to fetch messages",
@@ -270,6 +273,29 @@ export async function getMessages(c: Context): Promise<Response> {
       },
       500
     );
+  }
+}
+
+/**
+ * GET /api/messages - Get all messages (for dashboard)
+ */
+export async function getAllMessages(c: Context): Promise<Response> {
+  try {
+    const sql = getDb();
+    const limit = Number(c.req.query("limit") ?? "100");
+    const offset = Number(c.req.query("offset") ?? "0");
+    const messages = await sql`
+      SELECT id, project_id, from_agent_id, to_agent_id,
+        message_type, topic, payload, priority,
+        read_by, created_at, expires_at
+      FROM agent_messages
+      ORDER BY created_at DESC
+      LIMIT ${limit} OFFSET ${offset}`;
+    const [{ total }] = await sql`SELECT COUNT(*) as total FROM agent_messages`;
+    return c.json({ messages, count: Number(total), limit, offset });
+  } catch (error) {
+    log.error("GET /api/messages error:", error);
+    return c.json({ error: "Failed to get messages" }, 500);
   }
 }
 

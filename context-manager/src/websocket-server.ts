@@ -7,58 +7,61 @@
 import { config, validateConfig } from "./config";
 import { testConnection, closeDb } from "./db/client";
 import { startWebSocketServer, stopWebSocketServer, getWSStats } from "./websocket/server";
+import { createLogger } from "./lib/logger";
+
+const log = createLogger("WSServer");
 
 // ============================================
 // Startup
 // ============================================
 
 async function main(): Promise<void> {
-  console.log("========================================");
-  console.log(" Context Manager - WebSocket Server");
-  console.log("========================================");
-  console.log();
+  log.info("========================================");
+  log.info(" Context Manager - WebSocket Server");
+  log.info("========================================");
+  log.info("");
 
   // Validate configuration
   try {
     validateConfig();
-    console.log(`[Config] WebSocket port: ${config.websocket.port}`);
-    console.log(`[Config] Host: ${config.server.host}`);
+    log.info(`WebSocket port: ${config.websocket.port}`);
+    log.info(`Host: ${config.server.host}`);
   } catch (error) {
-    console.error("[Config] Validation failed:", error);
+    log.error("Validation failed:", error);
     process.exit(1);
   }
 
   // Test database connection (needed for bridge)
-  console.log("[DB] Testing database connection...");
+  log.info("Testing database connection...");
   const dbConnected = await testConnection();
   if (!dbConnected) {
-    console.error("[DB] Failed to connect to database. Exiting.");
+    log.error("Failed to connect to database. Exiting.");
     process.exit(1);
   }
-  console.log("[DB] Database connected");
+  log.info("Database connected");
 
   // Start WebSocket server
   const server = startWebSocketServer();
 
-  console.log();
-  console.log("========================================");
-  console.log(` WebSocket server ready!`);
-  console.log(` URL: ws://${config.server.host}:${config.websocket.port}`);
-  console.log(` Health: http://${config.server.host}:${config.websocket.port}/health`);
-  console.log("========================================");
-  console.log();
+  log.info("");
+  log.info("========================================");
+  log.info(" WebSocket server ready!");
+  log.info(` URL: ws://${config.server.host}:${config.websocket.port}`);
+  log.info(` Health: http://${config.server.host}:${config.websocket.port}/health`);
+  log.info("========================================");
+  log.info("");
 
   // ============================================
   // Graceful Shutdown
   // ============================================
 
   const shutdown = async (signal: string): Promise<void> => {
-    console.log();
-    console.log(`[Shutdown] Received ${signal}, shutting down gracefully...`);
+    log.info("");
+    log.info(`Received ${signal}, shutting down gracefully...`);
 
     // Log final stats
     const stats = getWSStats();
-    console.log(`[Shutdown] Final stats - Clients: ${stats.connectedClients}, Channels: ${stats.activeChannels}`);
+    log.info(`Final stats - Clients: ${stats.connectedClients}, Channels: ${stats.activeChannels}`);
 
     // Stop WebSocket server
     await stopWebSocketServer();
@@ -66,7 +69,7 @@ async function main(): Promise<void> {
     // Close database connection
     await closeDb();
 
-    console.log("[Shutdown] Cleanup complete. Exiting.");
+    log.info("Cleanup complete. Exiting.");
     process.exit(0);
   };
 
@@ -75,12 +78,12 @@ async function main(): Promise<void> {
 
   // Handle uncaught errors
   process.on("uncaughtException", (error) => {
-    console.error("[Error] Uncaught exception:", error);
+    log.error("Uncaught exception:", error);
     shutdown("uncaughtException");
   });
 
   process.on("unhandledRejection", (reason, promise) => {
-    console.error("[Error] Unhandled rejection at:", promise, "reason:", reason);
+    log.error("Unhandled rejection at:", promise, "reason:", reason);
   });
 
   return Promise.resolve();
@@ -88,6 +91,6 @@ async function main(): Promise<void> {
 
 // Run
 main().catch((error) => {
-  console.error("[Fatal] Startup failed:", error);
+  log.error("Startup failed:", error);
   process.exit(1);
 });

@@ -7,6 +7,9 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("API");
 
 /** Zod schema for blocking input validation */
 const BlockingInputSchema = z.object({
@@ -88,7 +91,7 @@ export async function postBlocking(c: Context): Promise<Response> {
       201
     );
   } catch (error) {
-    console.error("[API] POST /api/blocking error:", error);
+    log.error("POST /api/blocking error:", error);
     return c.json(
       {
         error: "Failed to block agent",
@@ -152,7 +155,7 @@ export async function getBlocking(c: Context): Promise<Response> {
       },
     });
   } catch (error) {
-    console.error("[API] GET /api/blocking/:agent_id error:", error);
+    log.error("GET /api/blocking/:agent_id error:", error);
     return c.json(
       {
         error: "Failed to check blocking status",
@@ -203,7 +206,7 @@ export async function deleteBlocking(c: Context): Promise<Response> {
       },
     });
   } catch (error) {
-    console.error("[API] DELETE /api/blocking/:blocked_id error:", error);
+    log.error("DELETE /api/blocking/:blocked_id error:", error);
     return c.json(
       {
         error: "Failed to unblock agent",
@@ -267,7 +270,7 @@ export async function postUnblock(c: Context): Promise<Response> {
       },
     });
   } catch (error) {
-    console.error("[API] POST /api/unblock error:", error);
+    log.error("POST /api/unblock error:", error);
     return c.json(
       {
         error: "Failed to unblock agent",
@@ -310,7 +313,7 @@ export async function checkBlocking(c: Context): Promise<Response> {
       is_blocked: result?.exists ?? false,
     });
   } catch (error) {
-    console.error("[API] GET /api/blocking/check error:", error);
+    log.error("GET /api/blocking/check error:", error);
     return c.json(
       {
         error: "Failed to check blocking status",

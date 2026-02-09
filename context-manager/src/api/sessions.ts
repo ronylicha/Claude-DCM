@@ -6,6 +6,9 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("API");
 
 interface SessionRow {
   id: string;
@@ -95,7 +98,7 @@ export async function postSession(c: Context) {
 
     return c.json(result[0], 201);
   } catch (error) {
-    console.error("[API] POST /api/sessions error:", error);
+    log.error("POST /api/sessions error:", error);
     return c.json(
       {
         error: "Failed to create session",
@@ -166,7 +169,7 @@ export async function getSessions(c: Context) {
       offset,
     });
   } catch (error) {
-    console.error("[API] GET /api/sessions error:", error);
+    log.error("GET /api/sessions error:", error);
     return c.json(
       {
         error: "Failed to fetch sessions",
@@ -207,7 +210,7 @@ export async function getSessionById(c: Context) {
       requests,
     });
   } catch (error) {
-    console.error("[API] GET /api/sessions/:id error:", error);
+    log.error("GET /api/sessions/:id error:", error);
     return c.json(
       {
         error: "Failed to fetch session",
@@ -279,7 +282,7 @@ export async function patchSession(c: Context) {
 
     return c.json(result[0]);
   } catch (error) {
-    console.error("[API] PATCH /api/sessions/:id error:", error);
+    log.error("PATCH /api/sessions/:id error:", error);
     return c.json(
       {
         error: "Failed to update session",
@@ -329,7 +332,7 @@ export async function getSessionsStats(c: Context) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("[API] GET /api/sessions/stats error:", error);
+    log.error("GET /api/sessions/stats error:", error);
     return c.json(
       {
         error: "Failed to fetch sessions stats",
@@ -369,7 +372,7 @@ export async function deleteSession(c: Context) {
 
     return new Response(null, { status: 204 });
   } catch (error) {
-    console.error("[API] DELETE /api/sessions/:id error:", error);
+    log.error("DELETE /api/sessions/:id error:", error);
     return c.json(
       {
         error: "Failed to delete session",

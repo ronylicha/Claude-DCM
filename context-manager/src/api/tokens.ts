@@ -1,6 +1,9 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("Tokens");
 
 // ==================== Schemas ====================
 
@@ -126,7 +129,7 @@ export async function trackTokens(c: Context) {
 
     return c.body(null, 204);
   } catch (error) {
-    console.error("Error tracking tokens:", error);
+    log.error("Error tracking tokens:", error);
     return c.json({ error: "Failed to track tokens" }, 500);
   }
 }
@@ -187,7 +190,7 @@ export async function getCapacity(c: Context) {
       last_updated_at: capacity['last_updated_at'],
     });
   } catch (error) {
-    console.error("Error fetching capacity:", error);
+    log.error("Error fetching capacity:", error);
     return c.json({ error: "Failed to fetch capacity" }, 500);
   }
 }
@@ -260,7 +263,7 @@ export async function resetCapacity(c: Context) {
       last_updated_at: updated['last_updated_at'],
     });
   } catch (error) {
-    console.error("Error resetting capacity:", error);
+    log.error("Error resetting capacity:", error);
     return c.json({ error: "Failed to reset capacity" }, 500);
   }
 }

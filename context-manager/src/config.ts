@@ -3,6 +3,10 @@
  * @module config
  */
 
+import { createLogger } from "./lib/logger";
+
+const log = createLogger("Config");
+
 export interface Config {
   /** PostgreSQL connection settings */
   database: {
@@ -118,9 +122,7 @@ export function validateConfig(): void {
         "WS_AUTH_SECRET environment variable is required in production. Set it in your .env file with a strong random value."
       );
     } else {
-      console.warn(
-        "[WARN] WS_AUTH_SECRET is not set. WebSocket authentication will fail. Set it in your .env file."
-      );
+      log.warn("WS_AUTH_SECRET is not set. WebSocket authentication will fail. Set it in your .env file.");
     }
   } else if (wsAuthSecret.length < 32) {
     if (isProduction) {
@@ -128,9 +130,7 @@ export function validateConfig(): void {
         "WS_AUTH_SECRET must be at least 32 characters long in production for secure authentication."
       );
     } else {
-      console.warn(
-        "[WARN] WS_AUTH_SECRET is shorter than 32 characters. For production use, ensure it is at least 32 characters long."
-      );
+      log.warn("WS_AUTH_SECRET is shorter than 32 characters. For production use, ensure it is at least 32 characters long.");
     }
   }
   
