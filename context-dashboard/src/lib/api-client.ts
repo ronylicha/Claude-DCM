@@ -549,6 +549,12 @@ export interface CompactEvent {
   created_at: string;
 }
 
+// Registry catalog types
+export interface CatalogAgent { id: string; name: string; description: string; category: string; tools: string[] }
+export interface CatalogSkill { id: string; name: string; description: string; category: string }
+export interface CatalogCommand { id: string; name: string; description: string; category: string }
+export interface CatalogResponse { agents?: CatalogAgent[]; skills?: CatalogSkill[]; commands?: CatalogCommand[]; counts: { agents: number; skills: number; commands: number } }
+
 // ============================================
 // API Error
 // ============================================
@@ -999,6 +1005,14 @@ export const apiClient = {
   },
   getRegistryAgent: (agentType: string) =>
     apiFetch<{ agent: AgentRegistryEntry }>(`/api/registry/${agentType}`),
+  getRegistryCatalog: (params?: { type?: string; search?: string; category?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.type) searchParams.set("type", params.type);
+    if (params?.search) searchParams.set("search", params.search);
+    if (params?.category) searchParams.set("category", params.category);
+    const query = searchParams.toString();
+    return apiFetch<CatalogResponse>(`/api/registry/catalog${query ? `?${query}` : ""}`);
+  },
 
   // ==========================================
   // Orchestration - /api/orchestration

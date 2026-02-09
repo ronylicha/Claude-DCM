@@ -56,6 +56,7 @@ import { rateLimit, rateLimitPresets } from "./middleware/rate-limit";
 // Phase 9 - DCM v3.0 Proactive Triage Station
 import { trackTokens, getCapacity, resetCapacity } from "./api/tokens";
 import { getRegistry, getRegistryAgent, putRegistryAgent, postRegistryImport, postRegistryEnrichContext } from "./api/registry";
+import { getCatalog } from "./api/catalog";
 import { postBatchSubmit, getBatch, getSynthesis, getConflicts, postBatchComplete } from "./api/orchestration";
 import { getWaveCurrent, getWaveHistoryHandler, postWaveTransition, postWaveCreate, postWaveStart } from "./api/waves";
 
@@ -416,6 +417,9 @@ app.post("/api/registry/import", postRegistryImport);
 
 // POST /api/registry/enrich-context - Generate enriched context for agent
 app.post("/api/registry/enrich-context", postRegistryEnrichContext);
+
+// GET /api/registry/catalog - Static catalog of all known agents, skills, and commands
+app.get("/api/registry/catalog", getCatalog);
 
 // GET /api/registry/:agent_type - Get one agent scope
 app.get("/api/registry/:agent_type", getRegistryAgent);
