@@ -203,89 +203,35 @@ export async function getMessages(c: Context): Promise<Response> {
     const includeBroadcasts = query.include_broadcasts === "true";
     const sinceDate = query.since ? new Date(query.since) : null;
 
-    if (query.topic && sinceDate) {
-      // Filter by topic and since
-      messages = await sql<MessageRow[]>`
-        SELECT
-          id, project_id, from_agent_id, to_agent_id,
-          message_type, topic, payload, priority,
-          read_by, created_at, expires_at
-        FROM agent_messages
-        WHERE (expires_at IS NULL OR expires_at > NOW())
-          AND topic = ${query.topic}
-          AND created_at > ${sinceDate.toISOString()}
-          AND (
-            to_agent_id = ${agentId}
-            ${includeBroadcasts ? sql`OR to_agent_id IS NULL` : sql``}
-          )
-        ORDER BY priority DESC, created_at ASC
-        LIMIT ${query.limit}
-      `;
-    } else if (query.topic) {
-      // Filter by topic only
-      messages = await sql<MessageRow[]>`
-        SELECT
-          id, project_id, from_agent_id, to_agent_id,
-          message_type, topic, payload, priority,
-          read_by, created_at, expires_at
-        FROM agent_messages
-        WHERE (expires_at IS NULL OR expires_at > NOW())
-          AND topic = ${query.topic}
-          AND (
-            to_agent_id = ${agentId}
-            ${includeBroadcasts ? sql`OR to_agent_id IS NULL` : sql``}
-          )
-        ORDER BY priority DESC, created_at ASC
-        LIMIT ${query.limit}
-      `;
-    } else if (sinceDate) {
-      // Filter by since only
-      messages = await sql<MessageRow[]>`
-        SELECT
-          id, project_id, from_agent_id, to_agent_id,
-          message_type, topic, payload, priority,
-          read_by, created_at, expires_at
-        FROM agent_messages
-        WHERE (expires_at IS NULL OR expires_at > NOW())
-          AND created_at > ${sinceDate.toISOString()}
-          AND (
-            to_agent_id = ${agentId}
-            ${includeBroadcasts ? sql`OR to_agent_id IS NULL` : sql``}
-          )
-        ORDER BY priority DESC, created_at ASC
-        LIMIT ${query.limit}
-      `;
-    } else {
-      // No filters
-      messages = await sql<MessageRow[]>`
-        SELECT
-          id, project_id, from_agent_id, to_agent_id,
-          message_type, topic, payload, priority,
-          read_by, created_at, expires_at
-        FROM agent_messages
-        WHERE (expires_at IS NULL OR expires_at > NOW())
-          AND (
-            to_agent_id = ${agentId}
-            ${includeBroadcasts ? sql`OR to_agent_id IS NULL` : sql``}
-          )
-        ORDER BY priority DESC, created_at ASC
-        LIMIT ${query.limit}
-      `;
-    }
+    // Build dynamic query with optional filters
+    const topicFilter = query.topic ? sql`AND topic = ${query.topic}` : sql``;
+    const sinceFilter = sinceDate ? sql`AND created_at > ${sinceDate.toISOString()}` : sql``;
+
+    messages = await sql<MessageRow[]>`
+      SELECT
+        id, project_id, from_agent_id, to_agent_id,
+        message_type, topic, payload, priority,
+        read_by, created_at, expires_at
+      FROM agent_messages
+      WHERE (expires_at IS NULL OR expires_at > NOW())
+        ${topicFilter}
+        ${sinceFilter}
+        AND (
+          to_agent_id = ${agentId}
+          ${includeBroadcasts ? sql`OR to_agent_id IS NULL` : sql``}
+        )
+      ORDER BY priority DESC, created_at ASC
+      LIMIT ${query.limit}
+    `;
 
     // Mark messages as read by this agent
     const messageIds = messages.map((m) => m.id);
     if (messageIds.length > 0) {
       await sql`
         UPDATE agent_messages
-        SET read_by = array_append(
-          CASE WHEN ${agentId} = ANY(read_by) THEN read_by
-               ELSE read_by END,
-          CASE WHEN ${agentId} = ANY(read_by) THEN NULL
-               ELSE ${agentId} END
-        )
+        SET read_by = array_append(read_by, ${agentId})
         WHERE id = ANY(${messageIds})
-          AND NOT (${agentId} = ANY(read_by))
+          AND (read_by IS NULL OR NOT (${agentId} = ANY(read_by)))
       `;
     }
 
@@ -295,7 +241,7 @@ export async function getMessages(c: Context): Promise<Response> {
       FROM agent_messages
       WHERE (expires_at IS NULL OR expires_at > NOW())
         AND (to_agent_id = ${agentId} OR to_agent_id IS NULL)
-        AND NOT (${agentId} = ANY(read_by))
+        AND (read_by IS NULL OR NOT (${agentId} = ANY(read_by)))
     `;
 
     return c.json({

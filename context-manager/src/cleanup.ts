@@ -4,6 +4,7 @@
  * @module cleanup
  */
 
+import { config } from "./config";
 import { getDb } from "./db/client";
 
 /** Cleanup statistics */
@@ -44,7 +45,7 @@ export async function deleteExpiredMessages(): Promise<number> {
  * @param inactiveMinutes - No activity for this many minutes (default: 10)
  * @returns Number of closed sessions
  */
-export async function closeOrphanedSessions(maxAgeHours: number = 0.5, inactiveMinutes: number = 10): Promise<number> {
+export async function closeOrphanedSessions(maxAgeHours: number = config.cleanup.staleThresholdHours, inactiveMinutes: number = config.cleanup.inactiveMinutes): Promise<number> {
   const sql = getDb();
 
   const result = await sql`
@@ -77,7 +78,7 @@ export async function closeOrphanedSessions(maxAgeHours: number = 0.5, inactiveM
  * @param inactiveMinutes - No activity for this many minutes (default: 10)
  * @returns Number of deleted agent contexts
  */
-export async function deleteStaleAgentContexts(maxAgeHours: number = 0.5, inactiveMinutes: number = 10): Promise<number> {
+export async function deleteStaleAgentContexts(maxAgeHours: number = config.cleanup.staleThresholdHours, inactiveMinutes: number = config.cleanup.inactiveMinutes): Promise<number> {
   const sql = getDb();
 
   const result = await sql`
@@ -112,7 +113,7 @@ export async function deleteStaleAgentContexts(maxAgeHours: number = 0.5, inacti
  * @param inactiveMinutes - No activity for this many minutes (default: 10)
  * @returns Number of failed subtasks
  */
-export async function failStuckSubtasks(maxAgeHours: number = 0.5, inactiveMinutes: number = 10): Promise<number> {
+export async function failStuckSubtasks(maxAgeHours: number = config.cleanup.staleThresholdHours, inactiveMinutes: number = config.cleanup.inactiveMinutes): Promise<number> {
   const sql = getDb();
 
   const result = await sql`
@@ -144,7 +145,7 @@ export async function failStuckSubtasks(maxAgeHours: number = 0.5, inactiveMinut
  * @param maxAgeHours - Maximum age in hours (default: 24)
  * @returns Number of deleted snapshots
  */
-export async function deleteOldCompactSnapshots(maxAgeHours: number = 24): Promise<number> {
+export async function deleteOldCompactSnapshots(maxAgeHours: number = config.cleanup.snapshotMaxAgeHours): Promise<number> {
   const sql = getDb();
 
   const result = await sql`
@@ -172,16 +173,16 @@ export async function runCleanup(): Promise<CleanupStats> {
     const [deletedMessages, closedSessions, deletedAgentContexts, failedSubtasks] =
       await Promise.all([
         deleteExpiredMessages(),
-        closeOrphanedSessions(0.5),  // 30min instead of 2h - sessions rarely last that long
-        deleteStaleAgentContexts(0.5),
-        failStuckSubtasks(0.5),
+        closeOrphanedSessions(),  // 30min instead of 2h - sessions rarely last that long
+        deleteStaleAgentContexts(),
+        failStuckSubtasks(),
       ]);
 
     // Run less frequent cleanup (snapshots) only every ~10 runs
     // Use a simple modulo on the minute to approximate
     const minute = new Date().getMinutes();
     if (minute % 10 === 0) {
-      await deleteOldCompactSnapshots(24);
+      await deleteOldCompactSnapshots();
     }
 
     const durationMs = Math.round(performance.now() - startTime);
@@ -216,7 +217,7 @@ export async function runCleanup(): Promise<CleanupStats> {
  * Start the cleanup interval
  * @param intervalMs - Interval in milliseconds (default: 60000 = 1 minute)
  */
-export function startCleanupInterval(intervalMs: number = 60000): void {
+export function startCleanupInterval(intervalMs: number = config.cleanup.intervalMs): void {
   if (cleanupInterval) {
     console.warn("[Cleanup] Cleanup interval already running");
     return;
@@ -270,7 +271,7 @@ export function isCleanupRunning(): boolean {
  * @param maxAgeHours - Maximum age in hours for read messages (default: 24)
  * @returns Number of deleted messages
  */
-export async function deleteOldReadMessages(maxAgeHours: number = 24): Promise<number> {
+export async function deleteOldReadMessages(maxAgeHours: number = config.cleanup.readMessageMaxAgeHours): Promise<number> {
   const sql = getDb();
 
   // Delete messages that:
