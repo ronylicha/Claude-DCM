@@ -587,63 +587,11 @@ Claude Code Session Lifecycle
           \-- rm /tmp/.claude-context/{session_id}.json
 ```
 
-### Mermaid Sequence Diagram
+### Sequence Diagram
 
-```mermaid
-sequenceDiagram
-    participant CC as Claude Code
-    participant ES as ensure-services.sh
-    participant TS as track-session.sh
-    participant TA as track-action.sh
-    participant AG as track-agent.sh
-    participant MO as monitor-context.sh
-    participant PC as pre-compact-save.sh
-    participant PR as post-compact-restore.sh
-    participant SA as save-agent-result.sh
-    participant TE as track-session-end.sh
-    participant API as DCM API
-
-    Note over CC: Session starts
-    CC->>ES: SessionStart(startup)
-    ES->>API: GET /health
-    alt Not running
-        ES->>API: Start API + WS servers
-    end
-    CC->>TS: SessionStart(startup)
-    TS->>API: POST /api/projects
-    TS->>API: POST /api/sessions
-    TS->>API: POST /api/requests
-    TS->>API: POST /api/tasks
-
-    Note over CC: User prompts, Claude works
-    loop Every tool call
-        CC->>TA: PostToolUse(*)
-        TA->>API: POST /api/actions
-        CC->>MO: PostToolUse(*)
-        MO-->>MO: counter++ (check every 10th)
-    end
-
-    CC->>AG: PostToolUse(Task)
-    AG->>API: POST /api/subtasks
-
-    Note over CC: Subagent finishes
-    CC->>SA: SubagentStop
-    SA->>API: POST /api/messages
-    SA->>API: PATCH /api/subtasks/{id}
-
-    Note over CC: Compact triggered
-    CC->>PC: PreCompact(auto|manual)
-    PC->>API: POST /api/compact/save
-
-    Note over CC: After compact
-    CC->>PR: SessionStart(compact)
-    PR->>API: POST /api/compact/restore
-    PR-->>CC: additionalContext (injected)
-
-    Note over CC: Session ends
-    CC->>TE: SessionEnd
-    TE->>API: PATCH /api/sessions/{id}
-```
+<p align="center">
+  <img src="assets/integration-lifecycle.svg" alt="Integration Lifecycle" width="1000"/>
+</p>
 
 ---
 

@@ -9,6 +9,7 @@ import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
 import { createLogger } from "../lib/logger";
+import { getOrCreateWave } from "../waves/manager";
 
 const log = createLogger("API");
 
@@ -77,9 +78,9 @@ export async function postTask(c: Context): Promise<Response> {
 
     const sql = getDb();
 
-    // Verify request exists
-    const requestResults = await sql<{ id: string }[]>`
-      SELECT id FROM requests WHERE id = ${body.request_id}
+    // Verify request exists and get session_id for wave sync
+    const requestResults = await sql<{ id: string; session_id: string }[]>`
+      SELECT id, session_id FROM requests WHERE id = ${body.request_id}
     `;
 
     if (!requestResults[0]) {
@@ -88,6 +89,7 @@ export async function postTask(c: Context): Promise<Response> {
         404
       );
     }
+    const sessionId = requestResults[0].session_id;
 
     // Get next wave number if not provided
     let waveNumber = body.wave_number;
@@ -119,6 +121,18 @@ export async function postTask(c: Context): Promise<Response> {
     const task = results[0];
     if (!task) {
       return c.json({ error: "Failed to create task" }, 500);
+    }
+
+    // Sync wave_states: create wave entry and increment total_tasks
+    try {
+      await getOrCreateWave(sessionId, task.wave_number);
+      await sql`
+        UPDATE wave_states
+        SET total_tasks = total_tasks + 1
+        WHERE session_id = ${sessionId} AND wave_number = ${task.wave_number}
+      `;
+    } catch (err) {
+      log.error("Wave state sync error:", err);
     }
 
     // Publish real-time event via PostgreSQL NOTIFY

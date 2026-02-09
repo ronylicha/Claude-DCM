@@ -50,6 +50,7 @@ export default function ProjectDetailPage() {
     queryKey: ["project-hierarchy", projectId],
     queryFn: () => apiClient.getHierarchy(projectId),
     enabled: !!projectId,
+    refetchInterval: 5000,
   });
 
   if (isLoading) {

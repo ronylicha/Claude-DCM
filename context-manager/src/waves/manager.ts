@@ -193,6 +193,7 @@ export async function getCurrentWave(sessionId: string): Promise<WaveState | nul
 /**
  * Get wave history for a session
  * Returns all waves ordered by wave_number
+ * Falls back to synthesizing from task_lists if wave_states is empty
  */
 export async function getWaveHistory(sessionId: string): Promise<WaveState[]> {
   const sql = getDb();
@@ -205,7 +206,32 @@ export async function getWaveHistory(sessionId: string): Promise<WaveState[]> {
     ORDER BY wave_number ASC
   `;
 
-  return results;
+  if (results.length > 0) return results;
+
+  // Fallback: synthesize wave data from task_lists for sessions without wave_states
+  const synthesized = await sql<WaveState[]>`
+    SELECT
+      gen_random_uuid()::text as id,
+      r.session_id,
+      tl.wave_number,
+      CASE
+        WHEN COUNT(*) FILTER (WHERE tl.status IN ('pending', 'running')) > 0 THEN 'running'
+        WHEN COUNT(*) FILTER (WHERE tl.status = 'failed') > 0 THEN 'failed'
+        ELSE 'completed'
+      END as status,
+      COUNT(*)::int as total_tasks,
+      COUNT(*) FILTER (WHERE tl.status = 'completed')::int as completed_tasks,
+      COUNT(*) FILTER (WHERE tl.status = 'failed')::int as failed_tasks,
+      MIN(tl.created_at) as started_at,
+      MAX(tl.completed_at) as completed_at
+    FROM task_lists tl
+    JOIN requests r ON r.id = tl.request_id
+    WHERE r.session_id = ${sessionId}
+    GROUP BY r.session_id, tl.wave_number
+    ORDER BY tl.wave_number ASC
+  `;
+
+  return synthesized;
 }
 
 /**

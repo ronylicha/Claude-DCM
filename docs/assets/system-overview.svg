@@ -1,0 +1,170 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="880" viewBox="0 0 1200 880" role="img" aria-label="DCM System Overview">
+  <defs>
+    <style>
+      .title { font: 700 28px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .label { font: 600 16px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .sub { font: 400 13px "Inter", "Segoe UI", Arial, sans-serif; fill: #334155; }
+      .small { font: 400 11px "Inter", "Segoe UI", Arial, sans-serif; fill: #64748b; }
+      .box { fill: #f8fafc; stroke: #94a3b8; stroke-width: 2; rx: 12; }
+      .box-primary { fill: #eff6ff; stroke: #3b82f6; stroke-width: 2; rx: 12; }
+      .box-accent { fill: #f0fdf4; stroke: #22c55e; stroke-width: 2; rx: 12; }
+      .box-db { fill: #faf5ff; stroke: #a855f7; stroke-width: 2; rx: 12; }
+      .box-dark { fill: #1e293b; stroke: #475569; stroke-width: 2; rx: 16; }
+      .line { stroke: #64748b; stroke-width: 1.5; marker-end: url(#arrow); }
+      .line-blue { stroke: #3b82f6; stroke-width: 1.5; marker-end: url(#arrow-blue); }
+      .line-green { stroke: #22c55e; stroke-width: 1.5; marker-end: url(#arrow-green); }
+      .line-purple { stroke: #a855f7; stroke-width: 1.5; marker-end: url(#arrow-purple); }
+      .section-label { font: 600 12px "Inter", "Segoe UI", Arial, sans-serif; fill: #94a3b8; letter-spacing: 2px; }
+    </style>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L8,3 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L8,3 z" fill="#3b82f6"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L8,3 z" fill="#22c55e"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L8,3 z" fill="#a855f7"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="880" fill="#ffffff"/>
+  <text x="40" y="42" class="title">System Overview</text>
+
+  <!-- Claude Code Session -->
+  <rect x="440" y="70" width="320" height="60" class="box-dark"/>
+  <text x="600" y="100" text-anchor="middle" style="font: 700 18px 'Inter', sans-serif; fill: #f8fafc;">Claude Code Session</text>
+  <text x="600" y="118" text-anchor="middle" style="font: 400 12px 'Inter', sans-serif; fill: #94a3b8;">Multi-agent orchestration</text>
+
+  <!-- Section: Hooks -->
+  <text x="60" y="170" class="section-label">HOOKS</text>
+  <rect x="40" y="178" width="1120" height="260" rx="16" fill="none" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="6,4"/>
+
+  <!-- SessionStart hooks row -->
+  <text x="60" y="208" class="small">SessionStart</text>
+  <rect x="60" y="214" width="160" height="54" class="box-primary"/>
+  <text x="140" y="238" text-anchor="middle" class="label" style="font-size:13px">ensure-services</text>
+  <text x="140" y="256" text-anchor="middle" class="small">auto-start, 10s</text>
+
+  <rect x="235" y="214" width="155" height="54" class="box-primary"/>
+  <text x="312" y="238" text-anchor="middle" class="label" style="font-size:13px">track-session</text>
+  <text x="312" y="256" text-anchor="middle" class="small">init hierarchy, 5s</text>
+
+  <rect x="405" y="214" width="195" height="54" class="box-primary"/>
+  <text x="502" y="238" text-anchor="middle" class="label" style="font-size:13px">post-compact-restore</text>
+  <text x="502" y="256" text-anchor="middle" class="small">compact matcher, 8s</text>
+
+  <!-- PostToolUse hooks row -->
+  <text x="60" y="296" class="small">PostToolUse</text>
+  <rect x="60" y="302" width="155" height="54" class="box"/>
+  <text x="137" y="326" text-anchor="middle" class="label" style="font-size:13px">track-action</text>
+  <text x="137" y="344" text-anchor="middle" class="small">all tools (*), 3s</text>
+
+  <rect x="230" y="302" width="155" height="54" class="box"/>
+  <text x="307" y="326" text-anchor="middle" class="label" style="font-size:13px">track-agent</text>
+  <text x="307" y="344" text-anchor="middle" class="small">Task only, 3s</text>
+
+  <rect x="400" y="302" width="170" height="54" class="box"/>
+  <text x="485" y="326" text-anchor="middle" class="label" style="font-size:13px">monitor-context</text>
+  <text x="485" y="344" text-anchor="middle" class="small">all tools (*), 2s</text>
+
+  <!-- PreCompact + SubagentStop + SessionEnd row -->
+  <text x="60" y="384" class="small">PreCompact / SubagentStop / SessionEnd</text>
+  <rect x="60" y="390" width="180" height="54" class="box-accent"/>
+  <text x="150" y="414" text-anchor="middle" class="label" style="font-size:13px">pre-compact-save</text>
+  <text x="150" y="432" text-anchor="middle" class="small">auto|manual, 5s</text>
+
+  <rect x="255" y="390" width="185" height="54" class="box-accent"/>
+  <text x="347" y="414" text-anchor="middle" class="label" style="font-size:13px">save-agent-result</text>
+  <text x="347" y="432" text-anchor="middle" class="small">SubagentStop, 3s</text>
+
+  <rect x="455" y="390" width="185" height="54" class="box-accent"/>
+  <text x="547" y="414" text-anchor="middle" class="label" style="font-size:13px">track-session-end</text>
+  <text x="547" y="432" text-anchor="middle" class="small">SessionEnd, 3s</text>
+
+  <!-- Annotations for hook connections -->
+  <text x="700" y="240" class="small">health check, POST /api/*</text>
+  <text x="700" y="330" class="small">POST /api/actions, /api/subtasks</text>
+  <text x="700" y="418" class="small">POST /api/compact/save, /api/messages</text>
+
+  <!-- Connection lines from Claude Code to hooks -->
+  <line x1="520" y1="130" x2="140" y2="214" class="line"/>
+  <line x1="560" y1="130" x2="312" y2="214" class="line"/>
+  <line x1="600" y1="130" x2="137" y2="302" class="line"/>
+  <line x1="640" y1="130" x2="307" y2="302" class="line"/>
+  <line x1="600" y1="130" x2="150" y2="390" class="line"/>
+
+  <!-- Section: Services -->
+  <text x="60" y="490" class="section-label">SERVICES</text>
+
+  <!-- DCM API -->
+  <rect x="60" y="510" width="320" height="90" class="box-primary"/>
+  <text x="220" y="540" text-anchor="middle" class="label">DCM API</text>
+  <text x="220" y="560" text-anchor="middle" class="sub">Bun + Hono | Port 3847</text>
+  <text x="220" y="578" text-anchor="middle" class="small">60+ REST endpoints, routing intelligence</text>
+
+  <!-- DCM WebSocket -->
+  <rect x="440" y="510" width="320" height="90" class="box-primary"/>
+  <text x="600" y="540" text-anchor="middle" class="label">DCM WebSocket</text>
+  <text x="600" y="560" text-anchor="middle" class="sub">Bun native WS | Port 3849</text>
+  <text x="600" y="578" text-anchor="middle" class="small">Real-time events, HMAC auth, retry queue</text>
+
+  <!-- DCM Dashboard -->
+  <rect x="820" y="510" width="320" height="90" class="box-primary"/>
+  <text x="980" y="540" text-anchor="middle" class="label">DCM Dashboard</text>
+  <text x="980" y="560" text-anchor="middle" class="sub">Next.js 16 + React 19 | Port 3848</text>
+  <text x="980" y="578" text-anchor="middle" class="small">11 pages, glassmorphism, live activity</text>
+
+  <!-- Connection lines: hooks to services -->
+  <line x1="300" y1="444" x2="220" y2="510" class="line-blue"/>
+  <line x1="485" y1="356" x2="220" y2="510" class="line-blue"/>
+
+  <!-- Connection: API to WS via NOTIFY -->
+  <line x1="380" y1="555" x2="440" y2="555" class="line-purple"/>
+  <text x="410" y="548" text-anchor="middle" class="small" style="fill:#a855f7">NOTIFY</text>
+
+  <!-- Connection: Dashboard to API -->
+  <line x1="820" y1="545" x2="380" y2="545" class="line" style="stroke-dasharray:6,3"/>
+  <text x="600" y="535" text-anchor="middle" class="small">REST calls</text>
+
+  <!-- Connection: Dashboard to WS -->
+  <line x1="820" y1="565" x2="760" y2="565" class="line-green"/>
+  <text x="790" y="558" text-anchor="middle" class="small" style="fill:#22c55e">subscribe</text>
+
+  <!-- Section: Database -->
+  <text x="60" y="650" class="section-label">DATABASE</text>
+
+  <!-- PostgreSQL -->
+  <rect x="240" y="670" width="720" height="90" class="box-db"/>
+  <text x="600" y="700" text-anchor="middle" class="label">PostgreSQL 16</text>
+  <text x="600" y="720" text-anchor="middle" class="sub">claude_context | Port 5432</text>
+  <text x="600" y="740" text-anchor="middle" class="small">10 tables, 4 views, 20+ indexes, JSONB metadata, LISTEN/NOTIFY event bus</text>
+
+  <!-- Connection: API to DB -->
+  <line x1="220" y1="600" x2="400" y2="670" class="line-purple"/>
+  <text x="280" y="640" class="small" style="fill:#a855f7">read/write</text>
+
+  <!-- Connection: WS LISTEN from DB -->
+  <line x1="600" y1="600" x2="600" y2="670" class="line-purple"/>
+  <text x="610" y="645" class="small" style="fill:#a855f7">LISTEN dcm_events</text>
+
+  <!-- Legend -->
+  <rect x="40" y="800" width="1120" height="60" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="60" y="828" class="small">Legend:</text>
+  <rect x="120" y="816" width="30" height="14" rx="3" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="158" y="828" class="small">SessionStart</text>
+  <rect x="260" y="816" width="30" height="14" rx="3" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="298" y="828" class="small">PostToolUse</text>
+  <rect x="400" y="816" width="30" height="14" rx="3" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="438" y="828" class="small">PreCompact / Stop / End</text>
+  <line x1="600" y1="823" x2="630" y2="823" style="stroke:#3b82f6;stroke-width:2"/>
+  <text x="640" y="828" class="small">Hook to API</text>
+  <line x1="730" y1="823" x2="760" y2="823" style="stroke:#a855f7;stroke-width:2"/>
+  <text x="770" y="828" class="small">DB events</text>
+  <line x1="850" y1="823" x2="880" y2="823" style="stroke:#22c55e;stroke-width:2"/>
+  <text x="890" y="828" class="small">WebSocket</text>
+  <line x1="970" y1="823" x2="1000" y2="823" style="stroke:#64748b;stroke-width:2;stroke-dasharray:6,3"/>
+  <text x="1010" y="828" class="small">REST polling</text>
+</svg>

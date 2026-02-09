@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" viewBox="0 0 1200 480" role="img" aria-label="Action tracking data flow">
+  <defs>
+    <style>
+      .title { font: 700 28px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .label { font: 600 16px "Inter", "Segoe UI", Arial, sans-serif; fill: #0f172a; }
+      .sub { font: 400 14px "Inter", "Segoe UI", Arial, sans-serif; fill: #334155; }
+      .small { font: 400 11px "Inter", "Segoe UI", Arial, sans-serif; fill: #64748b; }
+      .box { fill: #f8fafc; stroke: #94a3b8; stroke-width: 2; rx: 12; }
+      .box-dark { fill: #1e293b; stroke: #475569; stroke-width: 2; rx: 12; }
+      .box-blue { fill: #eff6ff; stroke: #3b82f6; stroke-width: 2; rx: 12; }
+      .box-purple { fill: #faf5ff; stroke: #a855f7; stroke-width: 2; rx: 12; }
+      .line { stroke: #64748b; stroke-width: 2; marker-end: url(#arrow); }
+      .line-blue { stroke: #3b82f6; stroke-width: 2; marker-end: url(#arrow-blue); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#3b82f6"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="480" fill="#ffffff"/>
+  <text x="40" y="42" class="title">Action Tracking Data Flow</text>
+
+  <!-- Step 1: Claude Code -->
+  <rect x="40" y="90" width="170" height="70" class="box-dark"/>
+  <text x="125" y="122" text-anchor="middle" style="font: 700 16px 'Inter', sans-serif; fill: #f8fafc;">Claude Code</text>
+  <text x="125" y="142" text-anchor="middle" style="font: 400 12px 'Inter', sans-serif; fill: #94a3b8;">PostToolUse event</text>
+
+  <!-- Step 2: Hook -->
+  <rect x="260" y="90" width="170" height="70" class="box"/>
+  <text x="345" y="118" text-anchor="middle" class="label">track-action.sh</text>
+  <text x="345" y="140" text-anchor="middle" class="sub" style="font-size:12px">classify + extract</text>
+
+  <!-- Step 3: API -->
+  <rect x="480" y="90" width="170" height="70" class="box-blue"/>
+  <text x="565" y="118" text-anchor="middle" class="label">DCM API</text>
+  <text x="565" y="140" text-anchor="middle" class="sub" style="font-size:12px">POST /api/actions</text>
+
+  <!-- Step 4: PostgreSQL -->
+  <rect x="700" y="90" width="170" height="70" class="box-purple"/>
+  <text x="785" y="118" text-anchor="middle" class="label">PostgreSQL</text>
+  <text x="785" y="140" text-anchor="middle" class="sub" style="font-size:12px">INSERT + NOTIFY</text>
+
+  <!-- Step 5: WS Bridge -->
+  <rect x="920" y="90" width="120" height="70" class="box-blue"/>
+  <text x="980" y="118" text-anchor="middle" class="label">WS Bridge</text>
+  <text x="980" y="140" text-anchor="middle" class="sub" style="font-size:12px">LISTEN</text>
+
+  <!-- Step 6: Dashboard -->
+  <rect x="1080" y="90" width="100" height="70" class="box"/>
+  <text x="1130" y="122" text-anchor="middle" class="label" style="font-size:14px">Dashboard</text>
+  <text x="1130" y="142" text-anchor="middle" class="sub" style="font-size:11px">live update</text>
+
+  <!-- Flow arrows -->
+  <line x1="210" y1="125" x2="260" y2="125" class="line"/>
+  <line x1="430" y1="125" x2="480" y2="125" class="line-blue"/>
+  <line x1="650" y1="125" x2="700" y2="125" class="line"/>
+  <line x1="870" y1="125" x2="920" y2="125" style="stroke:#a855f7;stroke-width:2;marker-end:url(#arrow)"/>
+  <line x1="1040" y1="125" x2="1080" y2="125" class="line"/>
+
+  <!-- Flow labels -->
+  <text x="235" y="115" text-anchor="middle" class="small">stdin</text>
+  <text x="455" y="115" text-anchor="middle" class="small">HTTP</text>
+  <text x="675" y="115" text-anchor="middle" class="small">SQL</text>
+  <text x="895" y="115" text-anchor="middle" class="small" style="fill:#a855f7">event</text>
+  <text x="1060" y="115" text-anchor="middle" class="small">WS</text>
+
+  <!-- Detail: Tool type classification -->
+  <text x="60" y="210" class="label">Tool Type Classification</text>
+  <rect x="40" y="224" width="540" height="220" rx="12" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+
+  <text x="60" y="254" class="sub" style="font-weight:600">Type</text>
+  <text x="160" y="254" class="sub" style="font-weight:600">Matched Tools</text>
+
+  <text x="60" y="282" class="sub" style="fill:#3b82f6;font-weight:600">builtin</text>
+  <text x="160" y="282" class="small">Read, Write, Edit, MultiEdit, Bash, Glob, Grep, WebFetch,</text>
+  <text x="160" y="298" class="small">WebSearch, NotebookEdit, EnterPlanMode, ExitPlanMode, ...</text>
+
+  <text x="60" y="326" class="sub" style="fill:#f59e0b;font-weight:600">agent</text>
+  <text x="160" y="326" class="small">Task (extracted: subagent_type as effective name)</text>
+
+  <text x="60" y="354" class="sub" style="fill:#22c55e;font-weight:600">skill</text>
+  <text x="160" y="354" class="small">Skill (extracted: skill name as effective name)</text>
+
+  <text x="60" y="382" class="sub" style="fill:#a855f7;font-weight:600">mcp</text>
+  <text x="160" y="382" class="small">Any tool prefixed with mcp__ (e.g., mcp__github__*)</text>
+
+  <line x1="40" y1="264" x2="580" y2="264" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="40" y1="310" x2="580" y2="310" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="40" y1="338" x2="580" y2="338" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="40" y1="366" x2="580" y2="366" stroke="#e2e8f0" stroke-width="1"/>
+
+  <!-- Detail: Server-side effects -->
+  <text x="640" y="210" class="label">Server-Side Effects</text>
+  <rect x="620" y="224" width="540" height="220" rx="12" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+
+  <rect x="640" y="244" width="24" height="24" rx="6" fill="#3b82f6"/>
+  <text x="660" y="262" text-anchor="middle" style="font: 700 14px 'Inter', sans-serif; fill: #fff;">1</text>
+  <text x="680" y="260" class="sub">INSERT INTO actions (tool_name, tool_type, input, exit_code)</text>
+
+  <rect x="640" y="282" width="24" height="24" rx="6" fill="#3b82f6"/>
+  <text x="660" y="300" text-anchor="middle" style="font: 700 14px 'Inter', sans-serif; fill: #fff;">2</text>
+  <text x="680" y="298" class="sub">UPSERT session (increment total_tools_used counter)</text>
+
+  <rect x="640" y="320" width="24" height="24" rx="6" fill="#3b82f6"/>
+  <text x="660" y="338" text-anchor="middle" style="font: 700 14px 'Inter', sans-serif; fill: #fff;">3</text>
+  <text x="680" y="336" class="sub">UPSERT project (by cwd filesystem path)</text>
+
+  <rect x="640" y="358" width="24" height="24" rx="6" fill="#3b82f6"/>
+  <text x="660" y="376" text-anchor="middle" style="font: 700 14px 'Inter', sans-serif; fill: #fff;">4</text>
+  <text x="680" y="374" class="sub">UPSERT keyword_tool_scores (routing intelligence)</text>
+
+  <rect x="640" y="396" width="24" height="24" rx="6" fill="#a855f7"/>
+  <text x="660" y="414" text-anchor="middle" style="font: 700 14px 'Inter', sans-serif; fill: #fff;">5</text>
+  <text x="680" y="412" class="sub">NOTIFY dcm_events (JSON payload for WebSocket bridge)</text>
+</svg>
