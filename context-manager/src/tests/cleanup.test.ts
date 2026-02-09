@@ -15,11 +15,24 @@ import { describe, test, expect, mock, beforeEach, afterEach, spyOn } from "bun:
 // Suppress console output during tests (logger writes to console.*)
 // ---------------------------------------------------------------------------
 
-spyOn(console, "log").mockImplementation(() => {});
-spyOn(console, "warn").mockImplementation(() => {});
-spyOn(console, "error").mockImplementation(() => {});
-spyOn(console, "debug").mockImplementation(() => {});
+let consoleLogSpy: any;
+let consoleWarnSpy: any;
+let consoleErrorSpy: any;
+let consoleDebugSpy: any;
 
+beforeEach(() => {
+  consoleLogSpy = spyOn(console, "log").mockImplementation(() => {});
+  consoleWarnSpy = spyOn(console, "warn").mockImplementation(() => {});
+  consoleErrorSpy = spyOn(console, "error").mockImplementation(() => {});
+  consoleDebugSpy = spyOn(console, "debug").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  consoleLogSpy?.mockRestore();
+  consoleWarnSpy?.mockRestore();
+  consoleErrorSpy?.mockRestore();
+  consoleDebugSpy?.mockRestore();
+});
 // ---------------------------------------------------------------------------
 // Mock setup - MUST be declared before importing the module under test
 // ---------------------------------------------------------------------------
