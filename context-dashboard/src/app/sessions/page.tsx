@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/table";
 import { DateRangeFilter, type DateRange, getDateRangeStart } from "@/components/filters/DateRangeFilter";
 import { StatusFilter, type Status } from "@/components/filters/StatusFilter";
-import apiClient, { type Project, type Session } from "@/lib/api-client";
+import apiClient, { type Project, type Session, type ActiveSessionsResponse } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import {
   Clock,
@@ -32,6 +32,7 @@ import {
   Activity,
   Hash,
   Wrench,
+  Users,
 } from "lucide-react";
 
 type SortField = "id" | "project" | "started_at" | "status" | "total_tools_used";
@@ -157,20 +158,27 @@ export default function SessionsPage() {
   const { data: sessionsResponse, isLoading: sessionsLoading, error: sessionsError } = useQuery<SessionsApiResponse>({
     queryKey: ["sessions"],
     queryFn: async () => {
-      const response = await fetch(`http://127.0.0.1:3847/api/sessions?limit=500&offset=0`);
-      if (!response.ok) throw new Error("Failed to fetch sessions");
-      return response.json();
+      const paginated = await apiClient.getSessions(1, 500);
+      return {
+        sessions: paginated.data,
+        total: paginated.total,
+        limit: paginated.limit,
+        offset: 0,
+      };
     },
   });
 
   // Fetch projects for the filter dropdown and project name mapping
   const { data: projectsData } = useQuery({
     queryKey: ["projects-list"],
-    queryFn: async () => {
-      const response = await fetch(`http://127.0.0.1:3847/api/projects?limit=100&offset=0`);
-      if (!response.ok) throw new Error("Failed to fetch projects");
-      return response.json() as Promise<{ projects: Project[]; total: number }>;
-    },
+    queryFn: () => apiClient.getProjectsRaw(1, 100),
+  });
+
+  // Fetch active agents data
+  const { data: activeSessionsData } = useQuery<ActiveSessionsResponse>({
+    queryKey: ["active-sessions"],
+    queryFn: () => apiClient.getActiveSessions(),
+    refetchInterval: 10000,
   });
 
   // Create a map of project IDs to names
@@ -183,6 +191,25 @@ export default function SessionsPage() {
     }
     return map;
   }, [projectsData]);
+
+  // Create a map of session_id to agent count and agent details
+  const agentsBySession = useMemo(() => {
+    const map = new Map<string, { count: number; types: string[] }>();
+    if (activeSessionsData?.active_agents) {
+      for (const agent of activeSessionsData.active_agents) {
+        const existing = map.get(agent.session_id);
+        if (existing) {
+          existing.count++;
+          if (!existing.types.includes(agent.agent_type)) {
+            existing.types.push(agent.agent_type);
+          }
+        } else {
+          map.set(agent.session_id, { count: 1, types: [agent.agent_type] });
+        }
+      }
+    }
+    return map;
+  }, [activeSessionsData]);
 
   // Enrich sessions with project names
   const sessions: SessionData[] = useMemo(() => {
@@ -240,6 +267,9 @@ export default function SessionsPage() {
           break;
         case "status":
           comparison = (a.status || '').localeCompare(b.status || '');
+          break;
+        case "total_tools_used":
+          comparison = a.total_tools_used - b.total_tools_used;
           break;
       }
 
@@ -435,6 +465,7 @@ export default function SessionsPage() {
                       </button>
                     </TableHead>
                     <TableHead>Duration</TableHead>
+                    <TableHead>Agents</TableHead>
                     <TableHead>Requests</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -473,6 +504,24 @@ export default function SessionsPage() {
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {formatDuration(session.started_at, session.ended_at)}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const agents = agentsBySession.get(session.id);
+                          if (!agents || agents.count === 0) {
+                            return <span className="text-muted-foreground/40 text-xs">—</span>;
+                          }
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <Users className="h-3.5 w-3.5 text-violet-400" />
+                              <span className="text-sm font-medium">{agents.count}</span>
+                              <span className="text-[10px] text-muted-foreground truncate max-w-[120px]" title={agents.types.join(", ")}>
+                                {agents.types.slice(0, 2).join(", ")}
+                                {agents.types.length > 2 ? ` +${agents.types.length - 2}` : ""}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1 text-muted-foreground">

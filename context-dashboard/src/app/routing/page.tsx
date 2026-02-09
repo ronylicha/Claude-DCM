@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import apiClient from "@/lib/api-client";
 import {
   Table,
   TableBody,
@@ -85,11 +86,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3847";
 
 // API functions
 async function fetchRoutingStats(): Promise<RoutingStats> {
-  const res = await fetch(`${API_BASE_URL}/api/routing/stats`);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch routing stats: ${res.statusText}`);
-  }
-  return res.json();
+  return apiClient.getRoutingStats();
 }
 
 async function fetchRoutingSuggestions(keywords: string): Promise<RoutingSuggestResponse> {
@@ -284,7 +281,7 @@ function TopKeywordsTable({ stats, isLoading }: { stats?: RoutingStats; isLoadin
                 </TableCell>
                 <TableCell className="text-right">
                   <span className={(tool.avg_score ?? 0) >= 3 ? "text-green-600" : (tool.avg_score ?? 0) >= 2 ? "text-yellow-600" : "text-muted-foreground"}>
-                    {Number(tool.avg_score ?? 0).toFixed(2) ?? "N/A"}
+                    {Number(tool.avg_score ?? 0).toFixed(2)}/5
                   </span>
                 </TableCell>
               </TableRow>
@@ -371,7 +368,7 @@ function TopToolsTable({ stats, isLoading }: { stats?: RoutingStats; isLoading: 
                 <TableCell className="text-right text-muted-foreground">{tool.total_usage ?? 0}</TableCell>
                 <TableCell className="text-right">
                   <span className={(tool.avg_score ?? 0) >= 3 ? "text-green-600" : (tool.avg_score ?? 0) >= 2 ? "text-yellow-600" : "text-muted-foreground"}>
-                    {Number(tool.avg_score ?? 0).toFixed(2) ?? "N/A"}
+                    {Number(tool.avg_score ?? 0).toFixed(2)}/5
                   </span>
                 </TableCell>
               </TableRow>
@@ -473,7 +470,7 @@ function RoutingTester() {
                   </Badge>
                 ))}
               </span>
-              <span>{suggestions.count}ms</span>
+              <span>{suggestions.count} results</span>
             </div>
 
             <div className="space-y-2">
@@ -503,7 +500,7 @@ function RoutingTester() {
                   <div className="flex items-center gap-3">
                     <div className="text-right">
                       <div className={`text-lg font-bold ${suggestion.score >= 3 ? "text-green-600" : suggestion.score >= 2 ? "text-yellow-600" : "text-muted-foreground"}`}>
-                        {Number(suggestion.score).toFixed(1)}%
+                        {Number(suggestion.score).toFixed(1)}/5
                       </div>
                       <div className="text-xs text-muted-foreground">score</div>
                     </div>

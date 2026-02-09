@@ -15,7 +15,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageContainer } from "@/components/PageContainer";
-import apiClient, { type CompactEvent, type AgentContextsResponse } from "@/lib/api-client";
+import apiClient, { type CompactEvent } from "@/lib/api-client";
 import {
   History,
   Archive,
@@ -279,36 +279,29 @@ function TimelineEvent({ event, isLast }: TimelineEventProps) {
 // ============================================
 
 export default function CompactHistoryPage() {
-  // Fetch compact snapshots via agent_contexts with agent_type filter
-  const { data: contextsData, isLoading: contextsLoading, error: contextsError } = useQuery<
-    AgentContextsResponse,
+  // Fetch compact snapshots
+  const { data: snapshotsData, isLoading: contextsLoading, error: contextsError } = useQuery<
+    { snapshots: CompactEvent[] },
     Error
   >({
-    queryKey: ["agent-contexts-compacts"],
-    queryFn: () => apiClient.getAgentContexts(200, 0),
+    queryKey: ["compact-snapshots"],
+    queryFn: () => apiClient.getCompactSnapshots(),
     refetchInterval: 30000,
   });
 
-  // Filter contexts to only compact-snapshot type
+  // Map snapshots with calculated size
   const compactEvents = useMemo(() => {
-    if (!contextsData?.contexts) return [];
+    if (!snapshotsData?.snapshots) return [];
 
-    return contextsData.contexts
-      .filter((ctx) => ctx.agent_type === "compact-snapshot")
-      .map((ctx) => ({
-        id: ctx.id,
-        session_id: ctx.role_context.session_id || "unknown",
-        agent_type: ctx.agent_type,
-        trigger: (ctx.role_context as any).trigger || "auto",
-        snapshot: ctx.role_context as Record<string, unknown>,
-        summary: ctx.progress_summary || "Context snapshot saved",
-        created_at: ctx.role_context.spawned_at || ctx.last_updated,
-        snapshot_size_bytes: JSON.stringify(ctx.role_context).length,
-      } as CompactEvent & { snapshot_size_bytes: number }))
+    return snapshotsData.snapshots
+      .map((snapshot) => ({
+        ...snapshot,
+        snapshot_size_bytes: JSON.stringify(snapshot.snapshot).length,
+      }))
       .sort((a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
-  }, [contextsData]);
+  }, [snapshotsData]);
 
   // Calculate stats
   const stats = useMemo(() => {

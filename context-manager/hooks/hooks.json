@@ -1,5 +1,5 @@
 {
-  "description": "DCM - Context tracking, compact save/restore, agent result sharing, proactive monitoring",
+  "description": "DCM - Context tracking, guardian monitoring, compact save/restore, agent result sharing, stop guard",
   "hooks": {
     "PostToolUse": [
       {
@@ -19,6 +19,16 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/track-agent.sh",
             "timeout": 3
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/context-guardian.sh",
+            "timeout": 2
           }
         ]
       },
@@ -78,6 +88,17 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact-save.sh",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/context-stop-guard.sh",
+            "timeout": 3
           }
         ]
       }

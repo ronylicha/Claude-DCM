@@ -16,6 +16,7 @@ import {
   History,
   BookOpen,
   Gauge,
+  Network,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +32,7 @@ const navigationGroups: NavGroup[] = [
       { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { name: "Live Activity", href: "/live", icon: Radio },
       { name: "Waves", href: "/waves", icon: Layers },
+      { name: "Flows", href: "/flows", icon: Network },
     ],
   },
   {

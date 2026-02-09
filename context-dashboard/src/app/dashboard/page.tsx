@@ -128,13 +128,19 @@ export default function DashboardPage() {
 
   const avgTaskDuration = realtimeMetrics?.avg_task_duration_ms
     ? `${Math.round(realtimeMetrics.avg_task_duration_ms)}ms`
-    : "145ms";
+    : "N/A";
 
   // Enhanced metrics queries
   const { data: contextStats } = useQuery({
     queryKey: ["agent-context-stats"],
     queryFn: apiClient.getAgentContextStats,
     refetchInterval: 30000,
+  });
+
+  const { data: routingStats } = useQuery({
+    queryKey: ["routing-stats-dashboard"],
+    queryFn: apiClient.getRoutingStatsRaw,
+    refetchInterval: 60000,
   });
 
   const [contextFreshness, setContextFreshness] = useState("N/A");
@@ -170,6 +176,11 @@ export default function DashboardPage() {
     if (total_contexts === 0) return "0%";
     return `${Math.round((completed_agents / total_contexts) * 100)}%`;
   }, [contextStats]);
+
+  const routingAccuracy = useMemo(() => {
+    if (!routingStats?.totals?.avg_score) return "N/A";
+    return `${Math.round((routingStats.totals.avg_score / 5) * 100)}%`;
+  }, [routingStats]);
 
   const proactiveSavesCount = contextStats?.overview?.total_contexts ?? 0;
 
@@ -271,10 +282,10 @@ export default function DashboardPage() {
 
         <PremiumKPICard
           title="Routing Accuracy"
-          value="94.2%"
+          value={routingAccuracy}
           icon={<Target className="h-4 w-4 text-white" />}
           iconGradient="bg-gradient-to-br from-emerald-500 to-green-600"
-          trend={{ value: 2, label: "improvement" }}
+          loading={!routingStats}
         />
 
         <PremiumKPICard

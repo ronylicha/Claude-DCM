@@ -1,0 +1,3012 @@
+openapi: 3.1.0
+info:
+  title: DCM API
+  description: |
+    Distributed Context Manager API for Claude Code multi-agent sessions.
+
+    DCM provides persistent memory, context tracking, inter-agent messaging, intelligent routing,
+    and real-time coordination for multi-agent workflows.
+
+    ## Features
+    - **Context Tracking**: Records every tool call, agent action, and session lifecycle event
+    - **Compact Recovery**: Saves context snapshots before compaction and restores them afterward
+    - **Cross-Agent Sharing**: Real-time pub/sub messaging between agents
+    - **Intelligent Routing**: Keyword-based tool suggestion with feedback-driven optimization
+    - **Real-Time Monitoring**: WebSocket events and Next.js dashboard
+
+    ## Architecture
+    - **Backend**: Bun + Hono (HTTP) + Bun native WebSocket
+    - **Database**: PostgreSQL 16 with JSONB support
+    - **Frontend**: Next.js 16, React 19, Recharts, shadcn/ui
+    - **Validation**: Zod v4
+  version: 3.0.0
+  contact:
+    name: DCM Support
+    url: https://github.com/ronylicha/Claude-DCM
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://127.0.0.1:3847
+    description: Local development server
+  - url: http://localhost:3847
+    description: Local development server (alternative)
+
+tags:
+  - name: Health
+    description: Health and status endpoints
+  - name: Dashboard
+    description: Dashboard KPI aggregation
+  - name: Projects
+    description: Project management (identified by working directory)
+  - name: Sessions
+    description: Claude Code session tracking
+  - name: Requests
+    description: User prompts/requests management
+  - name: Tasks
+    description: Task lists (waves) management
+  - name: Subtasks
+    description: Agent objectives within a wave
+  - name: Actions
+    description: Tool invocation tracking
+  - name: Routing
+    description: Intelligent tool routing and suggestions
+  - name: Context
+    description: Context generation and restoration
+  - name: Compact
+    description: Context compaction operations
+  - name: Messages
+    description: Inter-agent pub/sub messaging
+  - name: Subscriptions
+    description: Message subscription management
+  - name: Blocking
+    description: Agent blocking relationships
+  - name: AgentContexts
+    description: Agent context management
+  - name: Hierarchy
+    description: Hierarchical view of projects/requests/tasks
+  - name: Tokens
+    description: Token consumption tracking and capacity management
+  - name: Registry
+    description: Agent registry and catalog
+  - name: Orchestration
+    description: Batch task orchestration and synthesis
+  - name: Waves
+    description: Wave state management
+  - name: Auth
+    description: WebSocket authentication tokens
+  - name: Tools
+    description: Tools usage summary
+  - name: Cleanup
+    description: Message cleanup statistics
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns API health status, database connectivity, and feature availability
+      tags: [Health]
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /stats:
+    get:
+      summary: Database statistics
+      description: Returns database connection pool stats and table counts
+      tags: [Health]
+      operationId: getStats
+      responses:
+        '200':
+          description: Database statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api/dashboard/kpis:
+    get:
+      summary: Dashboard KPIs
+      description: Returns aggregated metrics for dashboard display
+      tags: [Dashboard]
+      operationId: getDashboardKpis
+      responses:
+        '200':
+          description: KPI metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardKpis'
+
+  /api/projects:
+    post:
+      summary: Create or get project
+      description: Creates a new project or returns existing one if path already exists
+      tags: [Projects]
+      operationId: postProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectInput'
+      responses:
+        '201':
+          description: Project created or retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  project:
+                    $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+    get:
+      summary: List projects
+      description: Returns paginated list of all projects
+      tags: [Projects]
+      operationId: getProjects
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          description: Projects list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+                  count:
+                    type: integer
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+  /api/projects/by-path:
+    get:
+      summary: Get project by path
+      description: Retrieves project by its working directory path
+      tags: [Projects]
+      operationId: getProjectByPath
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Project path (working directory)
+      responses:
+        '200':
+          description: Project found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project:
+                    $ref: '#/components/schemas/Project'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/projects/{id}:
+    get:
+      summary: Get project by ID
+      description: Returns project details with associated requests and stats
+      tags: [Projects]
+      operationId: getProjectById
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project:
+                    allOf:
+                      - $ref: '#/components/schemas/Project'
+                      - type: object
+                        properties:
+                          requests:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Request'
+                          stats:
+                            type: object
+                            nullable: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete project
+      description: Deletes project and all associated data (cascade)
+      tags: [Projects]
+      operationId: deleteProject
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Project deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/sessions:
+    post:
+      summary: Create session
+      description: Creates a new Claude Code session
+      tags: [Sessions]
+      operationId: postSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionInput'
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '409':
+          description: Session already exists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  id:
+                    type: string
+
+    get:
+      summary: List sessions
+      description: Returns paginated list of sessions with optional filters
+      tags: [Sessions]
+      operationId: getSessions
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: active_only
+          in: query
+          schema:
+            type: boolean
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          description: Sessions list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+  /api/sessions/stats:
+    get:
+      summary: Session statistics
+      description: Returns aggregated session statistics
+      tags: [Sessions]
+      operationId: getSessionsStats
+      responses:
+        '200':
+          description: Session stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  overview:
+                    type: object
+                  by_project:
+                    type: array
+                    items:
+                      type: object
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api/sessions/{id}:
+    get:
+      summary: Get session by ID
+      description: Returns session details with associated requests
+      tags: [Sessions]
+      operationId: getSessionById
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Session details
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Session'
+                  - type: object
+                    properties:
+                      requests:
+                        type: array
+                        items:
+                          type: object
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      summary: Update session
+      description: Updates session properties (typically ended_at, tool counts)
+      tags: [Sessions]
+      operationId: patchSession
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ended_at:
+                  type: string
+                  format: date-time
+                total_tools_used:
+                  type: integer
+                  minimum: 0
+                total_success:
+                  type: integer
+                  minimum: 0
+                total_errors:
+                  type: integer
+                  minimum: 0
+      responses:
+        '200':
+          description: Session updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete session
+      description: Deletes session
+      tags: [Sessions]
+      operationId: deleteSession
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Session deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/requests:
+    post:
+      summary: Create request
+      description: Creates a new user request (prompt)
+      tags: [Requests]
+      operationId: postRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestInput'
+      responses:
+        '201':
+          description: Request created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  request:
+                    $ref: '#/components/schemas/Request'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: Project not found
+
+    get:
+      summary: List requests
+      description: Returns paginated list of requests with optional filters
+      tags: [Requests]
+      operationId: getRequests
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: session_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, completed, failed, cancelled]
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          description: Requests list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Request'
+                  count:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+  /api/requests/{id}:
+    get:
+      summary: Get request by ID
+      description: Returns request details with associated tasks
+      tags: [Requests]
+      operationId: getRequestById
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Request details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    allOf:
+                      - $ref: '#/components/schemas/Request'
+                      - type: object
+                        properties:
+                          tasks:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      summary: Update request
+      description: Updates request status or metadata
+      tags: [Requests]
+      operationId: patchRequest
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [active, completed, failed, cancelled]
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Request updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  request:
+                    $ref: '#/components/schemas/Request'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete request
+      description: Deletes request and all associated data (cascade)
+      tags: [Requests]
+      operationId: deleteRequest
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Request deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/tasks:
+    post:
+      summary: Create task (wave)
+      description: Creates a new task list (wave)
+      tags: [Tasks]
+      operationId: postTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskInput'
+      responses:
+        '201':
+          description: Task created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  task:
+                    $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: Request not found
+
+    get:
+      summary: List tasks
+      description: Returns paginated list of tasks with optional filters
+      tags: [Tasks]
+      operationId: getTasks
+      parameters:
+        - name: request_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, running, completed, failed, blocked]
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          description: Tasks list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+                  count:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+  /api/tasks/{id}:
+    get:
+      summary: Get task by ID
+      description: Returns task details with associated subtasks
+      tags: [Tasks]
+      operationId: getTaskById
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task:
+                    allOf:
+                      - $ref: '#/components/schemas/Task'
+                      - type: object
+                        properties:
+                          subtasks:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Subtask'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      summary: Update task
+      description: Updates task status or name
+      tags: [Tasks]
+      operationId: patchTask
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [pending, running, completed, failed, blocked]
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  task:
+                    $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete task
+      description: Deletes task and all associated subtasks (cascade)
+      tags: [Tasks]
+      operationId: deleteTask
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Task deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/subtasks:
+    post:
+      summary: Create subtask
+      description: Creates a new subtask (agent objective within a wave)
+      tags: [Subtasks]
+      operationId: postSubtask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubtaskInput'
+      responses:
+        '201':
+          description: Subtask created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  subtask:
+                    $ref: '#/components/schemas/Subtask'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: Task not found
+
+    get:
+      summary: List subtasks
+      description: Returns paginated list of subtasks with optional filters
+      tags: [Subtasks]
+      operationId: getSubtasks
+      parameters:
+        - name: task_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, running, paused, blocked, completed, failed]
+        - name: agent_type
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          description: Subtasks list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subtasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Subtask'
+                  count:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+  /api/subtasks/{id}:
+    get:
+      summary: Get subtask by ID
+      description: Returns subtask details with associated actions
+      tags: [Subtasks]
+      operationId: getSubtaskById
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Subtask details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subtask:
+                    allOf:
+                      - $ref: '#/components/schemas/Subtask'
+                      - type: object
+                        properties:
+                          actions:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Action'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      summary: Update subtask
+      description: Updates subtask status, result, or blocking relationships
+      tags: [Subtasks]
+      operationId: patchSubtask
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [pending, running, paused, blocked, completed, failed]
+                result:
+                  type: object
+                  additionalProperties: true
+                agent_id:
+                  type: string
+                blocked_by:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: Subtask updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  subtask:
+                    $ref: '#/components/schemas/Subtask'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete subtask
+      description: Deletes subtask and all associated actions (cascade)
+      tags: [Subtasks]
+      operationId: deleteSubtask
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Subtask deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/subtasks/close-session:
+    post:
+      summary: Close session subtasks
+      description: Closes all running subtasks for a session (called on session end)
+      tags: [Subtasks]
+      operationId: closeSessionSubtasks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                session_id:
+                  type: string
+              required: [session_id]
+      responses:
+        '200':
+          description: Subtasks closed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  closed:
+                    type: integer
+                  session_id:
+                    type: string
+
+  /api/actions:
+    post:
+      summary: Track action
+      description: Records a tool invocation
+      tags: [Actions]
+      operationId: postAction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionInput'
+      responses:
+        '201':
+          description: Action tracked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  action:
+                    $ref: '#/components/schemas/Action'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+    get:
+      summary: List actions
+      description: Returns paginated list of tool actions
+      tags: [Actions]
+      operationId: getActions
+      parameters:
+        - name: session_id
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          description: Actions list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  actions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Action'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+  /api/actions/hourly:
+    get:
+      summary: Hourly action stats
+      description: Returns action counts grouped by hour
+      tags: [Actions]
+      operationId: getActionsHourly
+      parameters:
+        - name: session_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Hourly statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hourly:
+                    type: array
+                    items:
+                      type: object
+
+  /api/actions/{id}:
+    delete:
+      summary: Delete action
+      description: Deletes a specific action
+      tags: [Actions]
+      operationId: deleteAction
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Action deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/actions/by-session/{session_id}:
+    delete:
+      summary: Delete actions by session
+      description: Deletes all actions for a session
+      tags: [Actions]
+      operationId: deleteActionsBySession
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Actions deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: integer
+
+  /api/routing/suggest:
+    get:
+      summary: Suggest tools
+      description: Returns tool suggestions based on keyword matching with feedback-driven scoring
+      tags: [Routing]
+      operationId: suggestRouting
+      parameters:
+        - name: keyword
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 5
+      responses:
+        '200':
+          description: Tool suggestions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        tool_name:
+                          type: string
+                        score:
+                          type: number
+                        type:
+                          type: string
+
+  /api/routing/stats:
+    get:
+      summary: Routing statistics
+      description: Returns routing coverage statistics
+      tags: [Routing]
+      operationId: getRoutingStats
+      responses:
+        '200':
+          description: Routing stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_keywords:
+                    type: integer
+                  total_tools:
+                    type: integer
+                  mappings:
+                    type: integer
+
+  /api/routing/feedback:
+    post:
+      summary: Submit routing feedback
+      description: Updates routing scores based on success/failure feedback
+      tags: [Routing]
+      operationId: postRoutingFeedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keyword:
+                  type: string
+                tool_name:
+                  type: string
+                successful:
+                  type: boolean
+              required: [keyword, tool_name, successful]
+      responses:
+        '200':
+          description: Feedback recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    type: boolean
+
+  /api/context/{agent_id}:
+    get:
+      summary: Get agent context
+      description: Retrieves current context for an agent
+      tags: [Context]
+      operationId: getContext
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          schema:
+            type: string
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [brief, raw]
+            default: brief
+        - name: max_tokens
+          in: query
+          schema:
+            type: integer
+            default: 2000
+      responses:
+        '200':
+          description: Context retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  brief:
+                    type: string
+                  sources:
+                    type: array
+                    items:
+                      type: string
+                  token_count:
+                    type: integer
+
+  /api/context/generate:
+    post:
+      summary: Generate context brief
+      description: Generates context brief on demand
+      tags: [Context]
+      operationId: postContextGenerate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                session_id:
+                  type: string
+                agent_id:
+                  type: string
+                format:
+                  type: string
+                  enum: [brief, raw]
+              required: [session_id, agent_id]
+      responses:
+        '200':
+          description: Context generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  brief:
+                    type: string
+                  sources:
+                    type: array
+                    items:
+                      type: string
+
+  /api/compact/save:
+    post:
+      summary: Save context snapshot
+      description: Saves context snapshot before compact operation (PreCompact hook)
+      tags: [Compact]
+      operationId: postCompactSave
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                session_id:
+                  type: string
+                trigger:
+                  type: string
+                  enum: [auto, manual]
+                context_summary:
+                  type: string
+                active_tasks:
+                  type: array
+                  items:
+                    type: string
+                modified_files:
+                  type: array
+                  items:
+                    type: string
+                key_decisions:
+                  type: array
+                  items:
+                    type: string
+                agent_states:
+                  type: object
+                  additionalProperties: true
+              required: [session_id, trigger]
+      responses:
+        '201':
+          description: Snapshot saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  saved_at:
+                    type: string
+                    format: date-time
+
+  /api/compact/restore:
+    post:
+      summary: Restore context
+      description: Restores context after compact operation (SessionStart hook with compact trigger)
+      tags: [Compact]
+      operationId: postCompactRestore
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                session_id:
+                  type: string
+                agent_id:
+                  type: string
+                agent_type:
+                  type: string
+                  default: developer
+                compact_summary:
+                  type: string
+                max_tokens:
+                  type: integer
+                  default: 2000
+              required: [session_id, agent_id]
+      responses:
+        '200':
+          description: Context restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  brief:
+                    type: string
+                  sources:
+                    type: array
+                    items:
+                      type: string
+                  session_compacted:
+                    type: boolean
+                  restored_at:
+                    type: string
+                    format: date-time
+
+  /api/compact/status/{session_id}:
+    get:
+      summary: Check compact status
+      description: Checks if session has been compacted
+      tags: [Compact]
+      operationId: getCompactStatus
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Compact status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  exists:
+                    type: boolean
+                  compacted:
+                    type: boolean
+
+  /api/compact/snapshot/{session_id}:
+    get:
+      summary: Get compact snapshot
+      description: Retrieves saved snapshot for a session
+      tags: [Compact]
+      operationId: getCompactSnapshot
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Snapshot data
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/messages:
+    post:
+      summary: Publish message
+      description: Publishes an inter-agent message
+      tags: [Messages]
+      operationId: postMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageInput'
+      responses:
+        '201':
+          description: Message published
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+    get:
+      summary: List all messages
+      description: Returns paginated list of all messages
+      tags: [Messages]
+      operationId: getAllMessages
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          description: Messages list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  count:
+                    type: integer
+
+  /api/messages/{agent_id}:
+    get:
+      summary: Get agent messages
+      description: Returns messages for a specific agent
+      tags: [Messages]
+      operationId: getMessages
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Agent messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+
+  /api/subscribe:
+    post:
+      summary: Subscribe to topic
+      description: Subscribes an agent to a message topic
+      tags: [Subscriptions]
+      operationId: postSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent_id:
+                  type: string
+                topic:
+                  type: string
+              required: [agent_id, topic]
+      responses:
+        '201':
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  created_at:
+                    type: string
+                    format: date-time
+
+  /api/unsubscribe:
+    post:
+      summary: Unsubscribe from topic
+      description: Unsubscribes an agent from a message topic
+      tags: [Subscriptions]
+      operationId: postUnsubscribe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent_id:
+                  type: string
+                topic:
+                  type: string
+              required: [agent_id, topic]
+      responses:
+        '200':
+          description: Unsubscribed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/subscriptions:
+    get:
+      summary: List all subscriptions
+      description: Returns all active subscriptions
+      tags: [Subscriptions]
+      operationId: getSubscriptions
+      responses:
+        '200':
+          description: Subscriptions list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscriptions:
+                    type: array
+                    items:
+                      type: object
+
+  /api/subscriptions/{agent_id}:
+    get:
+      summary: Get agent subscriptions
+      description: Returns subscriptions for a specific agent
+      tags: [Subscriptions]
+      operationId: getAgentSubscriptions
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Agent subscriptions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscriptions:
+                    type: array
+                    items:
+                      type: object
+
+  /api/subscriptions/{id}:
+    delete:
+      summary: Delete subscription
+      description: Deletes a subscription by ID
+      tags: [Subscriptions]
+      operationId: deleteSubscription
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Subscription deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/blocking:
+    post:
+      summary: Block agent
+      description: Creates a blocking relationship between agents
+      tags: [Blocking]
+      operationId: postBlocking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                blocking_agent_id:
+                  type: string
+                blocked_agent_id:
+                  type: string
+              required: [blocking_agent_id, blocked_agent_id]
+      responses:
+        '201':
+          description: Blocking created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+
+  /api/unblock:
+    post:
+      summary: Unblock agent
+      description: Removes blocking relationship
+      tags: [Blocking]
+      operationId: postUnblock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent_id:
+                  type: string
+                unblock_agent_id:
+                  type: string
+              required: [agent_id, unblock_agent_id]
+      responses:
+        '200':
+          description: Agent unblocked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/blocking/check:
+    get:
+      summary: Check if agent is blocked
+      description: Checks if an agent is currently blocked
+      tags: [Blocking]
+      operationId: checkBlocking
+      parameters:
+        - name: agent_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Blocking status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  blocked:
+                    type: boolean
+
+  /api/blocking/{agent_id}:
+    get:
+      summary: Get agent blocking relationships
+      description: Returns blocking relationships for an agent
+      tags: [Blocking]
+      operationId: getBlocking
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Blocking relationships
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  blocking:
+                    type: array
+                    items:
+                      type: object
+
+  /api/blocking/{blocked_id}:
+    delete:
+      summary: Delete blocking relationship
+      description: Removes a blocking relationship by blocked agent ID
+      tags: [Blocking]
+      operationId: deleteBlocking
+      parameters:
+        - name: blocked_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Blocking deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/agent-contexts:
+    get:
+      summary: List agent contexts
+      description: Returns all agent contexts with stats
+      tags: [AgentContexts]
+      operationId: getAgentContexts
+      responses:
+        '200':
+          description: Agent contexts list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contexts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentContext'
+
+  /api/agent-contexts/stats:
+    get:
+      summary: Agent context KPIs
+      description: Returns agent context statistics
+      tags: [AgentContexts]
+      operationId: getAgentContextsStats
+      responses:
+        '200':
+          description: Context KPIs
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/hierarchy/{project_id}:
+    get:
+      summary: Get project hierarchy
+      description: Returns full hierarchical view (project -> requests -> tasks -> subtasks)
+      tags: [Hierarchy]
+      operationId: getHierarchy
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Project hierarchy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project:
+                    $ref: '#/components/schemas/Project'
+                  requests:
+                    type: array
+                    items:
+                      type: object
+
+  /api/active-sessions:
+    get:
+      summary: Get active sessions
+      description: Lists active sessions using v_active_agents view
+      tags: [Hierarchy]
+      operationId: getActiveSessions
+      responses:
+        '200':
+          description: Active sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  active_agents:
+                    type: array
+                    items:
+                      type: object
+
+  /api/tokens/track:
+    post:
+      summary: Track token consumption
+      description: Records token usage (fire-and-forget, < 5ms)
+      tags: [Tokens]
+      operationId: trackTokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent_id:
+                  type: string
+                tokens_in:
+                  type: integer
+                tokens_out:
+                  type: integer
+                session_id:
+                  type: string
+              required: [agent_id, tokens_in, tokens_out]
+      responses:
+        '200':
+          description: Tokens tracked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/capacity/{agent_id}:
+    get:
+      summary: Get capacity status
+      description: Returns token capacity status and prediction
+      tags: [Tokens]
+      operationId: getCapacity
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Capacity status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current_tokens:
+                    type: integer
+                  capacity:
+                    type: integer
+                  percentage:
+                    type: number
+                  prediction:
+                    type: object
+
+    post:
+      summary: Reset capacity
+      description: Resets token capacity after compact
+      tags: [Tokens]
+      operationId: resetCapacity
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tokens_total:
+                  type: integer
+      responses:
+        '200':
+          description: Capacity reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reset:
+                    type: boolean
+
+  /api/context/health/{agent_id}:
+    get:
+      summary: Get context health
+      description: Returns combined health, capacity, and recommendation
+      tags: [Tokens]
+      operationId: getContextHealth
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Context health
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  health:
+                    type: string
+                  capacity:
+                    type: object
+                  recommendation:
+                    type: string
+
+  /api/registry:
+    get:
+      summary: List registered agents
+      description: Returns all agents in registry
+      tags: [Registry]
+      operationId: getRegistry
+      responses:
+        '200':
+          description: Agent registry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      type: object
+
+  /api/registry/import:
+    post:
+      summary: Bulk import agents
+      description: Imports multiple agents into registry
+      tags: [Registry]
+      operationId: postRegistryImport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agents:
+                  type: array
+                  items:
+                    type: object
+              required: [agents]
+      responses:
+        '200':
+          description: Agents imported
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported:
+                    type: integer
+
+  /api/registry/enrich-context:
+    post:
+      summary: Enrich agent context
+      description: Generates enriched context for an agent
+      tags: [Registry]
+      operationId: postRegistryEnrichContext
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent_type:
+                  type: string
+                session_id:
+                  type: string
+              required: [agent_type]
+      responses:
+        '200':
+          description: Enriched context
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/registry/catalog:
+    get:
+      summary: Get agent catalog
+      description: Returns static catalog of all known agents, skills, and commands
+      tags: [Registry]
+      operationId: getCatalog
+      responses:
+        '200':
+          description: Agent catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      type: object
+                  skills:
+                    type: array
+                    items:
+                      type: object
+                  commands:
+                    type: array
+                    items:
+                      type: object
+
+  /api/registry/{agent_type}:
+    get:
+      summary: Get agent by type
+      description: Returns specific agent from registry
+      tags: [Registry]
+      operationId: getRegistryAgent
+      parameters:
+        - name: agent_type
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Agent details
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      summary: Upsert agent
+      description: Creates or updates agent in registry
+      tags: [Registry]
+      operationId: putRegistryAgent
+      parameters:
+        - name: agent_type
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Full agent definition
+      responses:
+        '200':
+          description: Agent upserted
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/orchestration/batch-submit:
+    post:
+      summary: Submit task batch
+      description: Creates a batch of tasks for wave execution
+      tags: [Orchestration]
+      operationId: postBatchSubmit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                session_id:
+                  type: string
+                wave_number:
+                  type: integer
+                tasks:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      description:
+                        type: string
+                      agent_type:
+                        type: string
+                      priority:
+                        type: integer
+                        minimum: 1
+                        maximum: 10
+                        default: 5
+                      task_id:
+                        type: string
+                        format: uuid
+              required: [session_id, wave_number, tasks]
+      responses:
+        '201':
+          description: Batch created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  batch:
+                    type: object
+
+  /api/orchestration/batch/{id}:
+    get:
+      summary: Get batch status
+      description: Returns batch with all subtasks
+      tags: [Orchestration]
+      operationId: getBatch
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Batch details
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/orchestration/batch/{id}/complete:
+    post:
+      summary: Complete batch
+      description: Completes batch and generates synthesis
+      tags: [Orchestration]
+      operationId: postBatchComplete
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                results:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Batch completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  synthesis:
+                    type: string
+
+  /api/orchestration/synthesis/{id}:
+    get:
+      summary: Get synthesis
+      description: Returns token-optimized synthesis only
+      tags: [Orchestration]
+      operationId: getSynthesis
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Synthesis
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/orchestration/conflicts/{id}:
+    get:
+      summary: Analyze conflicts
+      description: Returns conflict analysis for batch
+      tags: [Orchestration]
+      operationId: getConflicts
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Conflict analysis
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/orchestration/craft-prompt:
+    post:
+      summary: Craft scoped prompt
+      description: Crafts a scoped prompt for a subagent
+      tags: [Orchestration]
+      operationId: postCraftPrompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Scope definition
+      responses:
+        '200':
+          description: Crafted prompt
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/orchestration/decompose:
+    post:
+      summary: Decompose task
+      description: Decomposes task into subtasks
+      tags: [Orchestration]
+      operationId: postDecompose
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                task_description:
+                  type: string
+              required: [task_description]
+      responses:
+        '200':
+          description: Decomposed subtasks
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/waves/{session_id}/create:
+    post:
+      summary: Create wave
+      description: Creates a new wave
+      tags: [Waves]
+      operationId: postWaveCreate
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                wave_number:
+                  type: integer
+              required: [wave_number]
+      responses:
+        '201':
+          description: Wave created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  wave:
+                    $ref: '#/components/schemas/Wave'
+
+  /api/waves/{session_id}/start:
+    post:
+      summary: Start wave
+      description: Starts a specific wave
+      tags: [Waves]
+      operationId: postWaveStart
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                wave_number:
+                  type: integer
+              required: [wave_number]
+      responses:
+        '200':
+          description: Wave started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  wave:
+                    $ref: '#/components/schemas/Wave'
+
+  /api/waves/{session_id}/transition:
+    post:
+      summary: Transition to next wave
+      description: Forces transition to next wave
+      tags: [Waves]
+      operationId: postWaveTransition
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transitioned to next wave
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  wave:
+                    $ref: '#/components/schemas/Wave'
+        '404':
+          description: No next wave available
+
+  /api/waves/{session_id}/current:
+    get:
+      summary: Get current wave
+      description: Returns current active wave
+      tags: [Waves]
+      operationId: getWaveCurrent
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Current wave
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wave:
+                    $ref: '#/components/schemas/Wave'
+        '404':
+          description: No active wave found
+
+  /api/waves/{session_id}/history:
+    get:
+      summary: Get wave history
+      description: Returns all waves for a session
+      tags: [Waves]
+      operationId: getWaveHistoryHandler
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Wave history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  waves:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Wave'
+                  count:
+                    type: integer
+
+  /api/auth/token:
+    post:
+      summary: Generate WebSocket token
+      description: Generates authentication token for WebSocket connections (rate limited - 10 req/15min)
+      tags: [Auth]
+      operationId: postAuthToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent_id:
+                  type: string
+                  maxLength: 64
+                session_id:
+                  type: string
+                  maxLength: 128
+              required: [agent_id]
+      responses:
+        '200':
+          description: Token generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  expires_in:
+                    type: integer
+                    example: 3600
+        '400':
+          description: Invalid request parameters
+        '429':
+          description: Rate limit exceeded
+
+  /stats/tools-summary:
+    get:
+      summary: Tools usage summary
+      description: Returns aggregated tool usage statistics
+      tags: [Tools]
+      operationId: getToolsSummary
+      responses:
+        '200':
+          description: Tools summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools_used:
+                    type: integer
+                  unique_tools:
+                    type: integer
+                  by_type:
+                    type: object
+
+  /api/cleanup/stats:
+    get:
+      summary: Cleanup statistics
+      description: Returns message cleanup statistics
+      tags: [Cleanup]
+      operationId: getCleanupStats
+      responses:
+        '200':
+          description: Cleanup stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  last_cleanup:
+                    type: object
+                  messages:
+                    type: object
+                  timestamp:
+                    type: string
+                    format: date-time
+
+components:
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Resource UUID
+
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 100
+      description: Maximum number of results to return
+
+    offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Number of results to skip
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+          example: "3.0.0"
+        database:
+          type: object
+          properties:
+            healthy:
+              type: boolean
+            error:
+              type: string
+              nullable: true
+        features:
+          type: object
+          properties:
+            phase1:
+              type: string
+              enum: [active]
+            phase2:
+              type: string
+              enum: [active]
+            phase3:
+              type: string
+              enum: [active]
+            phase4:
+              type: string
+              enum: [active]
+            phase5:
+              type: string
+              enum: [active]
+            phase6:
+              type: string
+              enum: [active]
+            phase7:
+              type: string
+              enum: [active]
+            phase8:
+              type: string
+              enum: [active]
+            phase9:
+              type: string
+              enum: [active]
+
+    DashboardKpis:
+      type: object
+      properties:
+        sessions:
+          type: object
+        actions_24h:
+          type: object
+        agents:
+          type: object
+        subtasks:
+          type: object
+        routing:
+          type: object
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        path:
+          type: string
+          example: "/home/user/my-project"
+        name:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+
+    ProjectInput:
+      type: object
+      required:
+        - path
+      properties:
+        path:
+          type: string
+          minLength: 1
+          example: "/home/user/my-project"
+        name:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        total_tools_used:
+          type: integer
+          default: 0
+        total_success:
+          type: integer
+          default: 0
+        total_errors:
+          type: integer
+          default: 0
+
+    SessionInput:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          minLength: 1
+        project_id:
+          type: string
+          format: uuid
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        total_tools_used:
+          type: integer
+          minimum: 0
+        total_success:
+          type: integer
+          minimum: 0
+        total_errors:
+          type: integer
+          minimum: 0
+
+    Request:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+        prompt:
+          type: string
+        prompt_type:
+          type: string
+          nullable: true
+          enum: [feature, debug, explain, search, refactor, test, review, other]
+        status:
+          type: string
+          enum: [active, completed, failed, cancelled]
+          default: active
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+
+    RequestInput:
+      type: object
+      required:
+        - project_id
+        - session_id
+        - prompt
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          minLength: 1
+        prompt:
+          type: string
+          minLength: 1
+        prompt_type:
+          type: string
+          enum: [feature, debug, explain, search, refactor, test, review, other]
+        status:
+          type: string
+          enum: [active, completed, failed, cancelled]
+        metadata:
+          type: object
+          additionalProperties: true
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          nullable: true
+        wave_number:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+          enum: [pending, running, completed, failed, blocked]
+          default: pending
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    TaskInput:
+      type: object
+      required:
+        - request_id
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        wave_number:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+          enum: [pending, running, completed, failed, blocked]
+
+    Subtask:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_list_id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+          description: Alias for task_list_id
+        agent_type:
+          type: string
+          nullable: true
+        agent_id:
+          type: string
+          nullable: true
+        description:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, paused, blocked, completed, failed]
+          default: pending
+        blocked_by:
+          type: array
+          items:
+            type: string
+            format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        context_snapshot:
+          type: object
+          additionalProperties: true
+          nullable: true
+        result:
+          type: object
+          additionalProperties: true
+          nullable: true
+
+    SubtaskInput:
+      type: object
+      required:
+        - task_id
+        - description
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        description:
+          type: string
+          minLength: 1
+        agent_type:
+          type: string
+        agent_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, paused, blocked, completed, failed]
+        blocked_by:
+          type: array
+          items:
+            type: string
+            format: uuid
+        context_snapshot:
+          type: object
+          additionalProperties: true
+
+    Action:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        subtask_id:
+          type: string
+          format: uuid
+          nullable: true
+        tool_name:
+          type: string
+        tool_type:
+          type: string
+          enum: [builtin, agent, skill, command, mcp]
+        exit_code:
+          type: integer
+          default: 0
+        duration_ms:
+          type: integer
+          nullable: true
+        file_paths:
+          type: array
+          items:
+            type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+
+    ActionInput:
+      type: object
+      required:
+        - tool_name
+        - tool_type
+      properties:
+        tool_name:
+          type: string
+          minLength: 1
+        tool_type:
+          type: string
+          enum: [builtin, agent, skill, command, mcp]
+        input:
+          type: string
+        output:
+          type: string
+        exit_code:
+          type: integer
+        duration_ms:
+          type: integer
+          minimum: 0
+        file_paths:
+          type: array
+          items:
+            type: string
+        subtask_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+        project_path:
+          type: string
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        from_agent:
+          type: string
+          nullable: true
+        to_agent:
+          type: string
+          nullable: true
+        topic:
+          type: string
+          nullable: true
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 10
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    MessageInput:
+      type: object
+      required:
+        - from_agent
+        - topic
+        - content
+      properties:
+        from_agent:
+          type: string
+          minLength: 1
+        to_agent:
+          type: string
+          nullable: true
+        topic:
+          type: string
+          enum: [task.created, task.completed, task.failed, context.request, context.response, alert.blocking, agent.heartbeat, workflow.progress]
+        content:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: string
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 10
+          default: 0
+        ttl_seconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+          default: 3600
+        project_id:
+          type: string
+          format: uuid
+
+    AgentContext:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+        agent_type:
+          type: string
+        role_context:
+          type: object
+          additionalProperties: true
+        skills_to_restore:
+          type: array
+          items:
+            type: string
+        tools_used:
+          type: array
+          items:
+            type: string
+        progress_summary:
+          type: string
+        last_updated:
+          type: string
+          format: date-time
+
+    Wave:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+        wave_number:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+          enum: [pending, running, completed]
+        total_tasks:
+          type: integer
+          default: 0
+        completed_tasks:
+          type: integer
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+  responses:
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Validation failed
+              details:
+                type: object
+                additionalProperties:
+                  type: array
+                  items:
+                    type: string
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Resource not found
+
+    ServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+              message:
+                type: string

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DCM API Documentation - Swagger UI</title>
+  <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAsTAAALEwEAmpwYAAABNklEQVR4nO2WP0vDUBTFT6qDIJ2c/ABuTk7OLs4uDs4VnJxcnB1EQRAEBUEQBEFQEAQFQVAQBEFBUBAEBaHQ/3/gHXiEpk1akuZB4cCBQF7O797ce29SUlJSUv4/AW4BTABcADgHcAbgFMA5gBMAx//3RNmeMgBrAGYAZgCsAJwBWAE4BnAE4BDAIYADAPs/+2L/Z98DAHsAdn/2xT5fP/vuANgBsA1g62df7PP1s+82gE0AGz/7Yp+vn303AKwDWPvZF/t8/ey7BmD1Z1/s8/WzrwegAmARwCKABQAVAAsA5gHMA5gDMAugAmAGwDSAaQBTACoApgBMApgAMAFgHMA4gDEA4wDGAIwCGAEwDGAYwBCAQQCDAPoB9APoA9ALoAdAN4AuAJ0AOgC0A2gD0AqgBUAzgCYAjQAaADQAqP/r3/T/R18BaHKt3lT7LD0AAAAASUVORK5CYII=" />
+
+  <!-- Swagger UI CSS -->
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css" />
+
+  <style>
+    html {
+      box-sizing: border-box;
+      overflow: -moz-scrollbars-vertical;
+      overflow-y: scroll;
+    }
+
+    *,
+    *:before,
+    *:after {
+      box-sizing: inherit;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+      background: #fafafa;
+    }
+
+    #swagger-ui {
+      max-width: 1460px;
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: none;
+    }
+
+    .swagger-ui .info {
+      margin: 50px 0;
+    }
+
+    .swagger-ui .info .title {
+      font-size: 36px;
+      margin: 0;
+    }
+
+    .swagger-ui .info .base-url {
+      font-size: 14px;
+      font-weight: 300;
+      margin: 20px 0;
+      font-family: monospace;
+    }
+
+    .swagger-ui .scheme-container {
+      background: #fff;
+      box-shadow: 0 1px 2px 0 rgba(0,0,0,.15);
+      margin: 0 0 20px;
+      padding: 30px;
+    }
+
+    /* Custom colors */
+    .swagger-ui .opblock.opblock-get {
+      border-color: #61affe;
+      background: rgba(97,175,254,.1);
+    }
+
+    .swagger-ui .opblock.opblock-post {
+      border-color: #49cc90;
+      background: rgba(73,204,144,.1);
+    }
+
+    .swagger-ui .opblock.opblock-put {
+      border-color: #fca130;
+      background: rgba(252,161,48,.1);
+    }
+
+    .swagger-ui .opblock.opblock-delete {
+      border-color: #f93e3e;
+      background: rgba(249,62,62,.1);
+    }
+
+    .swagger-ui .opblock.opblock-patch {
+      border-color: #50e3c2;
+      background: rgba(80,227,194,.1);
+    }
+
+    /* Header banner */
+    .api-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 40px 0;
+      text-align: center;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    .api-header h1 {
+      margin: 0 0 10px 0;
+      font-size: 42px;
+      font-weight: 700;
+    }
+
+    .api-header p {
+      margin: 0;
+      font-size: 18px;
+      opacity: 0.9;
+    }
+
+    .api-header .version {
+      display: inline-block;
+      background: rgba(255,255,255,0.2);
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      margin-top: 10px;
+    }
+
+    /* Quick links */
+    .quick-links {
+      max-width: 1460px;
+      margin: 30px auto;
+      padding: 0 20px;
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+    }
+
+    .quick-link {
+      background: white;
+      padding: 15px 25px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      text-decoration: none;
+      color: #667eea;
+      font-weight: 600;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .quick-link:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+
+    .quick-link span {
+      display: block;
+      font-size: 12px;
+      font-weight: 400;
+      color: #666;
+      margin-top: 5px;
+    }
+
+    /* Footer */
+    .api-footer {
+      max-width: 1460px;
+      margin: 50px auto 30px;
+      padding: 30px 20px;
+      text-align: center;
+      color: #666;
+      border-top: 1px solid #e8e8e8;
+    }
+
+    .api-footer a {
+      color: #667eea;
+      text-decoration: none;
+    }
+
+    .api-footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Header -->
+  <div class="api-header">
+    <h1>🚀 DCM API Documentation</h1>
+    <p>Distributed Context Manager for Claude Code Multi-Agent Sessions</p>
+    <div class="version">v3.0.0</div>
+  </div>
+
+  <!-- Quick Links -->
+  <div class="quick-links">
+    <a href="#/Health" class="quick-link">
+      Health & Status
+      <span>Check API health and database connectivity</span>
+    </a>
+    <a href="#/Projects" class="quick-link">
+      Projects
+      <span>Manage working directory projects</span>
+    </a>
+    <a href="#/Sessions" class="quick-link">
+      Sessions
+      <span>Track Claude Code sessions</span>
+    </a>
+    <a href="#/Context" class="quick-link">
+      Context Management
+      <span>Context generation & restoration</span>
+    </a>
+    <a href="#/Messages" class="quick-link">
+      Inter-Agent Messaging
+      <span>Pub/sub communication between agents</span>
+    </a>
+    <a href="#/Orchestration" class="quick-link">
+      Orchestration
+      <span>Batch task execution & synthesis</span>
+    </a>
+    <a href="#/Registry" class="quick-link">
+      Agent Registry
+      <span>Agent catalog & capabilities</span>
+    </a>
+  </div>
+
+  <!-- Swagger UI Container -->
+  <div id="swagger-ui"></div>
+
+  <!-- Footer -->
+  <div class="api-footer">
+    <p>
+      <strong>DCM API</strong> - Built with Bun + Hono + PostgreSQL 16<br>
+      <a href="https://github.com/ronylicha/Claude-DCM" target="_blank">GitHub Repository</a> |
+      <a href="http://127.0.0.1:3848" target="_blank">Dashboard</a> |
+      <a href="http://127.0.0.1:3847/health" target="_blank">Health Check</a>
+    </p>
+    <p style="font-size: 12px; margin-top: 15px; opacity: 0.7;">
+      © 2026 DCM Project - Licensed under MIT
+    </p>
+  </div>
+
+  <!-- Swagger UI JS -->
+  <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js" charset="UTF-8"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-standalone-preset.js" charset="UTF-8"></script>
+
+  <script>
+    window.onload = function() {
+      // Build a system
+      const ui = SwaggerUIBundle({
+        url: "./openapi.yaml",
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset
+        ],
+        plugins: [
+          SwaggerUIBundle.plugins.DownloadUrl
+        ],
+        layout: "StandaloneLayout",
+        defaultModelsExpandDepth: 1,
+        defaultModelExpandDepth: 1,
+        docExpansion: "list",
+        filter: true,
+        showExtensions: true,
+        showCommonExtensions: true,
+        tryItOutEnabled: true,
+        requestSnippetsEnabled: true,
+        requestSnippets: {
+          generators: {
+            curl_bash: {
+              title: "cURL (bash)",
+              syntax: "bash"
+            },
+            curl_cmd: {
+              title: "cURL (CMD)",
+              syntax: "bash"
+            },
+            curl_powershell: {
+              title: "cURL (PowerShell)",
+              syntax: "powershell"
+            }
+          },
+          defaultExpanded: true,
+          languages: null, // use default languages
+        },
+        // Custom request interceptor to ensure proper content-type
+        requestInterceptor: function(req) {
+          if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+            if (!req.headers['Content-Type']) {
+              req.headers['Content-Type'] = 'application/json';
+            }
+          }
+          return req;
+        },
+        // Custom response interceptor for debugging
+        responseInterceptor: function(res) {
+          console.log('Response:', res.status, res.url);
+          return res;
+        },
+        // Persist authorization data
+        persistAuthorization: true,
+        // Display operation ID
+        displayOperationId: true,
+        // Display request duration
+        displayRequestDuration: true,
+        // Validator URL - disable for local development
+        validatorUrl: null,
+        // Syntax highlighting theme
+        syntaxHighlight: {
+          activate: true,
+          theme: "agate"
+        }
+      });
+
+      window.ui = ui;
+
+      // Add custom title to page
+      document.title = "DCM API - Swagger UI";
+
+      // Console welcome message
+      console.log('%c🚀 DCM API Documentation', 'color: #667eea; font-size: 24px; font-weight: bold;');
+      console.log('%cVersion: 3.0.0', 'color: #764ba2; font-size: 14px;');
+      console.log('%cBase URL: http://127.0.0.1:3847', 'color: #49cc90; font-size: 14px;');
+      console.log('%c\nQuick Start:', 'font-weight: bold; font-size: 16px; margin-top: 10px;');
+      console.log('1. Health Check: GET /health');
+      console.log('2. List Projects: GET /api/projects');
+      console.log('3. List Sessions: GET /api/sessions');
+      console.log('\nTry out the endpoints using the "Try it out" button above!');
+    };
+  </script>
+</body>
+</html>

@@ -27,6 +27,11 @@ if [[ -z "$session_id" ]]; then
     exit 0
 fi
 
+# Always inject DCM Orchestrator Protocol (even if session already tracked)
+cat <<'HOOK_OUTPUT'
+{"hookSpecificOutput":{"additionalContext":"## DCM Orchestrator Protocol\n\nBefore launching ANY subagent via Task tool:\n1. POST http://127.0.0.1:3847/api/orchestration/craft-prompt with {task_description, agent_type, session_id, target_files, target_directories}\n2. Use returned crafted_prompt as Task prompt\n3. Use returned max_turns and model\n\nFor complex multi-step tasks: POST /api/orchestration/decompose first.\n\nRules:\n- NEVER launch a subagent without consulting DCM\n- ALWAYS specify target_files or target_directories\n- NEVER give broad prompts like 'scan entire codebase'"}}
+HOOK_OUTPUT
+
 # Create cache directory
 mkdir -p "$CACHE_DIR"
 cache_file="${CACHE_DIR}/${session_id}.json"

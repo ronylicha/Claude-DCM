@@ -952,6 +952,11 @@ export const apiClient = {
   getCleanupStats: () => apiFetch<CleanupStats>("/api/cleanup/stats"),
 
   // ==========================================
+  // Sessions Stats - /api/sessions/stats
+  // ==========================================
+  getSessionsStats: () => apiFetch<SessionsStats>("/api/sessions/stats"),
+
+  // ==========================================
   // Legacy endpoints - kept for backward compatibility
   // ==========================================
   getAgents: (page = 1, limit = 50) =>
@@ -960,8 +965,16 @@ export const apiClient = {
   getTools: (page = 1, limit = 50) =>
     apiFetch<PaginatedResponse<Tool>>(`/api/tools?page=${page}&limit=${limit}`),
   getTool: (id: string) => apiFetch<Tool>(`/api/tools/${id}`),
-  getSessions: (page = 1, limit = 20) =>
-    apiFetch<PaginatedResponse<Session>>(`/api/sessions?page=${page}&limit=${limit}`),
+  getSessions: async (page = 1, limit = 20): Promise<PaginatedResponse<Session>> => {
+    const resp = await apiFetch<SessionsResponse>(`/api/sessions?limit=${limit}&offset=${(page - 1) * limit}`);
+    return {
+      data: resp.sessions,
+      total: resp.total,
+      page,
+      limit,
+      totalPages: Math.ceil(resp.total / limit),
+    };
+  },
   getSession: (id: string) => apiFetch<Session>(`/api/sessions/${id}`),
   getSessionsByProject: (projectId: string) =>
     apiFetch<Session[]>(`/api/projects/${projectId}/sessions`),

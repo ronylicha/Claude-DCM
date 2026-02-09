@@ -10,18 +10,16 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorDisplay } from "@/components/ErrorBoundary";
 import { KPICard } from "@/components/charts/KPICard";
-import apiClient, { type AgentContextsResponse, type AgentContext } from "@/lib/api-client";
+import apiClient, { type InterAgentMessagesResponse, type InterAgentMessage } from "@/lib/api-client";
 import {
   BrainCircuit,
   Search,
-  Filter,
   RefreshCw,
   Clock,
   CheckCircle,
   XCircle,
   Activity,
   Users,
-  Layers,
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -77,137 +75,97 @@ function formatRelativeTime(dateString: string): string {
   }
 }
 
-// Agent Context Card Component
-function AgentContextCard({
-  context,
+// Message Card Component
+function MessageCard({
+  message,
   index,
 }: {
-  context: AgentContext;
+  message: InterAgentMessage;
   index: number;
 }) {
-  const typeColor = getAgentTypeColor(context.agent_type);
-  const statusConfig = getStatusConfig(context.role_context?.status || "unknown");
-  const toolsUsed = context.tools_used || [];
-  const progressSummary = context.progress_summary || "No progress summary available";
+  const fromTypeColor = getAgentTypeColor(message.from_agent_id);
+  const toTypeColor = getAgentTypeColor(message.to_agent_id);
+  const isRead = (message.read_by?.length ?? 0) > 0;
+  const payload = message.payload || {};
 
   return (
     <Card
-      className="glass-card animate-fade-in hover:shadow-md transition-all duration-200"
+      className={cn("glass-card animate-fade-in hover:shadow-md transition-all duration-200", isRead ? "opacity-75" : "")}
       style={{ animationDelay: `${index * 40}ms` }}
     >
       <CardContent className="pt-5 pb-4">
-        {/* Top row: agent type badge + status */}
+        {/* Top row: message type + read status */}
         <div className="flex items-start justify-between gap-3">
           <Badge
             variant="outline"
-            className={cn("text-xs font-medium px-2.5 py-0.5", typeColor.badge)}
+            className={cn("text-xs font-medium px-2.5 py-0.5", "bg-blue-500/15 text-blue-600 border-blue-500/30")}
           >
-            {context.agent_type}
+            {message.message_type}
           </Badge>
           <div className="flex items-center gap-1.5 shrink-0">
-            <div className={cn("h-2 w-2 rounded-full", statusConfig.dot)} />
-            <span className={cn("text-xs font-medium", statusConfig.textColor)}>
-              {statusConfig.label}
+            <div className={cn("h-2 w-2 rounded-full", isRead ? "bg-gray-400" : "bg-green-500")} />
+            <span className={cn("text-xs font-medium", isRead ? "text-gray-500" : "text-green-600")}>
+              {isRead ? "Read" : "Unread"}
             </span>
           </div>
         </div>
 
-        {/* Agent ID */}
-        <div className="mt-3 flex items-center gap-2">
-          <code className="text-xs font-mono text-muted-foreground bg-muted/50 px-2 py-0.5 rounded truncate max-w-[280px]" title={context.agent_id}>
-            {context.agent_id}
-          </code>
+        {/* From and To agents */}
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-muted-foreground">FROM</span>
+            <Badge
+              variant="secondary"
+              className={cn("text-xs px-2 py-0.5 font-mono", fromTypeColor.badge)}
+            >
+              {message.from_agent_id}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-muted-foreground">TO</span>
+            <Badge
+              variant="secondary"
+              className={cn("text-xs px-2 py-0.5 font-mono", toTypeColor.badge)}
+            >
+              {message.to_agent_id}
+            </Badge>
+          </div>
         </div>
 
-        {/* Progress Summary */}
-        <p className="mt-3 text-sm text-foreground/80 line-clamp-3 leading-relaxed">
-          {progressSummary}
-        </p>
-
-        {/* Task description if available */}
-        {context.role_context?.task_description && (
-          <p className="mt-2 text-xs text-muted-foreground italic line-clamp-2">
-            Task: {context.role_context.task_description}
+        {/* Topic */}
+        {message.topic && (
+          <p className="mt-3 text-xs text-muted-foreground italic">
+            Topic: {message.topic}
           </p>
         )}
 
-        {/* Tools used badges */}
-        {toolsUsed.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {toolsUsed.slice(0, 6).map((tool) => (
-              <Badge
-                key={tool}
-                variant="secondary"
-                className="text-[10px] px-1.5 py-0 h-5 font-mono"
-              >
-                {tool}
-              </Badge>
-            ))}
-            {toolsUsed.length > 6 && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">
-                +{toolsUsed.length - 6}
-              </Badge>
-            )}
+        {/* Message payload preview */}
+        {Object.keys(payload).length > 0 && (
+          <div className="mt-3 p-2 bg-muted/30 rounded text-xs font-mono text-foreground/70 line-clamp-3 break-all">
+            {JSON.stringify(payload).substring(0, 150)}
+            {JSON.stringify(payload).length > 150 ? "..." : ""}
           </div>
         )}
 
-        {/* Bottom row: timestamps */}
+        {/* Bottom row: timestamps and expiry */}
         <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between text-[11px] text-muted-foreground">
           <span className="flex items-center gap-1">
             <Clock className="h-3 w-3" />
-            Spawned {context.role_context?.spawned_at
-              ? formatRelativeTime(context.role_context.spawned_at)
-              : "unknown"}
+            {formatRelativeTime(message.created_at)}
           </span>
-          <span className="flex items-center gap-1">
-            Updated {formatRelativeTime(context.last_updated)}
-          </span>
+          {message.expires_at && (
+            <span className="text-[10px]">
+              Expires {formatRelativeTime(message.expires_at)}
+            </span>
+          )}
         </div>
       </CardContent>
     </Card>
   );
 }
 
-// Status filter button group
-function StatusFilterBar({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (status: string) => void;
-}) {
-  const statuses = [
-    { value: "all", label: "All" },
-    { value: "running", label: "Running", color: "text-green-500" },
-    { value: "completed", label: "Completed", color: "text-blue-500" },
-    { value: "failed", label: "Failed", color: "text-red-500" },
-  ];
-
-  return (
-    <div className="flex items-center gap-2">
-      <Filter className="h-4 w-4 text-muted-foreground" />
-      <div className="flex rounded-md border">
-        {statuses.map((status) => (
-          <Button
-            key={status.value}
-            variant={value === status.value ? "default" : "ghost"}
-            size="sm"
-            onClick={() => onChange(status.value)}
-            className={cn(
-              "rounded-none first:rounded-l-md last:rounded-r-md",
-              value === status.value && "pointer-events-none"
-            )}
-          >
-            <span className={status.color}>{status.label}</span>
-          </Button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// Loading skeleton for context cards
-function ContextCardSkeleton() {
+// Loading skeleton for message cards
+function MessageCardSkeleton() {
   return (
     <Card className="glass-card">
       <CardContent className="pt-5 pb-4 space-y-3">
@@ -215,13 +173,12 @@ function ContextCardSkeleton() {
           <Skeleton className="h-5 w-28" />
           <Skeleton className="h-4 w-16" />
         </div>
-        <Skeleton className="h-4 w-48" />
-        <Skeleton className="h-12 w-full" />
-        <div className="flex gap-1.5">
-          <Skeleton className="h-5 w-14" />
-          <Skeleton className="h-5 w-14" />
-          <Skeleton className="h-5 w-14" />
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-4 w-40" />
         </div>
+        <Skeleton className="h-3 w-48" />
+        <Skeleton className="h-12 w-full" />
         <div className="flex justify-between pt-2">
           <Skeleton className="h-3 w-24" />
           <Skeleton className="h-3 w-20" />
@@ -234,62 +191,75 @@ function ContextCardSkeleton() {
 export default function MessagesPage() {
   // Filter states
   const [searchQuery, setSearchQuery] = useState("");
-  const [agentTypeFilter, setAgentTypeFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [messageTypeFilter, setMessageTypeFilter] = useState<string>("all");
+  const [readFilter, setReadFilter] = useState<string>("all");
 
-  // Fetch agent contexts
+  // Fetch inter-agent messages
   const {
     data,
     isLoading,
     error,
     refetch,
-  } = useQuery<AgentContextsResponse, Error>({
-    queryKey: ["agent-contexts"],
-    queryFn: () => apiClient.getAgentContexts(100, 0),
+  } = useQuery<InterAgentMessagesResponse, Error>({
+    queryKey: ["inter-agent-messages"],
+    queryFn: () => apiClient.getInterAgentMessages(),
     refetchInterval: 30000,
   });
 
-  // Extract unique agent types for the dropdown
-  const agentTypes = useMemo(() => {
-    if (!data?.type_distribution) return [];
-    return data.type_distribution.map((td) => td.agent_type).sort();
-  }, [data?.type_distribution]);
+  // Extract unique message types for the dropdown
+  const messageTypes = useMemo(() => {
+    if (!data?.messages) return [];
+    const types = new Set(data.messages.map((m) => m.message_type));
+    return Array.from(types).sort();
+  }, [data?.messages]);
 
-  // Filter contexts
-  const filteredContexts = useMemo(() => {
-    if (!data?.contexts) return [];
+  // Filter messages
+  const filteredMessages = useMemo(() => {
+    if (!data?.messages) return [];
 
-    return data.contexts.filter((ctx) => {
+    return data.messages.filter((msg) => {
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
-        const matchesAgentId = ctx.agent_id.toLowerCase().includes(query);
-        const matchesSummary = (ctx.progress_summary || "").toLowerCase().includes(query);
-        const matchesType = ctx.agent_type.toLowerCase().includes(query);
-        if (!matchesAgentId && !matchesSummary && !matchesType) return false;
+        const matchesFrom = msg.from_agent_id.toLowerCase().includes(query);
+        const matchesTo = msg.to_agent_id.toLowerCase().includes(query);
+        const matchesTopic = (msg.topic || "").toLowerCase().includes(query);
+        if (!matchesFrom && !matchesTo && !matchesTopic) return false;
       }
 
-      // Agent type filter
-      if (agentTypeFilter !== "all" && ctx.agent_type !== agentTypeFilter) {
+      // Message type filter
+      if (messageTypeFilter !== "all" && msg.message_type !== messageTypeFilter) {
         return false;
       }
 
-      // Status filter
-      if (statusFilter !== "all" && ctx.role_context?.status !== statusFilter) {
-        return false;
+      // Read status filter
+      if (readFilter !== "all") {
+        const isRead = (msg.read_by?.length ?? 0) > 0;
+        const shouldShow = readFilter === "unread" ? !isRead : isRead;
+        if (!shouldShow) return false;
       }
 
       return true;
     });
-  }, [data?.contexts, searchQuery, agentTypeFilter, statusFilter]);
+  }, [data?.messages, searchQuery, messageTypeFilter, readFilter]);
 
-  // KPI values
-  const stats = data?.stats;
+  // Calculate stats
+  const stats = useMemo(() => {
+    if (!data?.messages) return { total: 0, unread: 0, types: 0, byType: [] };
+    const unread = data.messages.filter((m) => (m.read_by?.length ?? 0) === 0).length;
+    const uniqueTypes = new Set(data.messages.map((m) => m.message_type)).size;
+    return {
+      total: data.count || data.messages.length,
+      unread,
+      types: uniqueTypes,
+      byType: messageTypes,
+    };
+  }, [data?.messages, data?.count, messageTypes]);
 
   return (
     <PageContainer
-      title="Agent Contexts"
-      description="Context sharing data across all agents"
+      title="Inter-Agent Messages"
+      description="Communication between agents in active sessions"
       actions={
         <Button
           variant="outline"
@@ -305,35 +275,35 @@ export default function MessagesPage() {
       {/* KPI Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 stagger-children">
         <KPICard
-          title="Total Contexts"
+          title="Total Messages"
           value={stats?.total ?? 0}
           icon={<BrainCircuit className="h-4 w-4" />}
-          description={`${filteredContexts.length} matching filters`}
+          description={`${filteredMessages.length} matching filters`}
           loading={isLoading}
           className="glass-card"
         />
         <KPICard
-          title="Active Agents"
-          value={stats?.running ?? 0}
+          title="Unread"
+          value={stats?.unread ?? 0}
           icon={<Activity className="h-4 w-4" />}
-          description="Currently running"
+          description="Not yet read by recipient"
           loading={isLoading}
           className="glass-card"
-          trend={stats?.running ? { value: stats.running, label: "active" } : undefined}
+          trend={stats?.unread ? { value: stats.unread, label: "pending" } : undefined}
         />
         <KPICard
-          title="Completed"
-          value={stats?.completed ?? 0}
+          title="Read"
+          value={(stats?.total ?? 0) - (stats?.unread ?? 0)}
           icon={<CheckCircle className="h-4 w-4" />}
-          description="Successfully finished"
+          description="Successfully read"
           loading={isLoading}
           className="glass-card"
         />
         <KPICard
-          title="Unique Types"
-          value={stats?.unique_types ?? 0}
+          title="Message Types"
+          value={stats?.types ?? 0}
           icon={<Users className="h-4 w-4" />}
-          description="Different agent types"
+          description="Different message types"
           loading={isLoading}
           className="glass-card"
         />
@@ -363,41 +333,52 @@ export default function MessagesPage() {
               </div>
             </div>
 
-            {/* Agent type dropdown */}
+            {/* Message type dropdown */}
             <div className="min-w-[180px]">
-              <label className="text-xs text-muted-foreground mb-1 block">Agent Type</label>
+              <label className="text-xs text-muted-foreground mb-1 block">Message Type</label>
               <select
-                value={agentTypeFilter}
-                onChange={(e) => setAgentTypeFilter(e.target.value)}
+                value={messageTypeFilter}
+                onChange={(e) => setMessageTypeFilter(e.target.value)}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
-                <option value="all">All Types ({agentTypes.length})</option>
-                {agentTypes.map((type) => {
-                  const dist = data?.type_distribution?.find((td) => td.agent_type === type);
+                <option value="all">All Types ({messageTypes.length})</option>
+                {messageTypes.map((type) => {
+                  const count = (data?.messages || []).filter((m) => m.message_type === type).length;
                   return (
                     <option key={type} value={type}>
-                      {type} ({dist?.count ?? 0})
+                      {type} ({count})
                     </option>
                   );
                 })}
               </select>
             </div>
 
-            {/* Status filter */}
-            <StatusFilterBar value={statusFilter} onChange={setStatusFilter} />
+            {/* Read status filter */}
+            <div className="min-w-[140px]">
+              <label className="text-xs text-muted-foreground mb-1 block">Read Status</label>
+              <select
+                value={readFilter}
+                onChange={(e) => setReadFilter(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="all">All</option>
+                <option value="unread">Unread</option>
+                <option value="read">Read</option>
+              </select>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Context Cards Grid */}
+      {/* Messages Grid */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Layers className="h-5 w-5" />
-            Agent Contexts
-            {filteredContexts.length > 0 && (
+            <BrainCircuit className="h-5 w-5" />
+            Messages
+            {filteredMessages.length > 0 && (
               <Badge variant="secondary" className="ml-1">
-                {filteredContexts.length}
+                {filteredMessages.length}
               </Badge>
             )}
           </h3>
@@ -406,29 +387,29 @@ export default function MessagesPage() {
         {isLoading ? (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <ContextCardSkeleton key={i} />
+              <MessageCardSkeleton key={i} />
             ))}
           </div>
         ) : error ? (
           <ErrorDisplay error={error} reset={() => refetch()} />
-        ) : filteredContexts.length === 0 ? (
+        ) : filteredMessages.length === 0 ? (
           <Card className="glass-card">
             <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <BrainCircuit className="h-14 w-14 mb-4 opacity-30" />
-              <p className="text-lg font-medium">No agent contexts found</p>
+              <p className="text-lg font-medium">No messages found</p>
               <p className="text-sm mt-1">
-                {data?.contexts?.length === 0
-                  ? "No agent context data has been recorded yet."
+                {data?.messages?.length === 0
+                  ? "No inter-agent messages have been recorded yet."
                   : "Try adjusting your filters to see more results."}
               </p>
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {filteredContexts.map((context, index) => (
-              <AgentContextCard
-                key={context.id}
-                context={context}
+            {filteredMessages.map((message, index) => (
+              <MessageCard
+                key={message.id}
+                message={message}
                 index={index}
               />
             ))}

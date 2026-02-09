@@ -195,6 +195,86 @@ export async function getCapacity(c: Context) {
   }
 }
 
+// Server start time for uptime calculation
+const SERVER_START = Date.now();
+
+export async function getContextHealth(c: Context) {
+  const agentId = c.req.param("agent_id");
+
+  if (!agentId) {
+    return c.json({ error: "Agent ID required" }, 400);
+  }
+
+  const sql = getDb();
+
+  try {
+    // Fetch capacity in one query (may not exist yet)
+    const [capacity] = await sql`
+      SELECT
+        current_usage, max_capacity, consumption_rate, zone,
+        predicted_exhaustion_minutes, compact_count, last_compact_at, last_updated_at
+      FROM agent_capacity
+      WHERE agent_id = ${agentId}
+    `;
+
+    // Server health
+    const uptimeSeconds = Math.round((Date.now() - SERVER_START) / 1000);
+
+    // Capacity data (defaults if agent not tracked yet)
+    const zone = capacity?.['zone'] || "green";
+    const usagePercent = capacity
+      ? Math.round((capacity['current_usage'] / capacity['max_capacity']) * 100)
+      : 0;
+    const minutesRemaining = capacity?.['predicted_exhaustion_minutes']
+      ? formatDuration(capacity['predicted_exhaustion_minutes'])
+      : "∞";
+
+    // Cooldown check for shouldIntervene
+    const isHighZone = ["orange", "red", "critical"].includes(zone);
+    const cooldownElapsed = !capacity?.['last_compact_at'] ||
+      (Date.now() - new Date(capacity['last_compact_at']).getTime()) > 120000;
+
+    // Recommendation
+    let action: string;
+    let message: string;
+    if (["red", "critical"].includes(zone)) {
+      action = "compact";
+      message = `Context at ${usagePercent}%. Run /compact NOW.`;
+    } else if (zone === "orange") {
+      action = "save";
+      message = `Context at ${usagePercent}%. Consider /compact soon.`;
+    } else if (zone === "yellow") {
+      action = "warn";
+      message = `Context at ${usagePercent}%. Monitor closely.`;
+    } else {
+      action = "none";
+      message = "Context usage normal.";
+    }
+
+    return c.json({
+      server: { status: "ok", uptime_seconds: uptimeSeconds },
+      capacity: {
+        zone,
+        usage_percent: usagePercent,
+        minutes_remaining: minutesRemaining,
+        current_usage: capacity?.['current_usage'] || 0,
+        max_capacity: capacity?.['max_capacity'] || 200000,
+        compact_count: capacity?.['compact_count'] || 0,
+      },
+      recommendation: { action, message },
+      shouldCompact: isHighZone && cooldownElapsed,
+    });
+  } catch (error) {
+    log.error("Error fetching context health:", error);
+    return c.json({
+      server: { status: "degraded", uptime_seconds: Math.round((Date.now() - SERVER_START) / 1000) },
+      capacity: { zone: "unknown", usage_percent: 0, minutes_remaining: "∞" },
+      recommendation: { action: "none", message: "Health check failed" },
+      shouldCompact: false,
+    });
+  }
+}
+
 export async function resetCapacity(c: Context) {
   const agentId = c.req.param("agent_id");
 

@@ -54,10 +54,11 @@ import { generateToken, isValidAgentId, isValidSessionId } from "./websocket/aut
 // Rate limiting
 import { rateLimit, rateLimitPresets } from "./middleware/rate-limit";
 // Phase 9 - DCM v3.0 Proactive Triage Station
-import { trackTokens, getCapacity, resetCapacity } from "./api/tokens";
+import { trackTokens, getCapacity, resetCapacity, getContextHealth } from "./api/tokens";
 import { getRegistry, getRegistryAgent, putRegistryAgent, postRegistryImport, postRegistryEnrichContext } from "./api/registry";
 import { getCatalog } from "./api/catalog";
 import { postBatchSubmit, getBatch, getSynthesis, getConflicts, postBatchComplete } from "./api/orchestration";
+import { postCraftPrompt, postDecompose } from "./api/orchestration-planner";
 import { getWaveCurrent, getWaveHistoryHandler, postWaveTransition, postWaveCreate, postWaveStart } from "./api/waves";
 
 // Initialize logger after imports
@@ -405,6 +406,9 @@ app.get("/api/capacity/:agent_id", getCapacity);
 // POST /api/capacity/:agent_id/reset - Reset after compact
 app.post("/api/capacity/:agent_id/reset", resetCapacity);
 
+// GET /api/context/health/:agent_id - Combined health + capacity + recommendation
+app.get("/api/context/health/:agent_id", getContextHealth);
+
 // ============================================
 // Agent Registry API - Phase 9 (DCM v3.0)
 // ============================================
@@ -445,6 +449,12 @@ app.get("/api/orchestration/synthesis/:id", getSynthesis);
 
 // GET /api/orchestration/conflicts/:id - Analyze conflicts
 app.get("/api/orchestration/conflicts/:id", getConflicts);
+
+// POST /api/orchestration/craft-prompt - Craft scoped prompt for subagent
+app.post("/api/orchestration/craft-prompt", postCraftPrompt);
+
+// POST /api/orchestration/decompose - Decompose task into subtasks
+app.post("/api/orchestration/decompose", postDecompose);
 
 // ============================================
 // Wave Management API - Phase 9 (DCM v3.0)

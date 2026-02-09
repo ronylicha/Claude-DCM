@@ -171,10 +171,11 @@ function AgentTypeCard({
   const completedCount = statuses.completed || 0;
   const failedCount = statuses.failed || 0;
   const runningCount = statuses.running || 0;
+  const totalTerminated = completedCount + failedCount;
   const successRate =
-    completedCount + failedCount > 0
-      ? Math.round((completedCount / (completedCount + failedCount)) * 100)
-      : 0;
+    totalTerminated > 0
+      ? Math.round((completedCount / totalTerminated) * 100)
+      : null;
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -216,14 +217,16 @@ function AgentTypeCard({
               <span
                 className={cn(
                   "font-medium",
-                  successRate >= 80
-                    ? "text-green-600"
-                    : successRate >= 50
-                      ? "text-yellow-600"
-                      : "text-red-600"
+                  successRate === null
+                    ? "text-muted-foreground"
+                    : successRate >= 80
+                      ? "text-green-600"
+                      : successRate >= 50
+                        ? "text-yellow-600"
+                        : "text-red-600"
                 )}
               >
-                {successRate}%
+                {successRate !== null ? `${successRate}%` : "N/A"}
               </span>
             </div>
             {/* Progress bar */}
@@ -231,13 +234,15 @@ function AgentTypeCard({
               <div
                 className={cn(
                   "h-full rounded-full transition-all duration-500 ease-out",
-                  successRate >= 80
-                    ? "bg-green-500"
-                    : successRate >= 50
-                      ? "bg-yellow-500"
-                      : "bg-red-500"
+                  successRate === null
+                    ? "bg-muted"
+                    : successRate >= 80
+                      ? "bg-green-500"
+                      : successRate >= 50
+                        ? "bg-yellow-500"
+                        : "bg-red-500"
                 )}
-                style={{ width: `${successRate}%` }}
+                style={{ width: `${successRate !== null ? successRate : 0}%` }}
               />
             </div>
           </div>
@@ -477,11 +482,10 @@ export default function AgentsPage() {
         <PremiumKPICard
           title="Success Rate"
           value={
-            agentStats.statusCounts.completed &&
-            (agentStats.statusCounts.completed + (agentStats.statusCounts.failed || 0)) > 0
+            (agentStats.statusCounts.completed || 0) + (agentStats.statusCounts.failed || 0) > 0
               ? `${Math.round(
-                  (agentStats.statusCounts.completed /
-                    (agentStats.statusCounts.completed +
+                  ((agentStats.statusCounts.completed || 0) /
+                    ((agentStats.statusCounts.completed || 0) +
                       (agentStats.statusCounts.failed || 0))) *
                     100
                 )}%`

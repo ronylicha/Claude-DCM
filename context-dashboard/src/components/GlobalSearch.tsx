@@ -14,7 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { apiClient } from "@/lib/api-client";
+import apiClient from "@/lib/api-client";
 import type { Session, Project, Subtask } from "@/lib/api-client";
 
 // ============================================
@@ -71,13 +71,6 @@ function getRecentSearches(): string[] {
   }
 }
 
-function debounce<T extends (...args: never[]) => void>(fn: T, delay: number): T {
-  let timeoutId: NodeJS.Timeout;
-  return ((...args) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
-  }) as T;
-}
 
 // ============================================
 // Main Component
@@ -184,12 +177,23 @@ export function GlobalSearch() {
   }, []);
 
   // Debounced search
-  const debouncedSearch = useCallback(debounce(searchData, 300), [searchData]);
+  const debouncedSearchRef = useRef<NodeJS.Timeout | null>(null);
+  const debouncedSearch = useCallback((q: string) => {
+    if (debouncedSearchRef.current) clearTimeout(debouncedSearchRef.current);
+    debouncedSearchRef.current = setTimeout(() => searchData(q), 300);
+  }, [searchData]);
 
   // Handle query change
   useEffect(() => {
     debouncedSearch(query);
   }, [query, debouncedSearch]);
+
+  // Cleanup debounce on unmount
+  useEffect(() => {
+    return () => {
+      if (debouncedSearchRef.current) clearTimeout(debouncedSearchRef.current);
+    };
+  }, []);
 
   // Load recent searches on open
   useEffect(() => {
