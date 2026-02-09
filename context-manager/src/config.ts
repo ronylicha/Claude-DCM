@@ -31,6 +31,19 @@ export interface Config {
     /** Maximum retries for database operations */
     maxDbRetries: number;
   };
+  /** Session and snapshot cleanup settings */
+  cleanup: {
+    /** How old a session/agent must be before eligible for cleanup (hours) */
+    staleThresholdHours: number;
+    /** How long without activity before considered inactive (minutes) */
+    inactiveMinutes: number;
+    /** Max age for compact snapshots (hours) */
+    snapshotMaxAgeHours: number;
+    /** Cleanup interval (milliseconds) */
+    intervalMs: number;
+    /** Max age for read broadcast messages (hours) */
+    readMessageMaxAgeHours: number;
+  };
 }
 
 /**
@@ -57,6 +70,13 @@ function loadConfig(): Config {
       messageTtlMs: parseInt(process.env["MESSAGE_TTL_MS"] ?? "3600000", 10), // 1 hour
       healthcheckIntervalMs: parseInt(process.env["HEALTHCHECK_INTERVAL_MS"] ?? "30000", 10), // 30s
       maxDbRetries: parseInt(process.env["MAX_DB_RETRIES"] ?? "3", 10),
+    },
+    cleanup: {
+      staleThresholdHours: parseFloat(process.env["CLEANUP_STALE_HOURS"] ?? "0.5"),
+      inactiveMinutes: parseInt(process.env["CLEANUP_INACTIVE_MINUTES"] ?? "10", 10),
+      snapshotMaxAgeHours: parseInt(process.env["CLEANUP_SNAPSHOT_MAX_HOURS"] ?? "24", 10),
+      intervalMs: parseInt(process.env["CLEANUP_INTERVAL_MS"] ?? "60000", 10),
+      readMessageMaxAgeHours: parseInt(process.env["CLEANUP_READ_MSG_MAX_HOURS"] ?? "24", 10),
     },
   };
 }

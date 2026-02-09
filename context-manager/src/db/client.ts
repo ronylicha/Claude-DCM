@@ -110,15 +110,6 @@ export function compressData(data: string): Buffer {
   return Buffer.from(Bun.gzipSync(new TextEncoder().encode(data)));
 }
 
-/**
- * Decompress data
- * @param data - Compressed buffer
- * @returns Decompressed string
- */
-export function decompressData(data: Buffer): string {
-  return new TextDecoder().decode(Bun.gunzipSync(data));
-}
-
 // Export getDb as sql for convenience
 export { getDb as sql };
 
