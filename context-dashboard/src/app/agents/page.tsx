@@ -6,7 +6,6 @@ import { PageContainer } from "@/components/PageContainer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { KPICard } from "@/components/charts/KPICard";
 import { BarChart } from "@/components/charts/BarChart";
 import apiClient, {
   type SubtasksResponse,
@@ -79,6 +78,34 @@ function relativeTime(dateStr: string | null | undefined): string {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m ago`;
   return `${Math.floor(diff / 86400)}d ago`;
+}
+
+// Premium KPI Card Component
+function PremiumKPICard({
+  title,
+  value,
+  icon,
+  iconGradient,
+  description,
+}: {
+  title: string;
+  value: string | number;
+  icon: React.ReactNode;
+  iconGradient: string;
+  description?: string;
+}) {
+  return (
+    <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
+      <div className="flex items-center gap-2.5">
+        <div className={cn("flex items-center justify-center h-8 w-8 rounded-lg", iconGradient)}>
+          {icon}
+        </div>
+        <span className="text-sm font-medium text-muted-foreground">{title}</span>
+      </div>
+      <div className="text-3xl font-bold tracking-tight">{value}</div>
+      {description && <span className="text-xs text-muted-foreground">{description}</span>}
+    </div>
+  );
 }
 
 // Active Agent Card Component
@@ -426,31 +453,28 @@ export default function AgentsPage() {
     >
       {/* KPI Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 stagger-children">
-        <KPICard
+        <PremiumKPICard
           title="Active Agents"
           value={activeAgentsCount}
-          icon={<Activity className="h-4 w-4" />}
+          icon={<Activity className="h-4 w-4 text-white" />}
+          iconGradient="bg-gradient-to-br from-green-500 to-emerald-500"
           description="Currently running"
-          loading={activeLoading}
-          className="glass-card"
         />
-        <KPICard
+        <PremiumKPICard
           title="Agent Types"
           value={uniqueAgentTypes}
-          icon={<Users className="h-4 w-4" />}
+          icon={<Users className="h-4 w-4 text-white" />}
+          iconGradient="bg-gradient-to-br from-purple-500 to-violet-600"
           description="Unique types used"
-          loading={subtasksLoading}
-          className="glass-card"
         />
-        <KPICard
+        <PremiumKPICard
           title="Total Subtasks"
           value={agentStats.total}
-          icon={<Zap className="h-4 w-4" />}
+          icon={<Zap className="h-4 w-4 text-white" />}
+          iconGradient="bg-gradient-to-br from-amber-500 to-orange-500"
           description="All time"
-          loading={subtasksLoading}
-          className="glass-card"
         />
-        <KPICard
+        <PremiumKPICard
           title="Success Rate"
           value={
             agentStats.statusCounts.completed &&
@@ -463,10 +487,9 @@ export default function AgentsPage() {
                 )}%`
               : "N/A"
           }
-          icon={<CheckCircle className="h-4 w-4" />}
+          icon={<CheckCircle className="h-4 w-4 text-white" />}
+          iconGradient="bg-gradient-to-br from-blue-500 to-cyan-500"
           description="Completed vs failed"
-          loading={subtasksLoading}
-          className="glass-card"
         />
       </div>
 

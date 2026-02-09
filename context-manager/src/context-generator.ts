@@ -22,6 +22,9 @@ import type {
   ProjectContext,
 } from "./context/types";
 
+/** Characters per token for estimation (optimized for English text/code) */
+const CHARS_PER_TOKEN = 3.5;
+
 /** Default options for context generation */
 const DEFAULT_OPTIONS: Required<ContextGenerationOptions> = {
   maxTokens: 2000,
@@ -60,13 +63,13 @@ export async function generateContextBrief(
   // Generate brief using appropriate template
   let brief = generateBrief(agentType, data, agentId, sessionId);
 
-  // Estimate token count (rough: 1 token ~ 4 chars)
-  let tokenCount = Math.ceil(brief.length / 4);
+  // Estimate token count
+  let tokenCount = Math.ceil(brief.length / CHARS_PER_TOKEN);
   let truncated = false;
 
   // Truncate if exceeds max tokens
   if (tokenCount > opts.maxTokens) {
-    const maxChars = opts.maxTokens * 4;
+    const maxChars = opts.maxTokens * CHARS_PER_TOKEN;
     brief = truncateBrief(brief, maxChars);
     tokenCount = opts.maxTokens;
     truncated = true;

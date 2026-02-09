@@ -281,42 +281,42 @@ export default function SessionsPage() {
     >
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4 stagger-children">
-        <Card className="glass-card">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <Hash className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium text-muted-foreground">Total Sessions</span>
+        <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br from-indigo-500 to-blue-500">
+              <Hash className="h-4 w-4 text-white" />
             </div>
-            <p className="mt-2 text-2xl font-bold">{stats.total}</p>
-          </CardContent>
-        </Card>
-        <Card className="glass-card">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-green-500" />
-              <span className="text-sm font-medium text-muted-foreground">Active</span>
+            <span className="text-sm font-medium text-muted-foreground">Total Sessions</span>
+          </div>
+          <div className="text-3xl font-bold tracking-tight">{stats.total}</div>
+        </div>
+        <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-emerald-500">
+              <Activity className="h-4 w-4 text-white" />
             </div>
-            <p className="mt-2 text-2xl font-bold text-green-500">{stats.active}</p>
-          </CardContent>
-        </Card>
-        <Card className="glass-card">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-blue-500" />
-              <span className="text-sm font-medium text-muted-foreground">Completed</span>
+            <span className="text-sm font-medium text-muted-foreground">Active</span>
+          </div>
+          <div className="text-3xl font-bold tracking-tight text-green-600">{stats.active}</div>
+        </div>
+        <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500">
+              <Clock className="h-4 w-4 text-white" />
             </div>
-            <p className="mt-2 text-2xl font-bold text-blue-500">{stats.completed}</p>
-          </CardContent>
-        </Card>
-        <Card className="glass-card">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-red-500" />
-              <span className="text-sm font-medium text-muted-foreground">Failed</span>
+            <span className="text-sm font-medium text-muted-foreground">Completed</span>
+          </div>
+          <div className="text-3xl font-bold tracking-tight text-blue-600">{stats.completed}</div>
+        </div>
+        <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br from-red-500 to-orange-500">
+              <Activity className="h-4 w-4 text-white" />
             </div>
-            <p className="mt-2 text-2xl font-bold text-red-500">{stats.failed}</p>
-          </CardContent>
-        </Card>
+            <span className="text-sm font-medium text-muted-foreground">Failed</span>
+          </div>
+          <div className="text-3xl font-bold tracking-tight text-red-600">{stats.failed}</div>
+        </div>
       </div>
 
       {/* Filters */}

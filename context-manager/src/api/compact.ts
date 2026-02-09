@@ -292,6 +292,9 @@ export async function postCompactSave(c: Context): Promise<Response> {
     };
 
     // Upsert: one snapshot per session
+    // TODO(schema): tools_used column is repurposed to store modified_files (compact snapshot metadata).
+    // This should be migrated to a dedicated column (e.g., snapshot_tags TEXT[] or snapshot_files TEXT[])
+    // to avoid confusion with actual tool usage tracking in agent_contexts table.
     await sql`
       INSERT INTO agent_contexts (
         project_id,
@@ -387,6 +390,8 @@ export async function getCompactSnapshot(c: Context): Promise<Response> {
     }
 
     const row = results[0];
+    // TODO(schema): tools_used column is repurposed for modified_files in compact snapshots.
+    // Once schema is migrated to a dedicated snapshot_files column, update this query accordingly.
     return c.json({
       session_id: sessionId,
       exists: true,

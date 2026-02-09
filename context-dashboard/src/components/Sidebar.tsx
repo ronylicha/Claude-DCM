@@ -11,7 +11,6 @@ import {
   Route,
   MessageSquare,
   Radio,
-  Zap,
   BrainCircuit,
   Layers,
   History,
@@ -64,8 +63,29 @@ export function Sidebar() {
       {/* Logo */}
       <div className="flex h-16 items-center border-b border-border px-5">
         <div className="flex items-center gap-3">
-          <div className="relative h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <Zap className="h-5 w-5 text-white" />
+          <div className="relative h-9 w-9 flex items-center justify-center">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-[0_0_8px_rgba(79,70,229,0.3)]">
+              <defs>
+                <linearGradient id="sidebar-gp" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#4F46E5"/>
+                  <stop offset="100%" stopColor="#7C3AED"/>
+                </linearGradient>
+                <linearGradient id="sidebar-ga" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#06B6D4"/>
+                  <stop offset="100%" stopColor="#14B8A6"/>
+                </linearGradient>
+              </defs>
+              <rect width="36" height="36" rx="8" fill="url(#sidebar-gp)"/>
+              <line x1="8" y1="8" x2="15" y2="15" stroke="white" strokeWidth="1" opacity="0.3"/>
+              <line x1="28" y1="8" x2="21" y2="15" stroke="white" strokeWidth="1" opacity="0.3"/>
+              <line x1="8" y1="28" x2="15" y2="21" stroke="white" strokeWidth="1" opacity="0.3"/>
+              <line x1="28" y1="28" x2="21" y2="21" stroke="white" strokeWidth="1" opacity="0.3"/>
+              <polygon points="18,12 23,15 23,21 18,24 13,21 13,15" fill="rgba(255,255,255,0.15)" stroke="white" strokeWidth="1.2"/>
+              <circle cx="8" cy="8" r="2.5" fill="white" opacity="0.5"/>
+              <circle cx="28" cy="8" r="2.5" fill="white" opacity="0.5"/>
+              <circle cx="8" cy="28" r="2.5" fill="white" opacity="0.5"/>
+              <circle cx="28" cy="28" r="2.5" fill="white" opacity="0.5"/>
+            </svg>
           </div>
           <div>
             <span className="font-bold text-sm text-sidebar-foreground tracking-tight">
@@ -102,11 +122,11 @@ export function Sidebar() {
                   >
                     {/* Active indicator */}
                     {isActive && (
-                      <div className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-r-full bg-gradient-to-b from-blue-500 to-violet-600" />
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-r-full bg-gradient-to-b from-indigo-500 to-violet-600" />
                     )}
                     <Icon className={cn(
                       "h-4 w-4 transition-colors",
-                      isActive ? "text-blue-500" : "text-muted-foreground group-hover:text-foreground"
+                      isActive ? "text-indigo-500" : "text-muted-foreground group-hover:text-foreground"
                     )} />
                     {item.name}
                   </Link>
@@ -119,10 +139,13 @@ export function Sidebar() {
 
       {/* Bottom section */}
       <div className="border-t border-border p-4">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <div className="h-2 w-2 rounded-full dot-healthy animate-pulse" />
-          <span>API Connected</span>
-          <span className="ml-auto opacity-50">v3.0.0</span>
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <div className="h-1.5 w-1.5 rounded-full bg-green-500 shadow-[0_0_6px_#22c55e] animate-pulse" />
+          <span className="font-mono">WebSocket connected</span>
+        </div>
+        <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground/50 font-mono">
+          <span>v3.0.0</span>
+          <span className="ml-auto">API:3847</span>
         </div>
       </div>
     </aside>

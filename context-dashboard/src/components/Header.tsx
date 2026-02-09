@@ -4,6 +4,8 @@ import { Moon, Sun } from "lucide-react";
 import { useCallback, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { GlobalSearch, GlobalSearchTrigger } from "@/components/GlobalSearch";
+import { NotificationCenter } from "@/components/NotificationCenter";
 
 function getThemeSnapshot(): boolean {
   if (typeof window === "undefined") return false;
@@ -43,21 +45,29 @@ export function Header() {
   }, []);
 
   return (
+    <>
     <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur-xl">
-      {/* Breadcrumbs */}
-      <nav className="flex items-center gap-1.5 text-sm">
-        {breadcrumbs.map((crumb, i) => (
-          <span key={i} className="flex items-center gap-1.5">
-            {i > 0 && <span className="text-muted-foreground/40">/</span>}
-            <span className={i === breadcrumbs.length - 1 ? "font-medium text-foreground" : "text-muted-foreground"}>
-              {crumb}
+      {/* Left section with breadcrumbs and search */}
+      <div className="flex items-center gap-4">
+        {/* Breadcrumbs */}
+        <nav className="flex items-center gap-1.5 text-sm">
+          {breadcrumbs.map((crumb, i) => (
+            <span key={i} className="flex items-center gap-1.5">
+              {i > 0 && <span className="text-muted-foreground/40">/</span>}
+              <span className={i === breadcrumbs.length - 1 ? "font-medium text-foreground" : "text-muted-foreground"}>
+                {crumb}
+              </span>
             </span>
-          </span>
-        ))}
-      </nav>
+          ))}
+        </nav>
+
+        {/* Search trigger */}
+        <GlobalSearchTrigger />
+      </div>
 
       {/* Right controls */}
       <div className="flex items-center gap-3">
+        <NotificationCenter />
         <Button
           variant="ghost"
           size="icon"
@@ -69,5 +79,7 @@ export function Header() {
         </Button>
       </div>
     </header>
+    <GlobalSearch />
+    </>
   );
 }

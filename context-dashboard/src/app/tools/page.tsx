@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/table";
 import { BarChart } from "@/components/charts/BarChart";
 import { PieChart } from "@/components/charts/PieChart";
-import { KPICard } from "@/components/charts/KPICard";
 import { ErrorDisplay } from "@/components/ErrorBoundary";
 import apiClient, {
   type ActionsResponse,
@@ -95,6 +94,34 @@ function filterStatsByType(stats: ToolStats[], selectedType: ToolType): ToolStat
     return stats.filter((s) => s.type.toLowerCase() !== "builtin");
   }
   return stats.filter((s) => s.type.toLowerCase() === selectedType);
+}
+
+// Premium KPI Card Component
+function PremiumKPICard({
+  title,
+  value,
+  icon,
+  iconGradient,
+  description,
+}: {
+  title: string;
+  value: string | number;
+  icon: React.ReactNode;
+  iconGradient: string;
+  description?: string;
+}) {
+  return (
+    <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
+      <div className="flex items-center gap-2.5">
+        <div className={`flex items-center justify-center h-8 w-8 rounded-lg ${iconGradient}`}>
+          {icon}
+        </div>
+        <span className="text-sm font-medium text-muted-foreground">{title}</span>
+      </div>
+      <div className="text-3xl font-bold tracking-tight">{value}</div>
+      {description && <span className="text-xs text-muted-foreground">{description}</span>}
+    </div>
+  );
 }
 
 // Tool stats aggregated from actions
@@ -401,38 +428,33 @@ export default function ToolsPage() {
     >
       {/* KPI Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 stagger-children">
-        <KPICard
+        <PremiumKPICard
           title="Total Actions"
           value={kpiStats.totalActions.toLocaleString()}
-          icon={<Activity className="h-4 w-4" />}
+          icon={<Activity className="h-4 w-4 text-white" />}
+          iconGradient="bg-gradient-to-br from-blue-500 to-indigo-600"
           description="Recorded tool executions"
-          loading={isLoading}
         />
-        <KPICard
+        <PremiumKPICard
           title="Unique Tools"
           value={kpiStats.uniqueTools}
-          icon={<Wrench className="h-4 w-4" />}
+          icon={<Wrench className="h-4 w-4 text-white" />}
+          iconGradient="bg-gradient-to-br from-orange-500 to-red-500"
           description="Different tools used"
-          loading={isLoading}
         />
-        <KPICard
+        <PremiumKPICard
           title="Success Rate"
           value={`${kpiStats.overallSuccessRate.toFixed(1)}%`}
-          icon={<TrendingUp className="h-4 w-4" />}
+          icon={<TrendingUp className="h-4 w-4 text-white" />}
+          iconGradient="bg-gradient-to-br from-green-500 to-emerald-500"
           description="Overall success rate"
-          loading={isLoading}
-          trend={
-            kpiStats.overallSuccessRate >= 90
-              ? { value: 0, label: "excellent" }
-              : undefined
-          }
         />
-        <KPICard
+        <PremiumKPICard
           title="Avg Duration"
           value={kpiStats.avgDuration !== null ? formatDuration(kpiStats.avgDuration) : "N/A"}
-          icon={<Clock className="h-4 w-4" />}
+          icon={<Clock className="h-4 w-4 text-white" />}
+          iconGradient="bg-gradient-to-br from-cyan-500 to-teal-500"
           description="Average execution time"
-          loading={isLoading}
         />
       </div>
 

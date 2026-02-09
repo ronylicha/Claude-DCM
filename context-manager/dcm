@@ -154,7 +154,7 @@ cmd_start() {
         if ! curl -s "http://127.0.0.1:${DASHBOARD_PORT}" >/dev/null 2>&1; then
             echo -n "  Dashboard (port ${DASHBOARD_PORT})... "
             cd "$dashboard_dir"
-            nohup npm start > /tmp/dcm-dashboard.log 2>&1 &
+            PORT=${DASHBOARD_PORT} nohup bun run dev > /tmp/dcm-dashboard.log 2>&1 &
             echo $! > "$pids_dir/dashboard.pid"
             echo -e "${GREEN}started${NC}"
         else

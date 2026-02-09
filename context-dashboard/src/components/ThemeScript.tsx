@@ -3,8 +3,7 @@ export function ThemeScript() {
     (function() {
       try {
         const savedTheme = localStorage.getItem('theme');
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+        if (!savedTheme || savedTheme === 'dark') {
           document.documentElement.classList.add('dark');
         }
       } catch (e) {}
