@@ -1,10 +1,26 @@
 {
   "name": "dcm",
-  "version": "3.0.0",
-  "description": "Distributed Context Manager - Persistent context, cross-agent sharing, and compact recovery for Claude Code multi-agent sessions",
+  "version": "3.0.1",
+  "description": "Distributed Context Manager - Inter-agent communication, context tracking, and lifecycle management for Claude Code",
   "author": {
     "name": "DCM Project"
   },
   "repository": "https://github.com/ronylicha/Claude-DCM",
-  "license": "MIT"
+  "license": "MIT",
+  "requiredEnv": ["CONTEXT_MANAGER_URL"],
+  "compatibility": {
+    "claudeCode": ">=2.0.0"
+  },
+  "settings": {
+    "apiUrl": {
+      "type": "string",
+      "default": "http://127.0.0.1:3847",
+      "description": "DCM API server URL"
+    },
+    "wsUrl": {
+      "type": "string",
+      "default": "ws://127.0.0.1:3849",
+      "description": "DCM WebSocket server URL"
+    }
+  }
 }

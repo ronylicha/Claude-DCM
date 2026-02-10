@@ -66,32 +66,46 @@ export async function postCompactRestore(c: Context): Promise<Response> {
       `Restoring context for agent=${input.agent_id}, session=${input.session_id}`
     );
 
-    // 1. Mark session as compacted (create marker if needed)
+    // 1. Mark session as compacted + reset capacity in a single transaction
     let sessionCompacted = false;
     try {
-      // Try to find existing request for this session
-      const existingRequests = await sql<SessionMarkerRow[]>`
-        SELECT id, session_id, compacted_at
-        FROM requests
-        WHERE session_id = ${input.session_id}
-        ORDER BY created_at DESC
-        LIMIT 1
-      `;
-
-      if (existingRequests.length > 0) {
-        // Update existing request with compact timestamp
-        await sql`
-          UPDATE requests
-          SET
-            metadata = metadata || ${sql.json({
-              compacted_at: new Date().toISOString(),
-              compact_summary: input.compact_summary ?? null,
-              compact_agent: input.agent_id,
-            })}
+      await sql.begin(async (tx: any) => {
+        // Try to find existing request for this session
+        const existingRequests = (await tx`
+          SELECT id, session_id, compacted_at
+          FROM requests
           WHERE session_id = ${input.session_id}
+          ORDER BY created_at DESC
+          LIMIT 1
+        `) as SessionMarkerRow[];
+
+        if (existingRequests.length > 0) {
+          // Update existing request with compact timestamp (COALESCE for NULL metadata)
+          await tx`
+            UPDATE requests
+            SET
+              metadata = COALESCE(metadata, '{}'::jsonb) || ${tx.json({
+                compacted_at: new Date().toISOString(),
+                compact_summary: input.compact_summary ?? null,
+                compact_agent: input.agent_id,
+              })}
+            WHERE session_id = ${input.session_id}
+          `;
+          sessionCompacted = true;
+        }
+
+        // Reset capacity within the same transaction
+        await tx`
+          UPDATE agent_capacity
+          SET
+            current_usage = GREATEST(ROUND(current_usage * 0.2), 0),
+            zone = 'green',
+            compact_count = compact_count + 1,
+            last_compact_at = NOW(),
+            last_updated_at = NOW()
+          WHERE agent_id = ${input.agent_id}
         `;
-        sessionCompacted = true;
-      }
+      });
 
       // Log the compact event
       log.info(
@@ -324,7 +338,7 @@ export async function postCompactSave(c: Context): Promise<Response> {
     // 3. Also mark the request as having a pending compact
     await sql`
       UPDATE requests
-      SET metadata = metadata || ${sql.json({
+      SET metadata = COALESCE(metadata, '{}'::jsonb) || ${sql.json({
         compact_snapshot_at: new Date().toISOString(),
         compact_trigger: input.trigger,
       })}

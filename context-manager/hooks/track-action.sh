@@ -1,27 +1,37 @@
 #!/bin/bash
 # track-action.sh - Record ALL tool actions to DCM PostgreSQL
-# v3.0: Added token consumption tracking via POST /api/tokens/track
+# v3.1: Fixed memory limit on TOOL_INPUT, variable init defaults, true fire-and-forget
 #
 # Feeds keyword_tool_scores for routing intelligence
 # + token consumption for predictive capacity monitoring
 
 set -uo pipefail
 
+# Load circuit breaker library
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HOOK_DIR/lib/circuit-breaker.sh" 2>/dev/null || true
+
 API_URL="${CONTEXT_MANAGER_URL:-http://127.0.0.1:3847}"
 EXIT_CODE="${1:-0}"
 
 # Read hook data from stdin (Claude Code passes JSON via stdin)
-RAW_INPUT=$(cat 2>/dev/null || echo "")
+# Limit read to prevent memory issues (read max 100KB)
+RAW_INPUT=$(head -c 102400 2>/dev/null || echo "")
 [[ -z "$RAW_INPUT" ]] && exit 0
 
-# Extract fields
-TOOL_NAME=$(echo "$RAW_INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
-TOOL_INPUT=$(echo "$RAW_INPUT" | jq -c '.tool_input // empty' 2>/dev/null)
-TOOL_OUTPUT=$(echo "$RAW_INPUT" | jq -c '.tool_output // empty' 2>/dev/null)
-SESSION_ID=$(echo "$RAW_INPUT" | jq -r '.session_id // empty' 2>/dev/null)
-WORKING_DIR=$(echo "$RAW_INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+# Extract fields with defaults if jq fails
+TOOL_NAME=$(echo "$RAW_INPUT" | jq -r '.tool_name // empty' 2>/dev/null || echo "")
+TOOL_INPUT=$(echo "$RAW_INPUT" | jq -c '.tool_input // {}' 2>/dev/null || echo "{}")
+TOOL_OUTPUT=$(echo "$RAW_INPUT" | jq -c '.tool_output // {}' 2>/dev/null || echo "{}")
+SESSION_ID=$(echo "$RAW_INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
+WORKING_DIR=$(echo "$RAW_INPUT" | jq -r '.cwd // empty' 2>/dev/null || echo "")
 
 [[ -z "$TOOL_NAME" ]] && exit 0
+
+# Check circuit breaker
+if ! dcm_api_available; then
+    exit 0
+fi
 
 # Detect tool type
 detect_type() {
@@ -44,21 +54,21 @@ TOOL_TYPE=$(detect_type "$TOOL_NAME")
 # For Skill/Task, use the effective name
 EFFECTIVE_NAME="$TOOL_NAME"
 if [[ "$TOOL_NAME" == "Skill" ]]; then
-    EFFECTIVE_NAME=$(echo "$TOOL_INPUT" | jq -r '.skill // empty' 2>/dev/null)
+    EFFECTIVE_NAME=$(echo "$TOOL_INPUT" | jq -r '.skill // empty' 2>/dev/null || echo "")
     [[ -z "$EFFECTIVE_NAME" ]] && EFFECTIVE_NAME="$TOOL_NAME"
 elif [[ "$TOOL_NAME" == "Task" ]]; then
-    EFFECTIVE_NAME=$(echo "$TOOL_INPUT" | jq -r '.subagent_type // empty' 2>/dev/null)
+    EFFECTIVE_NAME=$(echo "$TOOL_INPUT" | jq -r '.subagent_type // empty' 2>/dev/null || echo "")
     [[ -z "$EFFECTIVE_NAME" ]] && EFFECTIVE_NAME="$TOOL_NAME"
 fi
 
-# Truncate input for API (max 2KB)
-INPUT_TEXT=$(echo "$TOOL_INPUT" | head -c 2048)
+# Truncate input for API (max 2KB) BEFORE echo to limit memory
+INPUT_TEXT=$(echo "$TOOL_INPUT" | head -c 2048 2>/dev/null || echo "{}")
 
-# Calculate sizes for token tracking
+# Calculate sizes for token tracking (safe defaults)
 INPUT_SIZE=${#TOOL_INPUT}
 OUTPUT_SIZE=${#TOOL_OUTPUT}
 
-# Send to DCM API (fire and forget, max 2s timeout)
+# Send to DCM API (true fire-and-forget - no wait)
 curl -s -X POST "${API_URL}/api/actions" \
     -H "Content-Type: application/json" \
     -d "$(jq -n \
@@ -74,7 +84,7 @@ curl -s -X POST "${API_URL}/api/actions" \
     --max-time 2 \
     >/dev/null 2>&1 &
 
-# v3.0: Track token consumption (fire-and-forget, <5ms target)
+# v3.0: Track token consumption (true fire-and-forget)
 AGENT_ID="${AGENT_ID:-$SESSION_ID}"
 if [[ -n "$AGENT_ID" && -n "$SESSION_ID" ]]; then
     curl -s -X POST "${API_URL}/api/tokens/track" \
@@ -92,5 +102,5 @@ if [[ -n "$AGENT_ID" && -n "$SESSION_ID" ]]; then
         >/dev/null 2>&1 &
 fi
 
-wait 2>/dev/null || true
+# NO wait - true fire-and-forget
 exit 0

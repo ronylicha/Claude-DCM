@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # track-agent-start.sh - PreToolUse hook: creates subtask as "running"
+# v3.1: Fixed agent_id generation with UUID, store agent_id as cache key
+#
 # Paired with track-agent-end.sh (PostToolUse) which marks it "completed"
 
 set -uo pipefail
+
+# Load circuit breaker library
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HOOK_DIR/lib/circuit-breaker.sh" 2>/dev/null || true
 
 API_URL="${CONTEXT_MANAGER_URL:-http://127.0.0.1:3847}"
 CACHE_DIR="/tmp/.claude-context"
@@ -22,6 +28,11 @@ agent_type=$(echo "$tool_input" | jq -r '.subagent_type // empty' 2>/dev/null ||
 description=$(echo "$tool_input" | jq -r '.description // empty' 2>/dev/null || echo "")
 
 [[ -z "$agent_type" ]] && exit 0
+
+# Check circuit breaker
+if ! dcm_api_available; then
+    exit 0
+fi
 
 mkdir -p "$CACHE_DIR"
 cache_file="${CACHE_DIR}/${session_id}.json"
@@ -81,8 +92,18 @@ fi
 
 [[ -z "$task_id" ]] && exit 0
 
-# Generate unique agent_id
-agent_id="agent-$(date +%s%N | cut -c1-13)-$(head -c 4 /dev/urandom | xxd -p 2>/dev/null || echo "xxxx")"
+# Generate unique agent_id using UUID
+agent_id=""
+if command -v uuidgen >/dev/null 2>&1; then
+    agent_id=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]')
+elif [[ -f /proc/sys/kernel/random/uuid ]]; then
+    agent_id=$(cat /proc/sys/kernel/random/uuid 2>/dev/null)
+fi
+
+# Fallback to timestamp-based if UUID unavailable
+if [[ -z "$agent_id" ]]; then
+    agent_id="agent-$(date +%s%N | cut -c1-13)-$(head -c 4 /dev/urandom | xxd -p 2>/dev/null || echo "xxxx")"
+fi
 
 [[ ${#description} -gt 500 ]] && description="${description:0:497}..."
 
@@ -99,13 +120,22 @@ result=$(curl -s -X POST "${API_URL}/api/subtasks" \
 
 subtask_id=$(echo "$result" | jq -r '.subtask.id // .id // empty' 2>/dev/null || echo "")
 
-# Cache subtask_id so track-agent-end.sh can close it
-if [[ -n "$subtask_id" ]]; then
-    # Store agent_id -> subtask_id mapping
+# Cache subtask_id with agent_id as unique key (not agent_type:description)
+if [[ -n "$subtask_id" && -n "$agent_id" ]]; then
     agents_file="${CACHE_DIR}/${session_id}_agents.json"
-    existing=$(cat "$agents_file" 2>/dev/null || echo "{}")
-    echo "$existing" | jq --arg key "$agent_type:$description" --arg sid "$subtask_id" \
-        '. + {($key): $sid}' > "$agents_file" 2>/dev/null || true
+    agents_lock="${agents_file}.lock"
+    
+    # Atomic cache update with flock
+    (
+        flock -x 200 || exit 1
+        
+        existing=$(cat "$agents_file" 2>/dev/null || echo "{}")
+        # Store by agent_id for unique lookup
+        echo "$existing" | jq --arg key "$agent_id" --arg sid "$subtask_id" \
+            '. + {($key): $sid}' > "${agents_file}.tmp.$$" 2>/dev/null && \
+            mv "${agents_file}.tmp.$$" "$agents_file" 2>/dev/null || \
+            rm -f "${agents_file}.tmp.$$" 2>/dev/null
+    ) 200>"$agents_lock"
 fi
 
 exit 0

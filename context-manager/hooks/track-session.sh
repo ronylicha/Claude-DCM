@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # track-session.sh - Hook for tracking Claude Code session start
+# v3.1: Fixed hardcoded URL, cache permissions, API fallback format
+#
 # Creates: project -> session -> request -> task (for subtasks)
 # Reads session data from stdin JSON (Claude Code SessionStart hook format)
 
 set -uo pipefail
 
-# Configuration
+# Load circuit breaker library
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HOOK_DIR/lib/circuit-breaker.sh" 2>/dev/null || true
+
+# Configuration - USE API_URL VARIABLE
 API_URL="${CONTEXT_MANAGER_URL:-http://127.0.0.1:3847}"
 CACHE_DIR="/tmp/.claude-context"
 
@@ -32,12 +38,20 @@ cat <<'HOOK_OUTPUT'
 {"hookSpecificOutput":{"additionalContext":"## DCM Orchestrator Protocol\n\nBefore launching ANY subagent via Task tool:\n1. POST http://127.0.0.1:3847/api/orchestration/craft-prompt with {task_description, agent_type, session_id, target_files, target_directories}\n2. Use returned crafted_prompt as Task prompt\n3. Use returned max_turns and model\n\nFor complex multi-step tasks: POST /api/orchestration/decompose first.\n\nRules:\n- NEVER launch a subagent without consulting DCM\n- ALWAYS specify target_files or target_directories\n- NEVER give broad prompts like 'scan entire codebase'"}}
 HOOK_OUTPUT
 
-# Create cache directory
+# Create cache directory with restricted permissions (chmod 700, umask 077)
+umask 077
 mkdir -p "$CACHE_DIR"
+chmod 700 "$CACHE_DIR" 2>/dev/null || true
+
 cache_file="${CACHE_DIR}/${session_id}.json"
 
 # If cache already exists for this session, skip (session already initialized)
 if [[ -f "$cache_file" ]]; then
+    exit 0
+fi
+
+# Check circuit breaker
+if ! dcm_api_available; then
     exit 0
 fi
 
@@ -59,19 +73,23 @@ project_result=$(api_post "/api/projects" "$(jq -n \
     --arg name "$project_name" \
     '{path: $path, name: $name}')")
 
+# Standardize API response format
 project_id=$(echo "$project_result" | jq -r '.project.id // .id // empty' 2>/dev/null || echo "")
 
 if [[ -z "$project_id" ]]; then
     # Try to get existing project by path
     project_result=$(curl -s "${API_URL}/api/projects/by-path?path=$(echo "$project_path" | jq -sRr @uri)" \
         --connect-timeout 2 --max-time 5 2>/dev/null || echo "{}")
-    project_id=$(echo "$project_result" | jq -r '.project.id // empty' 2>/dev/null || echo "")
+    project_id=$(echo "$project_result" | jq -r '.project.id // .id // empty' 2>/dev/null || echo "")
 fi
 
 if [[ -z "$project_id" ]]; then
     # Cannot proceed without project
+    dcm_api_failed
     exit 0
 fi
+
+dcm_api_success
 
 # Step 2: Create session
 api_post "/api/sessions" "$(jq -n \
@@ -108,6 +126,7 @@ if [[ -n "$task_id" ]]; then
         --arg created_at "$(date -Iseconds)" \
         '{session_id: $session_id, project_id: $project_id, request_id: $request_id, task_id: $task_id, created_at: $created_at}' \
         > "$cache_file" 2>/dev/null || true
+    chmod 600 "$cache_file" 2>/dev/null || true
 fi
 
 exit 0

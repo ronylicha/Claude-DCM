@@ -166,11 +166,13 @@ export async function postSubtask(c: Context): Promise<Response> {
       });
     }
 
-    // Auto-populate agent_contexts table (fire and forget)
+    // Auto-populate agent_contexts table (awaited to prevent race conditions)
     if (subtask.agent_type && subtask.agent_id) {
-      populateAgentContext(sql, subtask).catch(err =>
-        log.error("Agent context auto-population error:", err)
-      );
+      try {
+        await populateAgentContext(sql, subtask);
+      } catch (err) {
+        log.error("Agent context auto-population error:", err);
+      }
     }
 
     return c.json({

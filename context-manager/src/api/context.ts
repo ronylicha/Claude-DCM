@@ -71,10 +71,11 @@ export async function getContext(c: Context): Promise<Response> {
 
     if (!sessionId) {
       return c.json({
+        error: "No active session found",
         agent_id: agentId,
         context: null,
         message: "No active session found for this agent",
-      });
+      }, 404);
     }
 
     // Determine agent type

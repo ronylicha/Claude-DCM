@@ -15,8 +15,8 @@ const log = createLogger("API");
 export async function getAgentContexts(c: Context): Promise<Response> {
   try {
     const sql = getDb();
-    const limit = Number(c.req.query("limit") ?? "100");
-    const offset = Number(c.req.query("offset") ?? "0");
+    const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "100", 10) || 100, 1), 1000);
+    const offset = Math.max(parseInt(c.req.query("offset") ?? "0", 10) || 0, 0);
     const agentType = c.req.query("agent_type");
     const status = c.req.query("status");
 

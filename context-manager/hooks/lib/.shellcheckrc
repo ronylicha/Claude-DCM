@@ -1,0 +1,18 @@
+# ShellCheck configuration for DCM hooks library
+# Place this file in the same directory as the scripts
+
+# Disable warnings for intentional patterns
+disable=SC2312  # Consider invoking this command separately (we use pipes intentionally)
+disable=SC2155  # Declare and assign separately (we prefer compact style)
+
+# Enable all optional checks
+enable=all
+
+# External sources (hooks will source these libraries)
+external-sources=true
+
+# Shell dialect
+shell=bash
+
+# Minimum bash version
+# shellcheck shell=bash directive=require-variable-braces

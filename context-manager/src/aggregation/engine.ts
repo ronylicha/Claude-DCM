@@ -93,7 +93,7 @@ export async function aggregateResults(batchId: string): Promise<Synthesis> {
   };
 
   const synthesisChars = JSON.stringify(synthesisObj).length;
-  const tokensSaved = Math.max(0, Math.round(rawChars / 4 - synthesisChars / 4));
+  const tokensSaved = Math.max(0, Math.round(rawChars / 3.5 - synthesisChars / 3.5));
 
   // Check if batch is complete and ready for next wave
   const nextWaveReady = await checkBatchCompletion(batchId);

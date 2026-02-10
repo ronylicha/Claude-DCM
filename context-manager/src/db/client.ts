@@ -123,15 +123,23 @@ export { getDb as sql };
  * @param data - Event payload
  */
 export async function publishEvent(channel: string, event: string, data: Record<string, unknown>): Promise<void> {
-  try {
-    const db = getDb();
-    const payload = JSON.stringify({ channel, event, data, timestamp: Date.now() });
-    // PostgreSQL NOTIFY has 8000 byte payload limit
-    const truncated = payload.length > 7900
-      ? JSON.stringify({ channel, event, data: { id: data.id, truncated: true }, timestamp: Date.now() })
-      : payload;
-    await db.notify('dcm_events', truncated);
-  } catch (error) {
-    log.error("Failed to publish event:", error);
+  const db = getDb();
+  const payload = JSON.stringify({ channel, event, data, timestamp: Date.now() });
+  // PostgreSQL NOTIFY has 8000 byte payload limit
+  const truncated = payload.length > 7900
+    ? JSON.stringify({ channel, event, data: { id: data.id, truncated: true }, timestamp: Date.now() })
+    : payload;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await db.notify('dcm_events', truncated);
+      return;
+    } catch (error) {
+      if (attempt === 0) {
+        await new Promise(r => setTimeout(r, 100));
+        continue;
+      }
+      log.error("Failed to publish event after retry:", error);
+    }
   }
 }

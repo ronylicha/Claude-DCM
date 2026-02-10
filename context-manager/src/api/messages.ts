@@ -234,7 +234,7 @@ export async function getMessages(c: Context): Promise<Response> {
         UPDATE agent_messages
         SET read_by = array_append(COALESCE(read_by, '{}'::text[]), ${agentId})
         WHERE id = ANY(${messageIds})
-          AND (read_by IS NULL OR NOT (${agentId} = ANY(read_by)))
+          AND (read_by IS NULL OR NOT (${agentId} = ANY(COALESCE(read_by, '{}'::text[]))))
       `;
     }
 
@@ -244,7 +244,7 @@ export async function getMessages(c: Context): Promise<Response> {
       FROM agent_messages
       WHERE (expires_at IS NULL OR expires_at > NOW())
         AND (to_agent_id = ${agentId} OR to_agent_id IS NULL)
-        AND (read_by IS NULL OR NOT (${agentId} = ANY(read_by)))
+        AND (read_by IS NULL OR NOT (${agentId} = ANY(COALESCE(read_by, '{}'::text[]))))
     `;
 
     return c.json({

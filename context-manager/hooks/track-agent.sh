@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # track-agent.sh - Hook for tracking Claude Code Task tool usage (agent spawning)
-# v3.0: Added scope injection from agent registry
+# v3.1: Fixed agent_id uniqueness with UUID, atomic cache writes, registry error handling, description truncation
 #
 # Creates a subtask entry when an agent is spawned via the Task tool
 # Auto-creates request->task chain if none exists for the session
 # Fetches agent scope from registry for context injection
 
 set -uo pipefail
+
+# Load circuit breaker library
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HOOK_DIR/lib/circuit-breaker.sh" 2>/dev/null || true
 
 # Configuration
 API_URL="${CONTEXT_MANAGER_URL:-http://127.0.0.1:3847}"
@@ -39,6 +43,11 @@ run_in_background=$(echo "$tool_input" | jq -r '.run_in_background // false' 2>/
 
 # Skip if no agent type (not a proper agent spawn)
 if [[ -z "$agent_type" ]]; then
+    exit 0
+fi
+
+# Check circuit breaker
+if ! dcm_api_available; then
     exit 0
 fi
 
@@ -109,10 +118,12 @@ if [[ -z "$task_id" ]]; then
         task_id=$(echo "$task_result" | jq -r '.task.id // .id // empty' 2>/dev/null || echo "")
     fi
 
-    # Cache the task_id for future calls in this session
+    # Cache the task_id for future calls in this session (atomic write)
     if [[ -n "$task_id" ]]; then
+        cache_tmp="${cache_file}.tmp.$$"
         jq -n --arg task_id "$task_id" --arg request_id "$request_id" --arg project_id "$project_id" \
-            '{task_id: $task_id, request_id: $request_id, project_id: $project_id}' > "$cache_file" 2>/dev/null || true
+            '{task_id: $task_id, request_id: $request_id, project_id: $project_id}' > "$cache_tmp" 2>/dev/null && \
+            mv "$cache_tmp" "$cache_file" 2>/dev/null || true
     fi
 fi
 
@@ -121,20 +132,38 @@ if [[ -z "$task_id" ]]; then
     exit 0
 fi
 
-# Generate unique agent_id
-agent_id="agent-$(date +%s%N | cut -c1-13)-$(head -c 4 /dev/urandom | xxd -p 2>/dev/null || echo "xxxx")"
+# Generate unique agent_id using UUID (uuidgen or /proc/sys/kernel/random/uuid)
+agent_id=""
+if command -v uuidgen >/dev/null 2>&1; then
+    agent_id=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]')
+elif [[ -f /proc/sys/kernel/random/uuid ]]; then
+    agent_id=$(cat /proc/sys/kernel/random/uuid 2>/dev/null)
+fi
 
-# Truncate description if too long (max 500 chars for subtask)
+# Fallback to timestamp-based if UUID unavailable
+if [[ -z "$agent_id" ]]; then
+    agent_id="agent-$(date +%s%N | cut -c1-13)-$(head -c 4 /dev/urandom | xxd -p 2>/dev/null || echo "xxxx")"
+fi
+
+# Truncate description if too long (max 500 chars exactly, no off-by-one)
 if [[ ${#description} -gt 500 ]]; then
-    description="${description:0:497}..."
+    description="${description:0:500}"
 fi
 
 # v3.0: Fetch agent scope from registry (best-effort, non-blocking)
 scope_json=""
-registry_response=$(timeout 1s curl -s "${API_URL}/api/registry/${agent_type}" \
-    --connect-timeout 0.5 --max-time 1 2>/dev/null || echo "")
-if [[ -n "$registry_response" ]]; then
-    scope_json=$(echo "$registry_response" | jq -c '.default_scope // empty' 2>/dev/null || echo "")
+if dcm_api_available; then
+    registry_response=$(timeout 1s curl -s "${API_URL}/api/registry/${agent_type}" \
+        --connect-timeout 0.5 --max-time 1 2>/dev/null || echo "")
+    
+    # Log registry fetch but continue without scope if it fails
+    if [[ -n "$registry_response" ]]; then
+        scope_json=$(echo "$registry_response" | jq -c '.default_scope // empty' 2>/dev/null || echo "")
+        dcm_api_success
+    else
+        # Registry error is non-fatal, just log and continue
+        : # no-op, continue without scope
+    fi
 fi
 
 # Build context_snapshot with scope if available
@@ -161,7 +190,7 @@ curl -s -X POST "${API_URL}/api/subtasks" \
     --max-time 2 \
     >/dev/null 2>&1 || true
 
-# v3.0: Publish scope injection event
+# v3.0: Publish scope injection event (non-blocking)
 if [[ -n "$scope_json" && "$scope_json" != "" && "$scope_json" != "null" ]]; then
     curl -s -X POST "${API_URL}/api/messages" \
         -H "Content-Type: application/json" \

@@ -1,6 +1,18 @@
 {
   "description": "DCM - Context tracking, guardian monitoring, compact save/restore, agent result sharing, stop guard",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/track-agent-start.sh",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "*",
@@ -8,7 +20,7 @@
           {
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/track-action.sh",
-            "timeout": 3
+            "timeout": 2
           }
         ]
       },
@@ -28,7 +40,7 @@
           {
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/context-guardian.sh",
-            "timeout": 2
+            "timeout": 1
           }
         ]
       },

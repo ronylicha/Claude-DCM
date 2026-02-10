@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # post-compact-restore.sh - SessionStart(compact) hook: restore context from DCM
-# v3.0: Added scope injection at the top of the brief
+# v3.1: Fixed string concat with printf, API error handling, agent type extraction, real newlines
 #
 # Claude Code Hook: SessionStart (matcher: compact)
 #
@@ -16,6 +16,10 @@
 
 set -uo pipefail
 
+# Load circuit breaker library
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HOOK_DIR/lib/circuit-breaker.sh" 2>/dev/null || true
+
 API_URL="${CONTEXT_MANAGER_URL:-http://127.0.0.1:3847}"
 
 # Read hook input from stdin
@@ -27,8 +31,17 @@ session_id=$(echo "$RAW_INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 
 [[ -z "$session_id" ]] && exit 0
 
-# v3.0: Determine agent type from context (if available)
-agent_type="${AGENT_TYPE:-orchestrator}"
+# Check circuit breaker
+if ! dcm_api_available; then
+    exit 0
+fi
+
+# Extract agent type from stdin JSON (not hardcoded default)
+agent_type=$(echo "$RAW_INPUT" | jq -r '.agent_type // empty' 2>/dev/null)
+if [[ -z "$agent_type" ]]; then
+    # Fallback to env or orchestrator
+    agent_type="${AGENT_TYPE:-orchestrator}"
+fi
 agent_id="${AGENT_ID:-orchestrator}"
 
 # v3.0: Try to fetch enriched context with scope injection
@@ -45,6 +58,7 @@ if [[ "$agent_type" != "orchestrator" ]]; then
 
     if [[ -n "$enrich_response" ]]; then
         scope_brief=$(echo "$enrich_response" | jq -r '.enriched_context_markdown // empty' 2>/dev/null)
+        dcm_api_success
     fi
 fi
 
@@ -65,8 +79,21 @@ restore_response=$(curl -s -X POST "${API_URL}/api/compact/restore" \
     --max-time 5 2>/dev/null || echo "")
 
 brief=""
+http_status=""
+
+# Verify HTTP status and parse response
 if [[ -n "$restore_response" ]]; then
-    brief=$(echo "$restore_response" | jq -r '.brief // empty' 2>/dev/null)
+    # Check if response is valid JSON
+    if echo "$restore_response" | jq empty 2>/dev/null; then
+        brief=$(echo "$restore_response" | jq -r '.brief // empty' 2>/dev/null)
+        dcm_api_success
+    else
+        # Invalid JSON, log error
+        dcm_api_failed
+        brief=""
+    fi
+else
+    dcm_api_failed
 fi
 
 # 2. If no brief from restore, try to get the saved snapshot directly
@@ -81,34 +108,35 @@ if [[ -z "$brief" ]]; then
             snapshot=$(echo "$snapshot_response" | jq -r '.snapshot // empty' 2>/dev/null)
             summary=$(echo "$snapshot_response" | jq -r '.summary // empty' 2>/dev/null)
 
-            # Build a minimal brief from the snapshot
-            brief="## Context Restored After Compact\n\n"
-            [[ -n "$summary" ]] && brief+="**Summary:** ${summary}\n\n"
+            # Build a minimal brief from the snapshot using printf for real newlines
+            brief=$(printf "## Context Restored After Compact\n\n")
+            [[ -n "$summary" ]] && brief+=$(printf "**Summary:** %s\n\n" "$summary")
 
             # Active tasks
             tasks=$(echo "$snapshot" | jq -r '.active_tasks // [] | .[] | "- [\(.status)] \(.description)"' 2>/dev/null)
             if [[ -n "$tasks" ]]; then
-                brief+="### Active Tasks\n${tasks}\n\n"
+                brief+=$(printf "### Active Tasks\n%s\n\n" "$tasks")
             fi
 
             # Modified files
             files=$(echo "$snapshot" | jq -r '.modified_files // [] | .[] | "- \(.)"' 2>/dev/null)
             if [[ -n "$files" ]]; then
-                brief+="### Modified Files\n${files}\n\n"
+                brief+=$(printf "### Modified Files\n%s\n\n" "$files")
             fi
 
             # Agent states
             agents=$(echo "$snapshot" | jq -r '.agent_states // [] | .[] | "- \(.agent_type) (\(.agent_id)): \(.status) - \(.summary // "no summary")"' 2>/dev/null)
             if [[ -n "$agents" ]]; then
-                brief+="### Agent States\n${agents}\n\n"
+                brief+=$(printf "### Agent States\n%s\n\n" "$agents")
             fi
 
             # Key decisions
             decisions=$(echo "$snapshot" | jq -r '.key_decisions // [] | .[] | "- \(.)"' 2>/dev/null)
             if [[ -n "$decisions" ]]; then
-                brief+="### Key Decisions\n${decisions}\n\n"
+                brief+=$(printf "### Key Decisions\n%s\n\n" "$decisions")
             fi
         fi
+        dcm_api_success
     fi
 fi
 
@@ -117,10 +145,10 @@ if [[ -z "$brief" && -z "$scope_brief" ]]; then
     exit 0
 fi
 
-# v3.0: Combine scope (first) + contextual brief (after)
+# v3.0: Combine scope (first) + contextual brief (after) using printf for real newlines
 final_brief=""
 if [[ -n "$scope_brief" ]]; then
-    final_brief="${scope_brief}\n\n---\n\n"
+    final_brief=$(printf "%s\n\n---\n\n" "$scope_brief")
 fi
 if [[ -n "$brief" ]]; then
     final_brief+="$brief"
@@ -130,6 +158,7 @@ fi
 [[ -z "$final_brief" ]] && exit 0
 
 # 4. Output JSON with additionalContext for Claude Code to inject
+# Use jq to properly encode the string (handles newlines correctly)
 jq -n \
     --arg context "$final_brief" \
     '{

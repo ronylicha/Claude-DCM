@@ -5,6 +5,9 @@ import { createLogger } from "../lib/logger";
 
 const log = createLogger("Tokens");
 
+/** Characters per token for estimation (must match context-generator.ts) */
+const CHARS_PER_TOKEN = 3.5;
+
 // ==================== Schemas ====================
 
 const trackTokensSchema = z.object({
@@ -48,19 +51,34 @@ export async function trackTokens(c: Context) {
   const sql = getDb();
 
   // Estimate tokens
-  const estimatedTokens = Math.ceil((input_size + output_size) / 4);
+  const estimatedTokens = Math.min(Math.ceil((input_size + output_size) / CHARS_PER_TOKEN), 50000);
 
   try {
     // Get current capacity data
-    const [capacity] = await sql`
+    let [capacity] = await sql`
       SELECT current_usage, max_capacity, consumption_rate, last_compact_at, session_id
       FROM agent_capacity
       WHERE agent_id = ${agent_id}
     `;
 
-    const maxCapacity = capacity?.['max_capacity'] || 200000;
-    const previousRate = capacity?.['consumption_rate'] || 0;
-    const currentUsage = (capacity?.['current_usage'] || 0) + estimatedTokens;
+    // If no capacity entry exists, create one with defaults
+    if (!capacity) {
+      const [created] = await sql`
+        INSERT INTO agent_capacity (agent_id, session_id, current_usage, max_capacity, consumption_rate, zone)
+        VALUES (${agent_id}, ${session_id}, 0, 200000, 0, 'green')
+        ON CONFLICT (agent_id) DO UPDATE SET session_id = ${session_id}
+        RETURNING current_usage, max_capacity, consumption_rate, last_compact_at, session_id
+      `;
+      capacity = created;
+    }
+
+    if (!capacity) {
+      return c.json({ error: "Failed to initialize agent capacity" }, 500);
+    }
+
+    const maxCapacity = capacity['max_capacity'] || 200000;
+    const previousRate = capacity['consumption_rate'] || 0;
+    const currentUsage = (capacity['current_usage'] || 0) + estimatedTokens;
 
     // Calculate consumption rate using EMA
     const instantRate = estimatedTokens; // tokens per call
@@ -111,7 +129,7 @@ export async function trackTokens(c: Context) {
         input_tokens, output_tokens, total_tokens
       ) VALUES (
         ${agent_id}, ${session_id}, ${tool_name},
-        ${Math.ceil(input_size / 4)}, ${Math.ceil(output_size / 4)}, ${estimatedTokens}
+        ${Math.ceil(input_size / CHARS_PER_TOKEN)}, ${Math.ceil(output_size / CHARS_PER_TOKEN)}, ${estimatedTokens}
       )
     `;
 

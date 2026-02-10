@@ -75,6 +75,11 @@ export async function generateContextBrief(
     truncated = true;
   }
 
+  // Add truncation warning at the top of the brief
+  if (truncated) {
+    brief = "**[ATTENTION: Brief tronque. Donnees critiques possiblement omises.]**\n\n" + brief;
+  }
+
   return {
     id: crypto.randomUUID(),
     agent_id: agentId,

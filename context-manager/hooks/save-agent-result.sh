@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # save-agent-result.sh - SubagentStop hook: save agent result to DCM
-# v3.0: Added batch completion check + aggregation trigger
+# v3.1: Fixed transcript extraction with jq slurp, atomic API call, removed unused project_id
 #
 # Claude Code Hook: SubagentStop
 #
@@ -12,6 +12,10 @@
 # Output: None (fire-and-forget)
 
 set -uo pipefail
+
+# Load circuit breaker library
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HOOK_DIR/lib/circuit-breaker.sh" 2>/dev/null || true
 
 API_URL="${CONTEXT_MANAGER_URL:-http://127.0.0.1:3847}"
 CACHE_DIR="/tmp/.claude-context"
@@ -26,24 +30,28 @@ transcript_path=$(echo "$RAW_INPUT" | jq -r '.transcript_path // empty' 2>/dev/n
 
 [[ -z "$session_id" ]] && exit 0
 
+# Check circuit breaker
+if ! dcm_api_available; then
+    exit 0
+fi
+
 # Try to extract the last subagent's result from the transcript
 agent_type=""
 agent_description=""
 last_task_result=""
 
 if [[ -n "$transcript_path" && -f "$transcript_path" ]]; then
-    # Get the last Task tool response (subagent result)
-    last_task_result=$(tail -20 "$transcript_path" 2>/dev/null | \
-        jq -r 'select(.type == "tool_result" and .tool_name == "Task") | .content // empty' 2>/dev/null | \
-        tail -1 | head -c 1000 || echo "")
+    # Use jq slurp mode for robust parsing of JSONL transcript
+    # Get the last Task tool result
+    last_task_result=$(jq -s '[.[] | select(.type == "tool_result" and .tool_name == "Task")] | last | .content // empty' \
+        "$transcript_path" 2>/dev/null | head -c 1000 || echo "")
 
     # Get the last Task tool call to find agent info
-    last_task_call=$(tail -30 "$transcript_path" 2>/dev/null | \
-        jq -r 'select(.type == "tool_use" and .name == "Task") | .input // empty' 2>/dev/null | \
-        tail -1 || echo "")
+    last_task_input=$(jq -s '[.[] | select(.type == "tool_use" and .name == "Task")] | last | .input // {}' \
+        "$transcript_path" 2>/dev/null || echo "{}")
 
-    agent_type=$(echo "$last_task_call" | jq -r '.subagent_type // empty' 2>/dev/null || echo "")
-    agent_description=$(echo "$last_task_call" | jq -r '.description // empty' 2>/dev/null || echo "")
+    agent_type=$(echo "$last_task_input" | jq -r '.subagent_type // empty' 2>/dev/null || echo "")
+    agent_description=$(echo "$last_task_input" | jq -r '.description // empty' 2>/dev/null || echo "")
 fi
 
 # If we couldn't extract agent info, exit
@@ -51,13 +59,6 @@ fi
 
 # Truncate result for storage
 result_summary="${last_task_result:0:500}"
-
-# Update the agent context in DCM
-cache_file="${CACHE_DIR}/${session_id}.json"
-project_id=""
-if [[ -f "$cache_file" ]]; then
-    project_id=$(jq -r '.project_id // empty' "$cache_file" 2>/dev/null)
-fi
 
 # Post as a message so other agents can pick it up
 msg_payload=$(jq -n \
@@ -85,43 +86,34 @@ curl -s -X POST "${API_URL}/api/messages" \
     --connect-timeout 1 \
     --max-time 2 >/dev/null 2>&1 &
 
-# Update any running subtasks for this agent to completed
-subtask_id=""
-batch_id=""
-
-if [[ -n "$session_id" ]]; then
-    subtasks_response=$(curl -s "${API_URL}/api/subtasks?agent_type=${agent_type}&status=running&limit=5" \
+# Get running subtasks for this agent type in a single call (atomic)
+subtasks_response=""
+if dcm_api_available; then
+    subtasks_response=$(curl -s "${API_URL}/api/subtasks?agent_type=${agent_type}&status=running&limit=50" \
         --connect-timeout 1 --max-time 2 2>/dev/null || echo '{"subtasks":[]}')
-    # Find the most recent running subtask for this agent type
-    subtask_id=$(echo "$subtasks_response" | jq -r '[.subtasks[] | select(.status == "running")] | last | .id // empty' 2>/dev/null)
-    # v3.0: Extract batch_id if present
-    batch_id=$(echo "$subtasks_response" | jq -r '[.subtasks[] | select(.status == "running")] | last | .batch_id // empty' 2>/dev/null)
-fi
-
-# Fallback: any running subtask of this agent_type
-if [[ -z "$subtask_id" ]]; then
-    subtasks_response=$(curl -s "${API_URL}/api/subtasks?agent_type=${agent_type}&status=running&limit=1" \
-        --connect-timeout 1 --max-time 2 2>/dev/null || echo '{"subtasks":[]}')
-    subtask_id=$(echo "$subtasks_response" | jq -r '.subtasks[0].id // empty' 2>/dev/null)
-    batch_id=$(echo "$subtasks_response" | jq -r '.subtasks[0].batch_id // empty' 2>/dev/null)
-fi
-
-# Complete ALL running subtasks of this agent_type (not just the last one)
-if [[ -n "$subtask_id" ]]; then
-    # Get all running subtask IDs for this agent type
-    all_running=$(curl -s "${API_URL}/api/subtasks?agent_type=${agent_type}&status=running&limit=50" \
-        --connect-timeout 1 --max-time 2 2>/dev/null || echo '{"subtasks":[]}')
-    all_ids=$(echo "$all_running" | jq -r '.subtasks[].id // empty' 2>/dev/null)
-
-    if [[ -n "$all_ids" ]]; then
-        for sid in $all_ids; do
-            curl -s -X PATCH "${API_URL}/api/subtasks/${sid}" \
-                -H "Content-Type: application/json" \
-                -d "$(jq -n --arg summary "$result_summary" '{status: "completed", result: {summary: $summary}}')" \
-                --connect-timeout 1 \
-                --max-time 3 >/dev/null 2>&1 &
-        done
+    
+    if [[ -n "$subtasks_response" ]]; then
+        dcm_api_success
+    else
+        dcm_api_failed
     fi
+fi
+
+# Extract all running subtask IDs and batch_id (single pass)
+all_ids=$(echo "$subtasks_response" | jq -r '.subtasks[].id // empty' 2>/dev/null)
+batch_id=$(echo "$subtasks_response" | jq -r '[.subtasks[] | select(.batch_id != null)] | first | .batch_id // empty' 2>/dev/null)
+
+# Complete ALL running subtasks of this agent_type
+if [[ -n "$all_ids" ]]; then
+    # Fix loop quoting: use proper quoting for variable expansion
+    while IFS= read -r sid; do
+        [[ -z "$sid" ]] && continue
+        curl -s -X PATCH "${API_URL}/api/subtasks/${sid}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg summary "$result_summary" '{status: "completed", result: {summary: $summary}}')" \
+            --connect-timeout 1 \
+            --max-time 3 >/dev/null 2>&1 &
+    done <<< "$all_ids"
 fi
 
 # v3.0: Check if this completes a batch and trigger aggregation
@@ -133,5 +125,4 @@ if [[ -n "$batch_id" && "$batch_id" != "null" && "$batch_id" != "" ]]; then
         --max-time 3 >/dev/null 2>&1 &
 fi
 
-wait 2>/dev/null || true
 exit 0
