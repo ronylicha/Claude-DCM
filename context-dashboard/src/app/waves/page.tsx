@@ -57,7 +57,7 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; border: string;
   running:   { color: "text-blue-400",    bg: "bg-blue-500/20",    border: "border-blue-500/40",    icon: "blue",    label: "Running" },
   failed:    { color: "text-red-400",     bg: "bg-red-500/20",     border: "border-red-500/40",     icon: "red",     label: "Failed" },
   blocked:   { color: "text-amber-400",   bg: "bg-amber-500/20",   border: "border-amber-500/40",   icon: "amber",   label: "Blocked" },
-  pending:   { color: "text-zinc-300",    bg: "bg-zinc-500/20",    border: "border-zinc-500/40",    icon: "zinc",    label: "Pending" },
+  pending:   { color: "text-muted-foreground",    bg: "bg-zinc-500/20",    border: "border-zinc-500/40",    icon: "zinc",    label: "Pending" },
 };
 
 // ============================================
@@ -111,7 +111,7 @@ function WaveTimelineItem({ wave, isSelected, isLast, onClick }: {
         {!isLast && (
           <div className={cn(
             "w-0.5 flex-1 min-h-[20px]",
-            wave.status === "completed" ? "bg-emerald-500/50" : "bg-zinc-600/40",
+            wave.status === "completed" ? "bg-emerald-500/50" : "bg-muted-foreground/30",
           )} />
         )}
       </div>
@@ -120,23 +120,23 @@ function WaveTimelineItem({ wave, isSelected, isLast, onClick }: {
       <div className={cn(
         "flex-1 rounded-lg p-3 mb-2 transition-all duration-200 border",
         isSelected
-          ? "bg-zinc-800/90 border-blue-500/50 shadow-lg shadow-blue-500/5"
-          : "bg-zinc-800/40 border-zinc-700/40 hover:bg-zinc-800/60 hover:border-zinc-600/60",
+          ? "bg-muted/80 border-blue-500/50 shadow-lg shadow-blue-500/5"
+          : "bg-muted/40 border-border/60 hover:bg-muted/60 hover:border-border",
       )}>
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-zinc-100">Wave {wave.wave_number}</span>
+            <span className="text-sm font-semibold text-foreground">Wave {wave.wave_number}</span>
             <Badge variant="outline" className={cn("text-[11px] px-1.5 py-0", c.color, c.border)}>
               {c.label}
             </Badge>
           </div>
-          <span className="text-xs text-zinc-400 font-mono tabular-nums">
+          <span className="text-xs text-muted-foreground font-mono tabular-nums">
             {wave.completed_tasks}/{wave.total_tasks}
           </span>
         </div>
 
         {/* Progress bar */}
-        <div className="relative h-1.5 bg-zinc-700/50 rounded-full overflow-hidden">
+        <div className="relative h-1.5 bg-muted rounded-full overflow-hidden">
           <div
             className={cn(
               "absolute top-0 left-0 h-full rounded-full transition-all duration-700",
@@ -149,7 +149,7 @@ function WaveTimelineItem({ wave, isSelected, isLast, onClick }: {
         </div>
 
         {/* Meta */}
-        <div className="flex items-center gap-3 mt-1.5 text-xs text-zinc-400">
+        <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
           {wave.started_at && (
             <span className="flex items-center gap-1">
               <Clock className="h-3 w-3" />
@@ -199,14 +199,14 @@ function WaveDetailPanel({ wave, sessionId }: { wave: WaveState; sessionId: stri
   const c = cfg(wave.status);
 
   return (
-    <div className="rounded-xl border border-zinc-700/50 bg-zinc-900/60 overflow-hidden">
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-zinc-700/40 flex items-center gap-3">
+      <div className="px-5 py-4 border-b border-border/60 flex items-center gap-3">
         <div className={cn("flex items-center justify-center h-10 w-10 rounded-lg", c.bg, c.border, "border")}>
           <span className={c.color}>{statusIcon(wave.status)}</span>
         </div>
         <div>
-          <h3 className="text-base font-semibold text-zinc-100">Wave {wave.wave_number}</h3>
+          <h3 className="text-base font-semibold text-foreground">Wave {wave.wave_number}</h3>
           <p className={cn("text-xs font-medium", c.color)}>{c.label}</p>
         </div>
         {wave.status === "running" && (
@@ -220,17 +220,17 @@ function WaveDetailPanel({ wave, sessionId }: { wave: WaveState; sessionId: stri
       <div className="p-5 space-y-4">
         {/* Timing row */}
         <div className="grid grid-cols-2 gap-3">
-          <div className="p-3 rounded-lg bg-zinc-800/60 border border-zinc-700/30">
-            <div className="text-[11px] uppercase tracking-wider text-zinc-400 mb-1">Started</div>
-            <div className="text-sm font-medium text-zinc-100">
+          <div className="p-3 rounded-lg bg-muted/60 border border-border/50">
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Started</div>
+            <div className="text-sm font-medium text-foreground">
               {wave.started_at
                 ? new Date(wave.started_at).toLocaleString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
                 : "Not started"}
             </div>
           </div>
-          <div className="p-3 rounded-lg bg-zinc-800/60 border border-zinc-700/30">
-            <div className="text-[11px] uppercase tracking-wider text-zinc-400 mb-1">Duration</div>
-            <div className="text-sm font-medium text-zinc-100">
+          <div className="p-3 rounded-lg bg-muted/60 border border-border/50">
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Duration</div>
+            <div className="text-sm font-medium text-foreground">
               {duration > 0 ? formatDuration(duration) : "\u2014"}
             </div>
           </div>
@@ -238,15 +238,15 @@ function WaveDetailPanel({ wave, sessionId }: { wave: WaveState; sessionId: stri
 
         {/* Task counters */}
         <div className="grid grid-cols-3 gap-2">
-          <div className="text-center p-3 rounded-lg bg-zinc-800/60 border border-zinc-700/30">
-            <div className="text-2xl font-bold text-zinc-100">{wave.total_tasks}</div>
-            <div className="text-[11px] uppercase tracking-wider text-zinc-400 mt-0.5">Total</div>
+          <div className="text-center p-3 rounded-lg bg-muted/60 border border-border/50">
+            <div className="text-2xl font-bold text-foreground">{wave.total_tasks}</div>
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground mt-0.5">Total</div>
           </div>
-          <div className="text-center p-3 rounded-lg bg-emerald-950/30 border border-emerald-700/30">
+          <div className="text-center p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700/30">
             <div className="text-2xl font-bold text-emerald-400">{wave.completed_tasks}</div>
             <div className="text-[11px] uppercase tracking-wider text-emerald-400/70 mt-0.5">Done</div>
           </div>
-          <div className="text-center p-3 rounded-lg bg-red-950/30 border border-red-700/30">
+          <div className="text-center p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-700/30">
             <div className="text-2xl font-bold text-red-400">{wave.failed_tasks}</div>
             <div className="text-[11px] uppercase tracking-wider text-red-400/70 mt-0.5">Failed</div>
           </div>
@@ -254,7 +254,7 @@ function WaveDetailPanel({ wave, sessionId }: { wave: WaveState; sessionId: stri
 
         {/* Task list */}
         <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2 flex items-center gap-1.5">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
             <ChevronRight className="h-3.5 w-3.5" />
             Tasks ({tasksData?.length ?? 0})
           </h4>
@@ -268,9 +268,9 @@ function WaveDetailPanel({ wave, sessionId }: { wave: WaveState; sessionId: stri
               {tasksData.map((task) => {
                 const tc = cfg(task.status);
                 return (
-                  <div key={task.id} className="flex items-center gap-2 p-2.5 rounded-lg bg-zinc-800/40 border border-zinc-700/30">
+                  <div key={task.id} className="flex items-center gap-2 p-2.5 rounded-lg bg-muted/40 border border-border/50">
                     <span className={tc.color}>{statusIcon(task.status, "h-3.5 w-3.5")}</span>
-                    <span className="text-sm flex-1 truncate text-zinc-200">
+                    <span className="text-sm flex-1 truncate text-foreground/80">
                       {task.name || `Task ${task.id.slice(0, 8)}`}
                     </span>
                     <Badge variant="outline" className={cn("text-[10px]", tc.color, tc.border)}>{task.status}</Badge>
@@ -279,7 +279,7 @@ function WaveDetailPanel({ wave, sessionId }: { wave: WaveState; sessionId: stri
               })}
             </div>
           ) : (
-            <div className="text-sm text-zinc-500 text-center py-4 bg-zinc-800/20 rounded-lg border border-zinc-800/40">
+            <div className="text-sm text-muted-foreground/60 text-center py-4 bg-muted/20 rounded-lg border border-border/50">
               No tasks in this wave
             </div>
           )}
@@ -309,10 +309,10 @@ function AgentCapacityGauge({ agentId }: { agentId: string }) {
   const offset = circumference - (data.usage_percent / 100) * circumference;
 
   return (
-    <div className="flex items-center gap-3 p-3 rounded-lg bg-zinc-800/40 border border-zinc-700/30">
+    <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/40 border border-border/50">
       <div className="relative shrink-0">
         <svg viewBox="0 0 64 64" className="w-12 h-12">
-          <circle cx="32" cy="32" r={radius} fill="none" stroke="currentColor" strokeWidth="4" className="text-zinc-700" />
+          <circle cx="32" cy="32" r={radius} fill="none" stroke="currentColor" strokeWidth="4" className="text-muted-foreground/30" />
           <circle
             cx="32" cy="32" r={radius} fill="none" stroke={strokeColor} strokeWidth="4"
             strokeDasharray={circumference} strokeDashoffset={offset}
@@ -327,12 +327,12 @@ function AgentCapacityGauge({ agentId }: { agentId: string }) {
         </div>
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-xs font-medium truncate text-zinc-200">{agentId}</div>
+        <div className="text-xs font-medium truncate text-foreground/80">{agentId}</div>
         <div className="flex items-center gap-2 mt-0.5">
           <Badge variant="outline" className="text-[10px] px-1.5 py-0" style={{ borderColor: strokeColor, color: strokeColor }}>
             {data.zone}
           </Badge>
-          <span className="text-[11px] text-zinc-400 flex items-center gap-0.5">
+          <span className="text-[11px] text-muted-foreground flex items-center gap-0.5">
             <Clock className="h-2.5 w-2.5" /> {data.minutes_remaining}m
           </span>
         </div>
@@ -365,16 +365,16 @@ function WaveDistributionChart({ waves }: { waves: WaveState[] }) {
   return (
     <ResponsiveContainer width="100%" height={180}>
       <RechartsBarChart data={chartData} barSize={24}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" opacity={0.3} />
-        <XAxis dataKey="name" tick={{ fontSize: 12, fill: "#a1a1aa" }} tickLine={false} axisLine={false} />
-        <YAxis tick={{ fontSize: 12, fill: "#a1a1aa" }} tickLine={false} axisLine={false} width={30} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
+        <XAxis dataKey="name" tick={{ fontSize: 12, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} />
+        <YAxis tick={{ fontSize: 12, fill: "var(--muted-foreground)" }} tickLine={false} axisLine={false} width={30} />
         <RechartsTooltip
           contentStyle={{
-            backgroundColor: "#18181b",
-            border: "1px solid #3f3f46",
+            backgroundColor: "var(--card)",
+            border: "1px solid var(--border)",
             borderRadius: "8px",
             fontSize: "12px",
-            color: "#e4e4e7",
+            color: "var(--card-foreground)",
           }}
         />
         <Bar dataKey="completed" stackId="a" fill="#22c55e" radius={[0, 0, 0, 0]} name="Done" />
@@ -392,7 +392,7 @@ function WaveDistributionChart({ waves }: { waves: WaveState[] }) {
 function WaveEventsFeed({ events }: { events: Array<{ event: string; data: unknown; timestamp: number }> }) {
   if (events.length === 0) {
     return (
-      <div className="text-center py-8 text-zinc-500 text-sm">
+      <div className="text-center py-8 text-muted-foreground/60 text-sm">
         <Radio className="h-6 w-6 mx-auto mb-2 opacity-40" />
         Waiting for live events...
       </div>
@@ -404,14 +404,14 @@ function WaveEventsFeed({ events }: { events: Array<{ event: string; data: unkno
       {events.slice(0, 20).map((evt, i) => {
         const data = evt.data as Record<string, unknown> | null;
         return (
-          <div key={`${evt.timestamp}-${i}`} className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs hover:bg-zinc-800/40 transition-colors">
-            <span className="text-zinc-400 font-mono w-[56px] shrink-0 tabular-nums">
+          <div key={`${evt.timestamp}-${i}`} className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs hover:bg-muted/40 transition-colors">
+            <span className="text-muted-foreground font-mono w-[56px] shrink-0 tabular-nums">
               {new Date(evt.timestamp).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </span>
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0 border-zinc-600 text-zinc-300">
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0 border-border text-muted-foreground">
               {evt.event}
             </Badge>
-            <span className="text-zinc-400 truncate">
+            <span className="text-muted-foreground truncate">
               {(data?.description as string) || (data?.status as string) || ""}
             </span>
           </div>
@@ -428,7 +428,7 @@ function WaveEventsFeed({ events }: { events: Array<{ event: string; data: unkno
 function SessionAgentsPanel({ agents }: { agents: Array<{ agent_type: string; agent_id: string; description: string; started_at: string | null }> }) {
   if (agents.length === 0) {
     return (
-      <div className="text-center py-6 text-zinc-500 text-sm">
+      <div className="text-center py-6 text-muted-foreground/60 text-sm">
         <Bot className="h-6 w-6 mx-auto mb-2 opacity-40" />
         No agents in this session
       </div>
@@ -438,16 +438,16 @@ function SessionAgentsPanel({ agents }: { agents: Array<{ agent_type: string; ag
   return (
     <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
       {agents.map((agent) => (
-        <div key={agent.agent_id || agent.agent_type} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-zinc-800/40 border border-zinc-700/30">
+        <div key={agent.agent_id || agent.agent_type} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-muted/40 border border-border/50">
           <div className="flex items-center justify-center h-8 w-8 rounded-md bg-blue-500/15 border border-blue-500/20 shrink-0">
             <Bot className="h-3.5 w-3.5 text-blue-400" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-medium text-zinc-200 truncate">{agent.agent_type}</div>
-            <div className="text-[11px] text-zinc-500 truncate">{agent.description}</div>
+            <div className="text-xs font-medium text-foreground/80 truncate">{agent.agent_type}</div>
+            <div className="text-[11px] text-muted-foreground/60 truncate">{agent.description}</div>
           </div>
           {agent.started_at && (
-            <span className="text-[11px] text-zinc-500 shrink-0 tabular-nums">
+            <span className="text-[11px] text-muted-foreground/60 shrink-0 tabular-nums">
               {new Date(agent.started_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
             </span>
           )}
@@ -590,7 +590,7 @@ export default function WavesPage() {
               {waveEvents.length} events
             </Badge>
           )}
-          <Badge variant="outline" className="text-xs gap-1.5 border-zinc-600 text-zinc-300">
+          <Badge variant="outline" className="text-xs gap-1.5 border-border text-muted-foreground">
             <Users className="h-3 w-3" />
             {sessionAgents.length} agents
           </Badge>
@@ -631,10 +631,10 @@ export default function WavesPage() {
       </div>
 
       {/* ========== Session Selector ========== */}
-      <div className="rounded-xl border border-zinc-700/50 bg-zinc-900/60 p-4">
+      <div className="rounded-xl border border-border bg-card p-4">
         <div className="flex items-center justify-between mb-2.5">
-          <label className="text-sm font-medium text-zinc-200 flex items-center gap-2">
-            <Hash className="h-4 w-4 text-zinc-400" />
+          <label className="text-sm font-medium text-foreground/80 flex items-center gap-2">
+            <Hash className="h-4 w-4 text-muted-foreground" />
             Session
           </label>
           <div className="flex items-center gap-2">
@@ -643,7 +643,7 @@ export default function WavesPage() {
                 Active
               </Badge>
             )}
-            <span className="text-xs text-zinc-400">
+            <span className="text-xs text-muted-foreground">
               {sessionOptions.filter(s => s.isActive).length} active / {sessionOptions.length} total
             </span>
           </div>
@@ -651,14 +651,14 @@ export default function WavesPage() {
         {activeLoading ? (
           <Skeleton className="h-10 w-full rounded-lg" />
         ) : sessionOptions.length === 0 ? (
-          <div className="text-sm text-zinc-500 text-center py-6">
+          <div className="text-sm text-muted-foreground/60 text-center py-6">
             <Target className="h-8 w-8 mx-auto mb-2 opacity-40" />
             No sessions found
           </div>
         ) : (
           <div className="relative">
             <select
-              className="w-full p-2.5 pr-8 rounded-lg bg-zinc-800/80 border border-zinc-600/50 text-sm text-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-colors appearance-none cursor-pointer"
+              className="w-full p-2.5 pr-8 rounded-lg bg-muted/80 border border-border text-sm text-foreground/80 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-colors appearance-none cursor-pointer"
               value={selectedSessionId || ""}
               onChange={(e) => {
                 setSelectedSessionId(e.target.value);
@@ -671,7 +671,7 @@ export default function WavesPage() {
                 </option>
               ))}
             </select>
-            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           </div>
         )}
       </div>
@@ -683,8 +683,8 @@ export default function WavesPage() {
           <div className="grid gap-4 lg:grid-cols-5">
             {/* Left column: Wave Timeline */}
             <div className="lg:col-span-2 space-y-3">
-              <h3 className="text-sm font-semibold flex items-center gap-2 text-zinc-300 uppercase tracking-wider">
-                <Layers className="h-4 w-4 text-zinc-400" />
+              <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
+                <Layers className="h-4 w-4 text-muted-foreground" />
                 Timeline
               </h3>
 
@@ -694,10 +694,10 @@ export default function WavesPage() {
                   <Skeleton className="h-20 w-full rounded-lg" />
                 </div>
               ) : waves.length === 0 ? (
-                <div className="rounded-xl border border-zinc-700/40 bg-zinc-900/40 p-8 text-center">
-                  <Layers className="h-10 w-10 mx-auto mb-3 text-zinc-600" />
-                  <p className="text-sm text-zinc-400 font-medium">No waves for this session</p>
-                  <p className="text-xs text-zinc-500 mt-1">Waves are created during orchestrated execution</p>
+                <div className="rounded-xl border border-border/60 bg-card/80 p-8 text-center">
+                  <Layers className="h-10 w-10 mx-auto mb-3 text-muted-foreground/40" />
+                  <p className="text-sm text-muted-foreground font-medium">No waves for this session</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">Waves are created during orchestrated execution</p>
                 </div>
               ) : (
                 <div className="max-h-[500px] overflow-y-auto pr-1">
@@ -715,8 +715,8 @@ export default function WavesPage() {
 
               {/* Agents in session (below timeline) */}
               {sessionAgents.length > 0 && (
-                <div className="rounded-xl border border-zinc-700/50 bg-zinc-900/60 p-4">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-3 flex items-center gap-2">
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
                     <Bot className="h-3.5 w-3.5" />
                     Session Agents ({sessionAgents.length})
                   </h4>
@@ -730,16 +730,16 @@ export default function WavesPage() {
               {selectedWave && selectedSessionId ? (
                 <WaveDetailPanel wave={selectedWave} sessionId={selectedSessionId} />
               ) : (
-                <div className="rounded-xl border border-zinc-700/40 bg-zinc-900/40 p-8 text-center">
-                  <ChevronRight className="h-8 w-8 mx-auto mb-2 text-zinc-600" />
-                  <p className="text-sm text-zinc-400">Select a wave to see details</p>
+                <div className="rounded-xl border border-border/60 bg-card/80 p-8 text-center">
+                  <ChevronRight className="h-8 w-8 mx-auto mb-2 text-muted-foreground/40" />
+                  <p className="text-sm text-muted-foreground">Select a wave to see details</p>
                 </div>
               )}
 
               {/* Distribution Chart */}
               {waves.length > 0 && (
-                <div className="rounded-xl border border-zinc-700/50 bg-zinc-900/60 p-5">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-3">
+                <div className="rounded-xl border border-border bg-card p-5">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
                     Task Distribution
                   </h4>
                   <WaveDistributionChart waves={waves} />
@@ -751,15 +751,15 @@ export default function WavesPage() {
           {/* Bottom row: Agent Capacity + Live Events */}
           <div className="grid gap-4 lg:grid-cols-2">
             {/* Agent Capacity */}
-            <div className="rounded-xl border border-zinc-700/50 bg-zinc-900/60 p-5">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-3 flex items-center gap-2">
+            <div className="rounded-xl border border-border bg-card p-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
                 <Zap className="h-4 w-4" />
                 Agent Capacity
               </h3>
               {agentIds.length === 0 ? (
                 <div className="text-center py-6">
-                  <Activity className="h-6 w-6 mx-auto mb-2 text-zinc-600" />
-                  <p className="text-sm text-zinc-500">No capacity data</p>
+                  <Activity className="h-6 w-6 mx-auto mb-2 text-muted-foreground/40" />
+                  <p className="text-sm text-muted-foreground/60">No capacity data</p>
                 </div>
               ) : (
                 <div className="space-y-2 max-h-[300px] overflow-y-auto">
@@ -771,8 +771,8 @@ export default function WavesPage() {
             </div>
 
             {/* Live Events */}
-            <div className="rounded-xl border border-zinc-700/50 bg-zinc-900/60 p-5">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-3 flex items-center gap-2">
+            <div className="rounded-xl border border-border bg-card p-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
                 <TrendingUp className="h-4 w-4" />
                 Live Events
               </h3>

@@ -151,9 +151,9 @@ function TopologyNode({
       {/* Outer ring */}
       <circle cx={node.x} cy={node.y} r={26} fill="none" stroke={statusColor} strokeWidth={1.5} opacity={0.4} />
       {/* Main circle */}
-      <circle cx={node.x} cy={node.y} r={22} fill="#18181b" stroke={statusColor} strokeWidth={2} />
+      <circle cx={node.x} cy={node.y} r={22} fill="var(--card)" stroke={statusColor} strokeWidth={2} />
       {/* Session ID */}
-      <text x={node.x} y={node.y - 4} textAnchor="middle" dominantBaseline="middle" fill="#d4d4d8" fontSize={9} fontFamily="monospace">
+      <text x={node.x} y={node.y - 4} textAnchor="middle" dominantBaseline="middle" fill="var(--foreground)" fontSize={9} fontFamily="monospace">
         {node.label}
       </text>
       {/* Agent count */}
@@ -179,7 +179,7 @@ function FlowLine({
   to: { x: number; y: number };
   active?: boolean;
 }) {
-  const color = active ? "#818cf8" : "#3f3f46";
+  const color = active ? "#818cf8" : "var(--border)";
   return (
     <line
       x1={from.x}
@@ -204,7 +204,7 @@ function EventRow({ event }: { event: WSEvent }) {
   const sessionId = (data?.session_id as string) || "";
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
+    <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border/50 hover:bg-muted/30 transition-colors">
       {/* Timestamp */}
       <span className="text-[11px] font-mono text-muted-foreground w-[70px] shrink-0">
         {formatTimestamp(event.timestamp)}
@@ -496,7 +496,7 @@ export default function FlowsPage() {
 
             {/* Empty state */}
             {sessionNodes.length === 0 && (
-              <text x={250} y={300} textAnchor="middle" fill="#71717a" fontSize={12}>
+              <text x={250} y={300} textAnchor="middle" fill="var(--muted-foreground)" fontSize={12}>
                 No active sessions detected
               </text>
             )}
@@ -505,7 +505,7 @@ export default function FlowsPage() {
 
         {/* Selected Session Detail */}
         {selectedTopologySession && selectedSessionAgents.length > 0 && (
-          <div className="mt-4 border-t border-zinc-800/50 pt-4">
+          <div className="mt-4 border-t border-border/50 pt-4">
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/60 flex items-center gap-1.5">
                 <Users className="h-3.5 w-3.5" />
@@ -522,7 +522,7 @@ export default function FlowsPage() {
               {selectedSessionAgents.map((agent) => (
                 <div
                   key={agent.subtask_id}
-                  className="flex items-center gap-2.5 p-2.5 rounded-lg bg-zinc-900/40 border border-zinc-800/40"
+                  className="flex items-center gap-2.5 p-2.5 rounded-lg bg-card/80 border border-border/60"
                 >
                   <div className="flex items-center justify-center h-7 w-7 rounded-md bg-violet-500/20">
                     <Users className="h-3.5 w-3.5 text-violet-400" />
@@ -544,7 +544,7 @@ export default function FlowsPage() {
       {/* ========== Section C: Event Timeline ========== */}
       <div className="glass-card rounded-xl overflow-hidden">
         {/* Filter tabs */}
-        <div className="flex items-center gap-1 px-4 py-3 border-b border-zinc-800">
+        <div className="flex items-center gap-1 px-4 py-3 border-b border-border">
           <Filter className="h-3.5 w-3.5 text-muted-foreground mr-2" />
           {FILTER_TABS.map((tab) => (
             <button
@@ -554,7 +554,7 @@ export default function FlowsPage() {
                 "px-3 py-1 rounded-md text-xs font-medium transition-colors",
                 timelineFilter === tab.key
                   ? "bg-indigo-500/20 text-indigo-400"
-                  : "text-muted-foreground hover:text-foreground hover:bg-zinc-800/50"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
               )}
             >
               {tab.label}
