@@ -4,6 +4,9 @@
 # Idempotent: does nothing if services are already running
 set -uo pipefail
 
+# Ensure bun and common tools are in PATH
+export PATH="$HOME/.bun/bin:$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node/ 2>/dev/null | tail -1)/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+
 # Configuration
 DCM_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 API_PORT="${PORT:-3847}"
@@ -80,6 +83,17 @@ if ! lsof -i ":${WS_PORT}" >/dev/null 2>&1; then
     echo $! > "$PIDS_DIR/ws.pid"
 fi
 
+# Start Dashboard if not running
+DASHBOARD_PORT="${DASHBOARD_PORT:-3848}"
+DASHBOARD_DIR="$(cd "$DCM_ROOT/.." && pwd)/context-dashboard"
+DASHBOARD_URL="http://localhost:${DASHBOARD_PORT}"
+
+if [[ -d "$DASHBOARD_DIR" ]] && ! curl -s --connect-timeout 1 --max-time 2 "$DASHBOARD_URL" >/dev/null 2>&1; then
+    cd "$DASHBOARD_DIR"
+    PORT=${DASHBOARD_PORT} nohup bun run dev > "${LOG_DIR}/dcm-dashboard.log" 2>&1 &
+    echo $! > "$PIDS_DIR/dashboard.pid"
+fi
+
 # Wait for API to become healthy (max ~5s)
 api_ready=false
 for i in $(seq 1 10); do
@@ -90,8 +104,15 @@ for i in $(seq 1 10); do
     sleep 0.5
 done
 
+# Open dashboard in browser (only if services were just started, not already running)
 if [[ "$api_ready" == "true" ]]; then
-    echo '{"status": "dcm-autostarted", "api_port": '"$API_PORT"', "ws_port": '"$WS_PORT"'}' >&2
+    # Open browser in background, silently - try xdg-open (Linux), then open (macOS)
+    if command -v xdg-open &>/dev/null; then
+        nohup xdg-open "$DASHBOARD_URL" > /dev/null 2>&1 &
+    elif command -v open &>/dev/null; then
+        open "$DASHBOARD_URL" &
+    fi
+    echo '{"status": "dcm-autostarted", "api_port": '"$API_PORT"', "ws_port": '"$WS_PORT"', "dashboard_port": '"$DASHBOARD_PORT"'}' >&2
 else
     echo '{"warning": "DCM auto-start: API not ready after 5s, check /tmp/dcm-api.log"}' >&2
 fi
