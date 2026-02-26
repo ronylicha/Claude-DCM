@@ -366,7 +366,7 @@ export default function CompactHistoryPage() {
 
     return Array.from(buckets.entries())
       .map(([hour, count]) => ({
-        name: new Date(hour).toLocaleTimeString("en-US", {
+        name: new Date(hour + ":00:00Z").toLocaleTimeString("en-US", {
           hour: "2-digit",
           hour12: false,
         }),
