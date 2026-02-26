@@ -63,7 +63,7 @@ api_post() {
         -H "Content-Type: application/json" \
         -d "$data" \
         --connect-timeout 2 \
-        --max-time 5 2>/dev/null || echo "{}"
+        --max-time 2 2>/dev/null || echo "{}"
 }
 
 # Step 1: Create or get project
@@ -79,7 +79,7 @@ project_id=$(echo "$project_result" | jq -r '.project.id // .id // empty' 2>/dev
 if [[ -z "$project_id" ]]; then
     # Try to get existing project by path
     project_result=$(curl -s "${API_URL}/api/projects/by-path?path=$(echo "$project_path" | jq -sRr @uri)" \
-        --connect-timeout 2 --max-time 5 2>/dev/null || echo "{}")
+        --connect-timeout 1 --max-time 2 2>/dev/null || echo "{}")
     project_id=$(echo "$project_result" | jq -r '.project.id // .id // empty' 2>/dev/null || echo "")
 fi
 

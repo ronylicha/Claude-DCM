@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ensure-services.sh - Auto-start DCM services if not running
-# v3.1: Fixed lock atomicity with mkdir, stale lock check, service verification
+# v3.2: Fixed stderr output causing "hook error" in Claude Code
 #
 # Triggered by SessionStart(startup) hook in Claude Code
 # Idempotent: does nothing if services are already running
@@ -18,6 +18,12 @@ WS_URL="http://127.0.0.1:${WS_PORT}"
 LOG_DIR="/tmp"
 PIDS_DIR="/tmp/.dcm-pids"
 LOCK_DIR="/tmp/.dcm-autostart.lock"  # Use directory for atomic locking
+DCM_LOG="${LOG_DIR}/dcm-ensure.log"
+
+# Log helper - writes to log file, NEVER to stderr (stderr triggers "hook error")
+dcm_log() {
+    echo "[$(date -Iseconds)] $*" >> "$DCM_LOG" 2>/dev/null || true
+}
 
 # Load env if available
 if [[ -f "$DCM_ROOT/.env" ]]; then
@@ -110,9 +116,7 @@ DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_PORT="${DB_PORT:-5432}"
 
 if ! pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -q 2>/dev/null; then
-    # PostgreSQL not ready - cannot start DCM
-    # Output a warning that will appear in hook output
-    echo '{"warning": "DCM auto-start skipped: PostgreSQL not available"}' >&2
+    dcm_log "WARN: DCM auto-start skipped: PostgreSQL not available"
     exit 0
 fi
 
@@ -126,7 +130,7 @@ if ! curl -s --connect-timeout 1 --max-time 2 "${API_URL}/health" >/dev/null 2>&
     # Verify process actually started
     sleep 0.5
     if ! kill -0 "$api_pid" 2>/dev/null; then
-        echo '{"warning": "DCM API failed to start, check /tmp/dcm-api.log"}' >&2
+        dcm_log "ERROR: DCM API failed to start, check /tmp/dcm-api.log"
         exit 0
     fi
 fi
@@ -137,11 +141,11 @@ if ! lsof -i ":${WS_PORT}" >/dev/null 2>&1; then
     nohup bun run src/websocket-server.ts > "${LOG_DIR}/dcm-ws.log" 2>&1 &
     ws_pid=$!
     echo "$ws_pid" > "$PIDS_DIR/ws.pid"
-    
+
     # Verify process actually started
     sleep 0.5
     if ! kill -0 "$ws_pid" 2>/dev/null; then
-        echo '{"warning": "DCM WS failed to start, check /tmp/dcm-ws.log"}' >&2
+        dcm_log "ERROR: DCM WS failed to start, check /tmp/dcm-ws.log"
         exit 0
     fi
 fi
@@ -175,9 +179,9 @@ if [[ "$api_ready" == "true" ]]; then
     elif command -v open &>/dev/null; then
         open "$DASHBOARD_URL" &
     fi
-    echo '{"status": "dcm-autostarted", "api_port": '"$API_PORT"', "ws_port": '"$WS_PORT"', "dashboard_port": '"$DASHBOARD_PORT"'}' >&2
+    dcm_log "OK: DCM autostarted (api=$API_PORT, ws=$WS_PORT, dashboard=$DASHBOARD_PORT)"
 else
-    echo '{"warning": "DCM auto-start: API not ready after 5s, check /tmp/dcm-api.log"}' >&2
+    dcm_log "WARN: DCM API not ready after 5s, check /tmp/dcm-api.log"
 fi
 
 exit 0
