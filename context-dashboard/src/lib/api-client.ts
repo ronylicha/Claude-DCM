@@ -1052,12 +1052,35 @@ export const apiClient = {
   // ==========================================
   // Compact Snapshots - /api/agent-contexts
   // ==========================================
-  getCompactSnapshots: (sessionId?: string) => {
+  getCompactSnapshots: async (sessionId?: string): Promise<{ snapshots: CompactEvent[] }> => {
     const searchParams = new URLSearchParams({ agent_type: "compact-snapshot" });
     if (sessionId) searchParams.set("session_id", sessionId);
-    return apiFetch<{ snapshots: CompactEvent[] }>(
-      `/api/agent-contexts?${searchParams}`
-    );
+    const raw = await apiFetch<{ contexts: Array<{
+      id: string;
+      agent_id: string;
+      agent_type: string;
+      role_context: Record<string, unknown> & { trigger?: string };
+      progress_summary: string;
+      last_updated: string;
+    }> }>(`/api/agent-contexts?${searchParams}`);
+
+    const snapshots: CompactEvent[] = (raw.contexts ?? []).map((ctx) => {
+      // Extract session UUID from agent_id formats:
+      // "compact-snapshot-{uuid}" or "compact-snapshot-{uuid}-{timestamp}"
+      const match = ctx.agent_id.match(/^compact-snapshot-([0-9a-f-]{36})/);
+      const sessionId = match?.[1] ?? ctx.agent_id.replace("compact-snapshot-", "");
+      return {
+        id: ctx.id,
+        session_id: sessionId,
+        agent_type: ctx.agent_type,
+        trigger: (ctx.role_context?.trigger as string) ?? "auto",
+        snapshot: ctx.role_context ?? {},
+        summary: ctx.progress_summary ?? "",
+        created_at: ctx.last_updated,
+      };
+    });
+
+    return { snapshots };
   },
 };
 

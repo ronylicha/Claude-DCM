@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # track-agent-start.sh - PreToolUse hook: creates subtask as "running"
-# v3.1: Fixed agent_id generation with UUID, store agent_id as cache key
+# v3.2: Fixed cache key to use agent_type:description (matching track-agent-end.sh lookup)
 #
 # Paired with track-agent-end.sh (PostToolUse) which marks it "completed"
 
@@ -120,18 +120,18 @@ result=$(curl -s -X POST "${API_URL}/api/subtasks" \
 
 subtask_id=$(echo "$result" | jq -r '.subtask.id // .id // empty' 2>/dev/null || echo "")
 
-# Cache subtask_id with agent_id as unique key (not agent_type:description)
-if [[ -n "$subtask_id" && -n "$agent_id" ]]; then
+# Cache subtask_id with agent_type:description key for PostToolUse lookup
+if [[ -n "$subtask_id" ]]; then
     agents_file="${CACHE_DIR}/${session_id}_agents.json"
     agents_lock="${agents_file}.lock"
-    
+    cache_key="${agent_type}:${description}"
+
     # Atomic cache update with flock
     (
         flock -x 200 || exit 1
-        
+
         existing=$(cat "$agents_file" 2>/dev/null || echo "{}")
-        # Store by agent_id for unique lookup
-        echo "$existing" | jq --arg key "$agent_id" --arg sid "$subtask_id" \
+        echo "$existing" | jq --arg key "$cache_key" --arg sid "$subtask_id" \
             '. + {($key): $sid}' > "${agents_file}.tmp.$$" 2>/dev/null && \
             mv "${agents_file}.tmp.$$" "$agents_file" 2>/dev/null || \
             rm -f "${agents_file}.tmp.$$" 2>/dev/null

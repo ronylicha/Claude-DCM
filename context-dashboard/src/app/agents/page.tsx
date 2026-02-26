@@ -192,21 +192,21 @@ function AgentTypeCard({
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Completed</span>
-            <span className="font-medium text-green-600 flex items-center gap-1">
+            <span className="font-medium text-green-600 dark:text-green-400 flex items-center gap-1">
               <CheckCircle className="h-3 w-3" />
               {completedCount}
             </span>
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Running</span>
-            <span className="font-medium text-blue-600 flex items-center gap-1">
+            <span className="font-medium text-blue-600 dark:text-blue-400 flex items-center gap-1">
               <Activity className="h-3 w-3" />
               {runningCount}
             </span>
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Failed</span>
-            <span className="font-medium text-red-600 flex items-center gap-1">
+            <span className="font-medium text-red-600 dark:text-red-400 flex items-center gap-1">
               <AlertCircle className="h-3 w-3" />
               {failedCount}
             </span>
@@ -220,10 +220,10 @@ function AgentTypeCard({
                   successRate === null
                     ? "text-muted-foreground"
                     : successRate >= 80
-                      ? "text-green-600"
+                      ? "text-green-600 dark:text-green-400"
                       : successRate >= 50
-                        ? "text-yellow-600"
-                        : "text-red-600"
+                        ? "text-yellow-600 dark:text-yellow-400"
+                        : "text-red-600 dark:text-red-400"
                 )}
               >
                 {successRate !== null ? `${successRate}%` : "N/A"}

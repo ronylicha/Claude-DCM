@@ -321,7 +321,7 @@ export default function ProjectsPage() {
                     <TableHead>
                       <button
                         onClick={() => handleSort("name")}
-                        className="flex items-center font-medium hover:text-foreground"
+                        className="flex items-center font-medium hover:text-foreground cursor-pointer"
                       >
                         Name
                         <SortIndicator
@@ -334,7 +334,7 @@ export default function ProjectsPage() {
                     <TableHead className="hidden md:table-cell">
                       <button
                         onClick={() => handleSort("path")}
-                        className="flex items-center font-medium hover:text-foreground"
+                        className="flex items-center font-medium hover:text-foreground cursor-pointer"
                       >
                         Path
                         <SortIndicator
@@ -347,7 +347,7 @@ export default function ProjectsPage() {
                     <TableHead className="hidden sm:table-cell">
                       <button
                         onClick={() => handleSort("created_at")}
-                        className="flex items-center font-medium hover:text-foreground"
+                        className="flex items-center font-medium hover:text-foreground cursor-pointer"
                       >
                         Created
                         <SortIndicator
@@ -360,7 +360,7 @@ export default function ProjectsPage() {
                     <TableHead>
                       <button
                         onClick={() => handleSort("updated_at")}
-                        className="flex items-center font-medium hover:text-foreground"
+                        className="flex items-center font-medium hover:text-foreground cursor-pointer"
                       >
                         Updated
                         <SortIndicator
@@ -382,7 +382,7 @@ export default function ProjectsPage() {
                       <TableCell className="font-medium">
                         <Link
                           href={`/projects/${project.id}`}
-                          className="hover:text-primary hover:underline"
+                          className="hover:text-primary hover:underline cursor-pointer"
                         >
                           {getProjectName(project)}
                         </Link>

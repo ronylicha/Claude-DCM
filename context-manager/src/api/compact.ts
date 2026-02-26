@@ -305,10 +305,9 @@ export async function postCompactSave(c: Context): Promise<Response> {
       agent_states: input.agent_states,
     };
 
-    // Upsert: one snapshot per session
-    // TODO(schema): tools_used column is repurposed to store modified_files (compact snapshot metadata).
-    // This should be migrated to a dedicated column (e.g., snapshot_tags TEXT[] or snapshot_files TEXT[])
-    // to avoid confusion with actual tool usage tracking in agent_contexts table.
+    // INSERT each compact as a separate row for full history
+    // agent_id includes timestamp to avoid UNIQUE conflict on (project_id, agent_id)
+    const compactId = `compact-snapshot-${input.session_id}-${Date.now()}`;
     await sql`
       INSERT INTO agent_contexts (
         project_id,
@@ -320,19 +319,13 @@ export async function postCompactSave(c: Context): Promise<Response> {
         last_updated
       ) VALUES (
         ${projectId ?? null},
-        ${"compact-snapshot-" + input.session_id},
+        ${compactId},
         'compact-snapshot',
         ${sql.json(snapshotData)},
         ${input.context_summary ?? "Pre-compact snapshot"},
         ${sql.array(input.modified_files)},
         NOW()
       )
-      ON CONFLICT (project_id, agent_id)
-      DO UPDATE SET
-        role_context = ${sql.json(snapshotData)},
-        progress_summary = ${input.context_summary ?? "Pre-compact snapshot"},
-        tools_used = ${sql.array(input.modified_files)},
-        last_updated = NOW()
     `;
 
     // 3. Also mark the request as having a pending compact
@@ -390,8 +383,9 @@ export async function getCompactSnapshot(c: Context): Promise<Response> {
     const results = await sql`
       SELECT role_context, progress_summary, tools_used, last_updated
       FROM agent_contexts
-      WHERE agent_id = ${"compact-snapshot-" + sessionId}
+      WHERE agent_id LIKE ${"compact-snapshot-" + sessionId + "%"}
         AND agent_type = 'compact-snapshot'
+      ORDER BY last_updated DESC
       LIMIT 1
     `;
 

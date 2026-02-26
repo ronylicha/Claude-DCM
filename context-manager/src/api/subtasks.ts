@@ -166,6 +166,13 @@ export async function postSubtask(c: Context): Promise<Response> {
       });
     }
 
+    // Wire wave_states: create/increment wave total_tasks
+    if (subtask.status === "running") {
+      wireWaveState(sql, subtask.task_list_id, "created").catch(err =>
+        log.error("Wave state wire error:", err)
+      );
+    }
+
     // Auto-populate agent_contexts table (awaited to prevent race conditions)
     if (subtask.agent_type && subtask.agent_id) {
       try {
@@ -484,6 +491,13 @@ export async function patchSubtask(c: Context): Promise<Response> {
       return c.json({ error: "Subtask not found" }, 404);
     }
 
+    // Wire wave_states: update completion counters
+    if (body.status === "completed" || body.status === "failed") {
+      wireWaveState(sql, subtask.task_list_id, body.status).catch(err =>
+        log.error("Wave state wire error:", err)
+      );
+    }
+
     // Publish real-time event via PostgreSQL NOTIFY
     await publishEvent("global", `subtask.${body.status || "updated"}`, {
       id: subtask.id,
@@ -738,6 +752,79 @@ async function broadcastAgentResult(
     session_id,
     description: subtask.description,
   });
+}
+
+/**
+ * Wire wave_states from subtask lifecycle events.
+ * Creates wave_state row if needed, increments total_tasks on creation,
+ * increments completed/failed counters on completion, auto-completes wave.
+ */
+async function wireWaveState(
+  sql: ReturnType<typeof getDb>,
+  taskListId: string,
+  event: "created" | "completed" | "failed"
+): Promise<void> {
+  // Get session_id and wave_number from task chain
+  const chain = await sql<{ session_id: string; wave_number: number }[]>`
+    SELECT r.session_id, tl.wave_number
+    FROM task_lists tl
+    JOIN requests r ON tl.request_id = r.id
+    WHERE tl.id = ${taskListId}
+    LIMIT 1
+  `;
+
+  if (!chain[0]) return;
+  const { session_id, wave_number } = chain[0];
+
+  if (event === "created") {
+    // Upsert wave_state and increment total_tasks
+    await sql`
+      INSERT INTO wave_states (session_id, wave_number, status, total_tasks, completed_tasks, failed_tasks, started_at)
+      VALUES (${session_id}, ${wave_number}, 'running', 1, 0, 0, NOW())
+      ON CONFLICT (session_id, wave_number) DO UPDATE SET
+        total_tasks = wave_states.total_tasks + 1,
+        status = CASE WHEN wave_states.status = 'pending' THEN 'running' ELSE wave_states.status END,
+        started_at = COALESCE(wave_states.started_at, NOW())
+    `;
+  } else if (event === "completed") {
+    await sql`
+      UPDATE wave_states
+      SET completed_tasks = completed_tasks + 1
+      WHERE session_id = ${session_id} AND wave_number = ${wave_number}
+    `;
+  } else if (event === "failed") {
+    await sql`
+      UPDATE wave_states
+      SET failed_tasks = failed_tasks + 1
+      WHERE session_id = ${session_id} AND wave_number = ${wave_number}
+    `;
+  }
+
+  // Check if all tasks done - auto-complete wave
+  if (event === "completed" || event === "failed") {
+    const waveResult = await sql<{ total_tasks: number; completed_tasks: number; failed_tasks: number }[]>`
+      SELECT total_tasks, completed_tasks, failed_tasks
+      FROM wave_states
+      WHERE session_id = ${session_id} AND wave_number = ${wave_number}
+    `;
+    const wave = waveResult[0];
+    if (wave && wave.completed_tasks + wave.failed_tasks >= wave.total_tasks && wave.total_tasks > 0) {
+      const finalStatus = wave.failed_tasks > 0 ? "failed" : "completed";
+      await sql`
+        UPDATE wave_states
+        SET status = ${finalStatus}, completed_at = NOW()
+        WHERE session_id = ${session_id} AND wave_number = ${wave_number}
+          AND status != ${finalStatus}
+      `;
+      await publishEvent("global", `wave.${finalStatus}`, {
+        session_id,
+        wave_number,
+        completed_tasks: wave.completed_tasks,
+        failed_tasks: wave.failed_tasks,
+        total_tasks: wave.total_tasks,
+      });
+    }
+  }
 }
 
 /**

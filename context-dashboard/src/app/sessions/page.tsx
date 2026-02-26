@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { DateRangeFilter, type DateRange, getDateRangeStart } from "@/components/filters/DateRangeFilter";
 import { StatusFilter, type Status } from "@/components/filters/StatusFilter";
+import { Input } from "@/components/ui/input";
 import apiClient, { type Project, type Session, type ActiveSessionsResponse } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import {
@@ -327,7 +328,7 @@ export default function SessionsPage() {
             </div>
             <span className="text-sm font-medium text-muted-foreground">Active</span>
           </div>
-          <div className="text-3xl font-bold tracking-tight text-green-600">{stats.active}</div>
+          <div className="text-3xl font-bold tracking-tight text-green-600 dark:text-green-400">{stats.active}</div>
         </div>
         <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
           <div className="flex items-center gap-2.5">
@@ -336,7 +337,7 @@ export default function SessionsPage() {
             </div>
             <span className="text-sm font-medium text-muted-foreground">Completed</span>
           </div>
-          <div className="text-3xl font-bold tracking-tight text-blue-600">{stats.completed}</div>
+          <div className="text-3xl font-bold tracking-tight text-blue-600 dark:text-blue-400">{stats.completed}</div>
         </div>
         <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
           <div className="flex items-center gap-2.5">
@@ -345,7 +346,7 @@ export default function SessionsPage() {
             </div>
             <span className="text-sm font-medium text-muted-foreground">Failed</span>
           </div>
-          <div className="text-3xl font-bold tracking-tight text-red-600">{stats.failed}</div>
+          <div className="text-3xl font-bold tracking-tight text-red-600 dark:text-red-400">{stats.failed}</div>
         </div>
       </div>
 
@@ -357,14 +358,13 @@ export default function SessionsPage() {
         <CardContent>
           <div className="flex flex-wrap items-center gap-4">
             {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
+            <div className="relative w-64">
+              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
                 placeholder="Search sessions..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-9 w-64 rounded-md border border-input bg-background pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+                className="pl-8"
               />
             </div>
 
@@ -374,7 +374,7 @@ export default function SessionsPage() {
               <select
                 value={projectFilter}
                 onChange={(e) => setProjectFilter(e.target.value)}
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm cursor-pointer transition-colors focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring hover:bg-accent"
               >
                 <option value="all">All Projects</option>
                 {uniqueProjects.map((project: Project) => (
@@ -431,7 +431,7 @@ export default function SessionsPage() {
                     <TableHead>
                       <button
                         onClick={() => handleSort("id")}
-                        className="flex items-center gap-1 hover:text-foreground"
+                        className="flex items-center gap-1 hover:text-foreground cursor-pointer"
                       >
                         Session ID
                         <SortIcon field="id" currentField={sortField} direction={sortDirection} />
@@ -440,7 +440,7 @@ export default function SessionsPage() {
                     <TableHead>
                       <button
                         onClick={() => handleSort("project")}
-                        className="flex items-center gap-1 hover:text-foreground"
+                        className="flex items-center gap-1 hover:text-foreground cursor-pointer"
                       >
                         Project
                         <SortIcon field="project" currentField={sortField} direction={sortDirection} />
@@ -449,7 +449,7 @@ export default function SessionsPage() {
                     <TableHead>
                       <button
                         onClick={() => handleSort("started_at")}
-                        className="flex items-center gap-1 hover:text-foreground"
+                        className="flex items-center gap-1 hover:text-foreground cursor-pointer"
                       >
                         Started At
                         <SortIcon field="started_at" currentField={sortField} direction={sortDirection} />
@@ -458,7 +458,7 @@ export default function SessionsPage() {
                     <TableHead>
                       <button
                         onClick={() => handleSort("status")}
-                        className="flex items-center gap-1 hover:text-foreground"
+                        className="flex items-center gap-1 hover:text-foreground cursor-pointer"
                       >
                         Status
                         <SortIcon field="status" currentField={sortField} direction={sortDirection} />

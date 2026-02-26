@@ -286,6 +286,7 @@ app.delete("/api/sessions/:id", deleteSession);
 
 app.post("/api/messages", postMessage);
 app.get("/api/messages", getAllMessages);
+app.get("/api/messages/all", getAllMessages);
 app.get("/api/messages/:agent_id", getMessages);
 
 // ============================================

@@ -56,13 +56,13 @@ function getAgentTypeColor(agentType: string) {
 function getStatusConfig(status: string) {
   switch (status) {
     case "running":
-      return { dot: "bg-green-500 animate-pulse", label: "Running", textColor: "text-green-600" };
+      return { dot: "bg-green-500 animate-pulse", label: "Running", textColor: "text-green-600 dark:text-green-400" };
     case "completed":
-      return { dot: "bg-blue-500", label: "Completed", textColor: "text-blue-600" };
+      return { dot: "bg-blue-500", label: "Completed", textColor: "text-blue-600 dark:text-blue-400" };
     case "failed":
-      return { dot: "bg-red-500", label: "Failed", textColor: "text-red-600" };
+      return { dot: "bg-red-500", label: "Failed", textColor: "text-red-600 dark:text-red-400" };
     default:
-      return { dot: "bg-gray-400", label: status, textColor: "text-gray-500" };
+      return { dot: "bg-gray-400", label: status, textColor: "text-gray-500 dark:text-gray-400" };
   }
 }
 

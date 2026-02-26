@@ -178,7 +178,7 @@ describe("Messages API Unit Tests", () => {
   // ========================================================================
 
   describe("VALID_TOPICS", () => {
-    test("exports all 8 expected topic strings", () => {
+    test("exports all 10 expected topic strings", () => {
       expect(VALID_TOPICS).toEqual([
         "task.created",
         "task.completed",
@@ -187,9 +187,11 @@ describe("Messages API Unit Tests", () => {
         "context.response",
         "alert.blocking",
         "agent.heartbeat",
+        "agent.started",
+        "agent.completed",
         "workflow.progress",
       ]);
-      expect(VALID_TOPICS.length).toBe(8);
+      expect(VALID_TOPICS.length).toBe(10);
     });
   });
 

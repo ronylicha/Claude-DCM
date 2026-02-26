@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS agent_messages (
     message_type TEXT NOT NULL,  -- info, request, response, notification
     topic TEXT,  -- api_endpoint_created, schema_updated, etc.
     payload JSONB NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 0,
     read_by TEXT[] DEFAULT '{}',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     expires_at TIMESTAMPTZ

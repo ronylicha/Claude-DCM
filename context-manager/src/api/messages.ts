@@ -20,6 +20,8 @@ const VALID_TOPICS = [
   "context.response",
   "alert.blocking",
   "agent.heartbeat",
+  "agent.started",
+  "agent.completed",
   "workflow.progress",
 ] as const;
 

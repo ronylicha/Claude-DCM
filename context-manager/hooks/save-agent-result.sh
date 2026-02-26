@@ -63,20 +63,19 @@ result_summary="${last_task_result:0:500}"
 # Post as a message so other agents can pick it up
 msg_payload=$(jq -n \
     --arg from "$agent_type" \
-    --arg topic "agent.completed" \
     --arg summary "$result_summary" \
     --arg description "$agent_description" \
     '{
-        from_agent_id: $from,
-        to_agent_id: null,
-        message_type: "agent.completed",
-        topic: "agent.completed",
-        payload: {
+        from_agent: $from,
+        to_agent: null,
+        topic: "task.completed",
+        content: {
             agent_type: $from,
             description: $description,
             result_summary: $summary
         },
-        priority: 3
+        priority: 3,
+        ttl_seconds: 3600
     }')
 
 # Fire message post in background
