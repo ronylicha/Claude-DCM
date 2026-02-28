@@ -1,6 +1,7 @@
 -- Distributed Context Manager - Schema PostgreSQL
--- Version: 2.0.0
+-- Version: 3.1.0
 -- Created: 2026-01-30
+-- Updated: 2026-02-28
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -49,6 +50,24 @@ CREATE TABLE IF NOT EXISTS task_lists (
 );
 
 -- ============================================
+-- TABLE: orchestration_batches
+-- Batches d'orchestration par wave
+-- ============================================
+CREATE TABLE IF NOT EXISTS orchestration_batches (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id TEXT NOT NULL,
+    wave_number INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending',
+    total_tasks INTEGER DEFAULT 0,
+    completed_tasks INTEGER DEFAULT 0,
+    failed_tasks INTEGER DEFAULT 0,
+    synthesis JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+    CONSTRAINT chk_batch_wave_positive CHECK (wave_number >= 0)
+);
+
+-- ============================================
 -- TABLE: subtasks
 -- Sous-taches (objectifs dans une wave)
 -- ============================================
@@ -64,7 +83,11 @@ CREATE TABLE IF NOT EXISTS subtasks (
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     context_snapshot JSONB,  -- Snapshot du contexte au demarrage
-    result JSONB
+    result JSONB,
+    batch_id UUID REFERENCES orchestration_batches(id) ON DELETE SET NULL,
+    priority INTEGER DEFAULT 5,
+    retry_count INTEGER DEFAULT 0,
+    parent_agent_id TEXT
 );
 
 -- ============================================
@@ -138,7 +161,7 @@ CREATE TABLE IF NOT EXISTS agent_contexts (
 
 -- ============================================
 -- TABLE: sessions
--- Sessions (migration de SQLite)
+-- Sessions Claude Code
 -- ============================================
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -148,6 +171,74 @@ CREATE TABLE IF NOT EXISTS sessions (
     total_tools_used INTEGER DEFAULT 0,
     total_success INTEGER DEFAULT 0,
     total_errors INTEGER DEFAULT 0
+);
+
+-- ============================================
+-- TABLE: agent_registry
+-- Registre des types d'agents disponibles
+-- ============================================
+CREATE TABLE IF NOT EXISTS agent_registry (
+    agent_type TEXT PRIMARY KEY,
+    category TEXT NOT NULL,
+    display_name TEXT,
+    default_scope JSONB NOT NULL DEFAULT '{}',
+    allowed_tools TEXT[],
+    forbidden_actions TEXT[],
+    max_files INTEGER DEFAULT 5,
+    wave_assignments INTEGER[],
+    recommended_model TEXT DEFAULT 'sonnet',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- TABLE: agent_capacity
+-- Suivi de la capacite contexte des agents
+-- ============================================
+CREATE TABLE IF NOT EXISTS agent_capacity (
+    agent_id TEXT PRIMARY KEY,
+    session_id TEXT DEFAULT '',
+    max_capacity INTEGER DEFAULT 200000,
+    current_usage INTEGER DEFAULT 0,
+    consumption_rate REAL DEFAULT 0,
+    predicted_exhaustion_minutes REAL,
+    last_compact_at TIMESTAMPTZ,
+    compact_count INTEGER DEFAULT 0,
+    zone TEXT DEFAULT 'green',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- TABLE: token_consumption
+-- Consommation de tokens par agent
+-- ============================================
+CREATE TABLE IF NOT EXISTS token_consumption (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    consumed_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- TABLE: wave_states
+-- Etats des waves d'orchestration
+-- ============================================
+CREATE TABLE IF NOT EXISTS wave_states (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id TEXT NOT NULL,
+    wave_number INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending',
+    total_tasks INTEGER DEFAULT 0,
+    completed_tasks INTEGER DEFAULT 0,
+    failed_tasks INTEGER DEFAULT 0,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    UNIQUE(session_id, wave_number),
+    CONSTRAINT chk_wave_number_positive CHECK (wave_number >= 0)
 );
 
 -- ============================================
@@ -163,6 +254,9 @@ CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status);
 CREATE INDEX IF NOT EXISTS idx_subtasks_status ON subtasks(status);
 CREATE INDEX IF NOT EXISTS idx_subtasks_agent ON subtasks(agent_type, agent_id);
 CREATE INDEX IF NOT EXISTS idx_subtasks_task_list ON subtasks(task_list_id);
+CREATE INDEX IF NOT EXISTS idx_subtasks_batch ON subtasks(batch_id);
+CREATE INDEX IF NOT EXISTS idx_subtasks_parent ON subtasks(parent_agent_id);
+CREATE INDEX IF NOT EXISTS idx_subtasks_priority ON subtasks(priority DESC);
 
 -- Actions indexes
 CREATE INDEX IF NOT EXISTS idx_actions_tool ON actions(tool_name);
@@ -187,6 +281,26 @@ CREATE INDEX IF NOT EXISTS idx_contexts_agent_id ON agent_contexts(agent_id);
 -- Sessions indexes
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at DESC);
+
+-- Agent registry indexes
+CREATE INDEX IF NOT EXISTS idx_agent_registry_type ON agent_registry(agent_type);
+CREATE INDEX IF NOT EXISTS idx_registry_category ON agent_registry(category);
+
+-- Agent capacity indexes
+CREATE INDEX IF NOT EXISTS idx_agent_capacity_session ON agent_capacity(session_id);
+CREATE INDEX IF NOT EXISTS idx_agent_capacity_zone ON agent_capacity(zone);
+
+-- Token consumption indexes
+CREATE INDEX IF NOT EXISTS idx_token_consumption_agent ON token_consumption(agent_id);
+CREATE INDEX IF NOT EXISTS idx_token_consumption_session ON token_consumption(session_id);
+CREATE INDEX IF NOT EXISTS idx_token_agent ON token_consumption(agent_id, session_id, consumed_at DESC);
+
+-- Orchestration batches indexes
+CREATE INDEX IF NOT EXISTS idx_batches_session ON orchestration_batches(session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_batches_status ON orchestration_batches(status);
+
+-- Wave states indexes
+CREATE INDEX IF NOT EXISTS idx_waves_session ON wave_states(session_id, wave_number);
 
 -- ============================================
 -- JSONB GIN Indexes pour requetes complexes
@@ -263,6 +377,7 @@ LEFT JOIN projects p ON r.project_id = p.id;
 CREATE OR REPLACE VIEW v_active_agents AS
 SELECT
     s.id AS subtask_id,
+    s.priority,
     p.id AS project_id,
     p.name AS project_name,
     p.path AS project_path,
@@ -282,17 +397,27 @@ JOIN requests r ON tl.request_id = r.id
 LEFT JOIN projects p ON r.project_id = p.id
 LEFT JOIN actions a ON a.subtask_id = s.id
 WHERE s.status IN ('running', 'paused', 'blocked')
-GROUP BY s.id, p.id, p.name, p.path, s.agent_type, s.agent_id, s.parent_agent_id, s.status, s.description, s.started_at, s.created_at, r.session_id, r.id;
+GROUP BY s.id, s.priority, p.id, p.name, p.path, s.agent_type, s.agent_id, s.parent_agent_id, s.status, s.description, s.started_at, s.created_at, r.session_id, r.id;
 
 -- Vue des messages non lus
 CREATE OR REPLACE VIEW v_unread_messages AS
 SELECT
-    m.*,
+    m.id,
+    m.project_id,
+    m.from_agent_id,
+    m.to_agent_id,
+    m.message_type,
+    m.topic,
+    m.payload,
+    m.priority,
+    m.read_by,
+    m.created_at,
+    m.expires_at,
     p.name AS project_name
 FROM agent_messages m
 JOIN projects p ON m.project_id = p.id
 WHERE m.expires_at IS NULL OR m.expires_at > NOW()
-ORDER BY m.created_at DESC;
+ORDER BY m.priority DESC, m.created_at DESC;
 
 -- Vue des statistiques par projet
 CREATE OR REPLACE VIEW v_project_stats AS
@@ -325,6 +450,11 @@ COMMENT ON TABLE keyword_tool_scores IS 'Scores de routing intelligent par keywo
 COMMENT ON TABLE agent_messages IS 'Messages pub/sub inter-agents';
 COMMENT ON TABLE agent_contexts IS 'Contextes pour reprise apres compact';
 COMMENT ON TABLE sessions IS 'Sessions Claude Code avec statistiques';
+COMMENT ON TABLE agent_registry IS 'Registre des types d agents disponibles';
+COMMENT ON TABLE agent_capacity IS 'Suivi capacite contexte des agents';
+COMMENT ON TABLE token_consumption IS 'Consommation de tokens par agent';
+COMMENT ON TABLE wave_states IS 'Etats des waves d orchestration';
+COMMENT ON TABLE orchestration_batches IS 'Batches d orchestration par wave';
 
 -- Schema version
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -332,5 +462,5 @@ CREATE TABLE IF NOT EXISTS schema_version (
     applied_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-INSERT INTO schema_version (version) VALUES ('2.0.0')
+INSERT INTO schema_version (version) VALUES ('3.1.0')
 ON CONFLICT (version) DO NOTHING;

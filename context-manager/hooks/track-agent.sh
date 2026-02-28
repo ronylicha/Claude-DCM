@@ -27,7 +27,7 @@ session_id=$(echo "$RAW_INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 cwd=$(echo "$RAW_INPUT" | jq -r '.cwd // empty' 2>/dev/null)
 
 # Only process Task tool calls
-if [[ "$tool_name" != "Task" ]]; then
+if [[ "$tool_name" != "Agent" ]]; then
     exit 0
 fi
 

@@ -24,7 +24,7 @@ tool_input=$(echo "$RAW_INPUT" | jq -c '.tool_input // empty' 2>/dev/null)
 session_id=$(echo "$RAW_INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 cwd=$(echo "$RAW_INPUT" | jq -r '.cwd // empty' 2>/dev/null)
 
-[[ "$tool_name" != "Task" ]] && exit 0
+[[ "$tool_name" != "Agent" ]] && exit 0
 [[ -z "$session_id" || -z "$tool_input" ]] && exit 0
 
 agent_type=$(echo "$tool_input" | jq -r '.subagent_type // empty' 2>/dev/null || echo "")
