@@ -268,6 +268,7 @@ SELECT
     p.path AS project_path,
     s.agent_type,
     s.agent_id,
+    s.parent_agent_id,
     s.status,
     s.description,
     s.started_at,
@@ -281,7 +282,7 @@ JOIN requests r ON tl.request_id = r.id
 LEFT JOIN projects p ON r.project_id = p.id
 LEFT JOIN actions a ON a.subtask_id = s.id
 WHERE s.status IN ('running', 'paused', 'blocked')
-GROUP BY s.id, p.id, p.name, p.path, s.agent_type, s.agent_id, s.status, s.description, s.started_at, s.created_at, r.session_id, r.id;
+GROUP BY s.id, p.id, p.name, p.path, s.agent_type, s.agent_id, s.parent_agent_id, s.status, s.description, s.started_at, s.created_at, r.session_id, r.id;
 
 -- Vue des messages non lus
 CREATE OR REPLACE VIEW v_unread_messages AS

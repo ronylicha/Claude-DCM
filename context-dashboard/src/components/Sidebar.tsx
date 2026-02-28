@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import apiClient from "@/lib/api-client";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -59,6 +61,12 @@ const navigationGroups: NavGroup[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { data: health } = useQuery({
+    queryKey: ["health"],
+    queryFn: apiClient.getHealth,
+    refetchInterval: 60000,
+    staleTime: 30000,
+  });
 
   return (
     <aside className="fixed inset-y-0 left-0 z-50 w-64 border-r border-border bg-sidebar flex flex-col">
@@ -146,7 +154,7 @@ export function Sidebar() {
           <span className="font-mono">WebSocket connected</span>
         </div>
         <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground/50 font-mono">
-          <span>v3.0.0</span>
+          <span>v{health?.version ?? "..."}</span>
           <span className="ml-auto">API:3847</span>
         </div>
       </div>

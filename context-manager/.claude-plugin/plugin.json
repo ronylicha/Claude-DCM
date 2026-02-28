@@ -1,6 +1,6 @@
 {
   "name": "dcm",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "Distributed Context Manager - Inter-agent communication, context tracking, and lifecycle management for Claude Code",
   "author": {
     "name": "DCM Project"

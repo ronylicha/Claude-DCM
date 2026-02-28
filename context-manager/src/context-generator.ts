@@ -148,7 +148,7 @@ async function fetchAgentContextData(
 async function fetchAgentTasks(
   sql: ReturnType<typeof getDb>,
   agentId: string,
-  _sessionId: string, // Prefixed with _ to indicate unused
+  sessionId: string,
   sources: ContextSource[]
 ): Promise<SubtaskContext[]> {
   try {
@@ -165,7 +165,8 @@ async function fetchAgentTasks(
       wave_number: number | null;
     }
 
-    const tasks = await sql<TaskRow[]>`
+    // Primary: query by agent_id/agent_type
+    let tasks = await sql<TaskRow[]>`
       SELECT
         s.id,
         s.description,
@@ -192,6 +193,37 @@ async function fetchAgentTasks(
         s.created_at ASC
       LIMIT 20
     `;
+
+    // Fallback: if no results by agent_id, query by session_id
+    if (tasks.length === 0 && sessionId) {
+      tasks = await sql<TaskRow[]>`
+        SELECT
+          s.id,
+          s.description,
+          s.status,
+          s.agent_type,
+          s.agent_id,
+          s.created_at,
+          s.started_at,
+          s.blocked_by,
+          t.name as task_name,
+          t.wave_number
+        FROM subtasks s
+        JOIN task_lists t ON s.task_list_id = t.id
+        JOIN requests r ON t.request_id = r.id
+        WHERE r.session_id = ${sessionId}
+          AND s.status IN ('pending', 'running', 'blocked', 'paused')
+        ORDER BY
+          CASE s.status
+            WHEN 'running' THEN 1
+            WHEN 'blocked' THEN 2
+            WHEN 'paused' THEN 3
+            WHEN 'pending' THEN 4
+          END,
+          s.created_at ASC
+        LIMIT 20
+      `;
+    }
 
     for (const task of tasks) {
       sources.push({

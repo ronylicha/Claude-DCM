@@ -123,7 +123,13 @@ function ActiveAgentCard({
               #{index}
             </span>
           </div>
-          <p className="mt-3 text-sm text-muted-foreground line-clamp-2 leading-relaxed">
+          {agent.parent_agent_id && (
+            <div className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground bg-muted/50 rounded px-2 py-0.5 w-fit">
+              <Network className="h-3 w-3" />
+              <span>Subagent of <span className="font-mono">{agent.parent_agent_id.slice(0, 8)}</span></span>
+            </div>
+          )}
+          <p className="mt-2 text-sm text-muted-foreground line-clamp-2 leading-relaxed">
             {agent.description || "No description"}
           </p>
           <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
@@ -455,17 +461,21 @@ export default function AgentsPage() {
   });
 
   const agentStats = useMemo(() => {
-    if (!subtasksData?.subtasks) return { byType: {}, total: 0, statusCounts: {} };
-    const byType: Record<string, { count: number; statuses: Record<string, number> }> = {};
+    if (!subtasksData?.subtasks) return { byType: {}, total: 0, statusCounts: {}, mainAgents: 0, subAgents: 0 };
+    const byType: Record<string, { count: number; statuses: Record<string, number>; isSubagent: boolean }> = {};
     const statusCounts: Record<string, number> = {};
+    let mainAgents = 0;
+    let subAgents = 0;
     for (const subtask of subtasksData.subtasks) {
       const agentType = subtask.agent_type || "unassigned";
-      if (!byType[agentType]) byType[agentType] = { count: 0, statuses: {} };
+      const isSubagent = !!subtask.parent_agent_id;
+      if (!byType[agentType]) byType[agentType] = { count: 0, statuses: {}, isSubagent };
       byType[agentType].count++;
       byType[agentType].statuses[subtask.status] = (byType[agentType].statuses[subtask.status] || 0) + 1;
       statusCounts[subtask.status] = (statusCounts[subtask.status] || 0) + 1;
+      if (isSubagent) subAgents++; else mainAgents++;
     }
-    return { byType, total: subtasksData.subtasks.length, statusCounts };
+    return { byType, total: subtasksData.subtasks.length, statusCounts, mainAgents, subAgents };
   }, [subtasksData]);
 
   const chartData = useMemo(() => {
@@ -520,13 +530,20 @@ export default function AgentsPage() {
       }
     >
       {/* KPI Cards - Using shared PremiumKPICard component */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <PremiumKPICard
           title="Active Agents"
           value={activeAgentsCount}
           icon={<Activity className="h-4 w-4 text-white" />}
           iconGradient="bg-gradient-to-br from-green-500 to-emerald-500"
           loading={activeLoading}
+        />
+        <PremiumKPICard
+          title="Main / Sub"
+          value={`${agentStats.mainAgents} / ${agentStats.subAgents}`}
+          icon={<Network className="h-4 w-4 text-white" />}
+          iconGradient="bg-gradient-to-br from-cyan-500 to-teal-500"
+          loading={subtasksLoading}
         />
         <PremiumKPICard
           title="Agent Types"
@@ -552,43 +569,89 @@ export default function AgentsPage() {
         />
       </div>
 
-      {/* Active Agents Section */}
-      <div className="mt-6">
-        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-gradient-to-br from-green-500 to-emerald-500">
-            <Activity className="h-4 w-4 text-white" />
-          </div>
-          Currently Active
-          {activeAgentsCount > 0 && (
-            <Badge variant="default" className="bg-green-500 text-[10px]">
-              {activeAgentsCount} running
-            </Badge>
-          )}
-        </h3>
-        {activeLoading ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3].map((i) => <AgentCardSkeleton key={i} />)}
-          </div>
-        ) : activeSessions?.active_agents && activeSessions.active_agents.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {activeSessions.active_agents.map((agent, idx) => (
-              <ActiveAgentCard key={agent.subtask_id || idx} agent={agent} index={idx + 1} />
-            ))}
-          </div>
-        ) : (
-          <Card className="glass-card">
-            <CardContent className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-              <div className="h-16 w-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
-                <Users className="h-8 w-8 opacity-30" />
-              </div>
-              <p className="font-medium">No agents currently active</p>
-              <p className="text-xs mt-1 text-muted-foreground/70">
-                Agents appear here when tasks are running
-              </p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+      {/* Active Agents Section — Split into Main Agents and Subagents */}
+      {(() => {
+        const mainAgents = activeSessions?.active_agents?.filter(a => !a.parent_agent_id) ?? [];
+        const subAgents = activeSessions?.active_agents?.filter(a => !!a.parent_agent_id) ?? [];
+
+        return (
+          <>
+            {/* Main Agents */}
+            <div className="mt-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-gradient-to-br from-green-500 to-emerald-500">
+                  <Activity className="h-4 w-4 text-white" />
+                </div>
+                Main Agents
+                {mainAgents.length > 0 && (
+                  <Badge variant="default" className="bg-green-500 text-[10px]">
+                    {mainAgents.length} running
+                  </Badge>
+                )}
+              </h3>
+              {activeLoading ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {[1, 2, 3].map((i) => <AgentCardSkeleton key={i} />)}
+                </div>
+              ) : mainAgents.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {mainAgents.map((agent, idx) => (
+                    <ActiveAgentCard key={agent.subtask_id || idx} agent={agent} index={idx + 1} />
+                  ))}
+                </div>
+              ) : (
+                <Card className="glass-card">
+                  <CardContent className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                    <div className="h-16 w-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
+                      <Users className="h-8 w-8 opacity-30" />
+                    </div>
+                    <p className="font-medium">No main agents currently active</p>
+                    <p className="text-xs mt-1 text-muted-foreground/70">
+                      Main agents appear here when top-level tasks are running
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
+            {/* Subagents */}
+            <div className="mt-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-gradient-to-br from-cyan-500 to-teal-500">
+                  <Network className="h-4 w-4 text-white" />
+                </div>
+                Subagents
+                {subAgents.length > 0 && (
+                  <Badge variant="default" className="bg-cyan-500 text-[10px]">
+                    {subAgents.length} running
+                  </Badge>
+                )}
+              </h3>
+              {activeLoading ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {[1, 2].map((i) => <AgentCardSkeleton key={i} />)}
+                </div>
+              ) : subAgents.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {subAgents.map((agent, idx) => (
+                    <ActiveAgentCard key={agent.subtask_id || idx} agent={agent} index={idx + 1} />
+                  ))}
+                </div>
+              ) : (
+                <Card className="glass-card">
+                  <CardContent className="flex flex-col items-center justify-center py-6 text-muted-foreground">
+                    <Network className="h-10 w-10 mb-3 opacity-20" />
+                    <p className="text-sm">No subagents currently active</p>
+                    <p className="text-[10px] mt-1 text-muted-foreground/70">
+                      Subagents are spawned by main agents for delegated tasks
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </>
+        );
+      })()}
 
       {/* Charts + Agent Grid + Safety Gate */}
       <div className="mt-6 grid gap-4 lg:grid-cols-2">

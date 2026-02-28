@@ -18,6 +18,7 @@ export interface SubtaskInput {
   description: string;
   agent_type?: string;
   agent_id?: string;
+  parent_agent_id?: string; // If set, this is a subagent spawned by parent
   status?: string; // pending, running, paused, blocked, completed, failed
   blocked_by?: string[]; // UUIDs of blocking subtasks
   context_snapshot?: Record<string, unknown>;
@@ -29,6 +30,7 @@ interface SubtaskRow {
   task_list_id: string;
   agent_type: string | null;
   agent_id: string | null;
+  parent_agent_id: string | null;
   description: string;
   status: string;
   blocked_by: string[] | null;
@@ -59,6 +61,7 @@ const SubtaskInputSchema = z.object({
   description: z.string().min(1, "description is required"),
   agent_type: z.string().optional(),
   agent_id: z.string().optional(),
+  parent_agent_id: z.string().optional(),
   status: z.enum(VALID_SUBTASK_STATUSES).optional(),
   blocked_by: z.array(z.string().uuid()).optional(),
   context_snapshot: z.record(z.string(), z.unknown()).optional(),
@@ -115,6 +118,7 @@ export async function postSubtask(c: Context): Promise<Response> {
         task_list_id,
         agent_type,
         agent_id,
+        parent_agent_id,
         description,
         status,
         started_at,
@@ -124,17 +128,19 @@ export async function postSubtask(c: Context): Promise<Response> {
         ${body.task_id},
         ${body.agent_type ?? null},
         ${body.agent_id ?? null},
+        ${body.parent_agent_id ?? null},
         ${body.description},
         ${body.status ?? "pending"},
         ${body.status === "running" ? sql`NOW()` : null},
         ${body.blocked_by ?? []},
-        ${body.context_snapshot ? sql.json(body.context_snapshot) : null}
+        ${body.context_snapshot ? sql.json(body.context_snapshot as any) : null}
       )
       RETURNING
         id,
         task_list_id,
         agent_type,
         agent_id,
+        parent_agent_id,
         description,
         status,
         blocked_by,
@@ -190,6 +196,7 @@ export async function postSubtask(c: Context): Promise<Response> {
         task_list_id: subtask.task_list_id,
         agent_type: subtask.agent_type,
         agent_id: subtask.agent_id,
+        parent_agent_id: subtask.parent_agent_id,
         description: subtask.description,
         status: subtask.status,
         blocked_by: subtask.blocked_by,
@@ -220,6 +227,7 @@ export async function postSubtask(c: Context): Promise<Response> {
  *   - task_id: filter by task (task_list_id)
  *   - status: filter by status
  *   - agent_type: filter by agent type
+ *   - is_subagent: true/false - filter by parent_agent_id presence
  * @param c - Hono context
  */
 export async function getSubtasks(c: Context): Promise<Response> {
@@ -230,79 +238,31 @@ export async function getSubtasks(c: Context): Promise<Response> {
     const taskId = c.req.query("task_id");
     const status = c.req.query("status");
     const agentType = c.req.query("agent_type");
+    const isSubagent = c.req.query("is_subagent");
 
-    let subtasks: SubtaskRow[];
+    // Build dynamic WHERE conditions
+    const conditions = [];
+    if (taskId) conditions.push(sql`task_list_id = ${taskId}`);
+    if (status) conditions.push(sql`status = ${status}`);
+    if (agentType) conditions.push(sql`agent_type = ${agentType}`);
+    if (isSubagent === "true") conditions.push(sql`parent_agent_id IS NOT NULL`);
+    if (isSubagent === "false") conditions.push(sql`parent_agent_id IS NULL`);
 
-    if (taskId && status && agentType) {
-      subtasks = await sql<SubtaskRow[]>`
-        SELECT
-          id, task_list_id, agent_type, agent_id, description, status,
-          blocked_by, created_at, started_at, completed_at, context_snapshot, result
-        FROM subtasks
-        WHERE task_list_id = ${taskId} AND status = ${status} AND agent_type = ${agentType}
-        ORDER BY created_at ASC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    } else if (taskId && status) {
-      subtasks = await sql<SubtaskRow[]>`
-        SELECT
-          id, task_list_id, agent_type, agent_id, description, status,
-          blocked_by, created_at, started_at, completed_at, context_snapshot, result
-        FROM subtasks
-        WHERE task_list_id = ${taskId} AND status = ${status}
-        ORDER BY created_at ASC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    } else if (taskId && agentType) {
-      subtasks = await sql<SubtaskRow[]>`
-        SELECT
-          id, task_list_id, agent_type, agent_id, description, status,
-          blocked_by, created_at, started_at, completed_at, context_snapshot, result
-        FROM subtasks
-        WHERE task_list_id = ${taskId} AND agent_type = ${agentType}
-        ORDER BY created_at ASC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    } else if (taskId) {
-      subtasks = await sql<SubtaskRow[]>`
-        SELECT
-          id, task_list_id, agent_type, agent_id, description, status,
-          blocked_by, created_at, started_at, completed_at, context_snapshot, result
-        FROM subtasks
-        WHERE task_list_id = ${taskId}
-        ORDER BY created_at ASC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    } else if (status) {
-      subtasks = await sql<SubtaskRow[]>`
-        SELECT
-          id, task_list_id, agent_type, agent_id, description, status,
-          blocked_by, created_at, started_at, completed_at, context_snapshot, result
-        FROM subtasks
-        WHERE status = ${status}
-        ORDER BY created_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    } else if (agentType) {
-      subtasks = await sql<SubtaskRow[]>`
-        SELECT
-          id, task_list_id, agent_type, agent_id, description, status,
-          blocked_by, created_at, started_at, completed_at, context_snapshot, result
-        FROM subtasks
-        WHERE agent_type = ${agentType}
-        ORDER BY created_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    } else {
-      subtasks = await sql<SubtaskRow[]>`
-        SELECT
-          id, task_list_id, agent_type, agent_id, description, status,
-          blocked_by, created_at, started_at, completed_at, context_snapshot, result
-        FROM subtasks
-        ORDER BY created_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    }
+    const where = conditions.length > 0
+      ? sql`WHERE ${conditions.reduce((a, b) => sql`${a} AND ${b}`)}`
+      : sql``;
+
+    const orderDir = taskId ? sql`ASC` : sql`DESC`;
+
+    const subtasks = await sql<SubtaskRow[]>`
+      SELECT
+        id, task_list_id, agent_type, agent_id, parent_agent_id, description, status,
+        blocked_by, created_at, started_at, completed_at, context_snapshot, result
+      FROM subtasks
+      ${where}
+      ORDER BY created_at ${orderDir}
+      LIMIT ${limit} OFFSET ${offset}
+    `;
 
     return c.json({
       subtasks: subtasks.map((s) => ({
@@ -342,7 +302,7 @@ export async function getSubtaskById(c: Context): Promise<Response> {
     // Get subtask
     const subtaskResults = await sql<SubtaskRow[]>`
       SELECT
-        id, task_list_id, agent_type, agent_id, description, status,
+        id, task_list_id, agent_type, agent_id, parent_agent_id, description, status,
         blocked_by, created_at, started_at, completed_at, context_snapshot, result
       FROM subtasks
       WHERE id = ${subtaskId}
@@ -400,8 +360,9 @@ export async function patchSubtask(c: Context): Promise<Response> {
       status: z.enum(VALID_SUBTASK_STATUSES).optional(),
       result: z.record(z.string(), z.unknown()).optional(),
       agent_id: z.string().optional(),
+      parent_agent_id: z.string().optional(),
       blocked_by: z.array(z.string().uuid()).optional(),
-    }).refine((data) => data.status || data.result || data.agent_id || data.blocked_by, {
+    }).refine((data) => data.status || data.result || data.agent_id || data.parent_agent_id || data.blocked_by, {
       message: "No update fields provided",
     });
 
@@ -431,7 +392,7 @@ export async function patchSubtask(c: Context): Promise<Response> {
           agent_id = COALESCE(${body.agent_id ?? null}, agent_id),
           started_at = COALESCE(started_at, NOW())
         WHERE id = ${subtaskId}
-        RETURNING id, task_list_id, agent_type, agent_id, description, status,
+        RETURNING id, task_list_id, agent_type, agent_id, parent_agent_id, description, status,
           blocked_by, created_at, started_at, completed_at, context_snapshot, result
       `;
     } else if (body.status === "completed" || body.status === "failed") {
@@ -439,10 +400,10 @@ export async function patchSubtask(c: Context): Promise<Response> {
         UPDATE subtasks
         SET
           status = ${body.status},
-          result = ${body.result ? sql.json(body.result) : null},
+          result = ${body.result ? sql.json(body.result as any) : null},
           completed_at = NOW()
         WHERE id = ${subtaskId}
-        RETURNING id, task_list_id, agent_type, agent_id, description, status,
+        RETURNING id, task_list_id, agent_type, agent_id, parent_agent_id, description, status,
           blocked_by, created_at, started_at, completed_at, context_snapshot, result
       `;
     } else if (body.status === "blocked" && body.blocked_by) {
@@ -452,7 +413,7 @@ export async function patchSubtask(c: Context): Promise<Response> {
           status = ${body.status},
           blocked_by = ${body.blocked_by}
         WHERE id = ${subtaskId}
-        RETURNING id, task_list_id, agent_type, agent_id, description, status,
+        RETURNING id, task_list_id, agent_type, agent_id, parent_agent_id, description, status,
           blocked_by, created_at, started_at, completed_at, context_snapshot, result
       `;
     } else if (body.status) {
@@ -462,16 +423,16 @@ export async function patchSubtask(c: Context): Promise<Response> {
           status = ${body.status},
           blocked_by = COALESCE(${body.blocked_by ?? null}, blocked_by)
         WHERE id = ${subtaskId}
-        RETURNING id, task_list_id, agent_type, agent_id, description, status,
+        RETURNING id, task_list_id, agent_type, agent_id, parent_agent_id, description, status,
           blocked_by, created_at, started_at, completed_at, context_snapshot, result
       `;
     } else if (body.result) {
       results = await sql<SubtaskRow[]>`
         UPDATE subtasks
         SET
-          result = ${sql.json(body.result)}
+          result = ${sql.json(body.result as any)}
         WHERE id = ${subtaskId}
-        RETURNING id, task_list_id, agent_type, agent_id, description, status,
+        RETURNING id, task_list_id, agent_type, agent_id, parent_agent_id, description, status,
           blocked_by, created_at, started_at, completed_at, context_snapshot, result
       `;
     } else {
@@ -481,7 +442,7 @@ export async function patchSubtask(c: Context): Promise<Response> {
           agent_id = COALESCE(${body.agent_id ?? null}, agent_id),
           blocked_by = COALESCE(${body.blocked_by ?? null}, blocked_by)
         WHERE id = ${subtaskId}
-        RETURNING id, task_list_id, agent_type, agent_id, description, status,
+        RETURNING id, task_list_id, agent_type, agent_id, parent_agent_id, description, status,
           blocked_by, created_at, started_at, completed_at, context_snapshot, result
       `;
     }
@@ -850,7 +811,7 @@ export async function deleteSubtask(c: Context): Promise<Response> {
       return c.json({ error: "Subtask not found" }, 404);
     }
 
-    const deleted = results[0];
+    const deleted = results[0]!;
 
     // Publish real-time event
     await publishEvent("global", "subtask.deleted", {
@@ -910,7 +871,7 @@ export async function closeSessionSubtasks(c: Context): Promise<Response> {
 
     // Also clean up agent_contexts for these agents
     if (result.length > 0) {
-      const agentTypes = [...new Set(result.map((r: { agent_type: string | null }) => r.agent_type).filter(Boolean))];
+      const agentTypes = [...new Set(result.map((r: Record<string, unknown>) => r["agent_type"] as string | null).filter(Boolean))];
       for (const agentType of agentTypes) {
         await sql`
           DELETE FROM agent_contexts

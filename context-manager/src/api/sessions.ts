@@ -90,13 +90,15 @@ export async function postSession(c: Context) {
       RETURNING *
     `;
 
+    const created = result[0]!;
+
     // Publish real-time event via PostgreSQL NOTIFY
     await publishEvent("global", "session.created", {
-      id: result[0].id,
+      id: created.id,
       session_id: body.id,
     });
 
-    return c.json(result[0], 201);
+    return c.json(created, 201);
   } catch (error) {
     log.error("POST /api/sessions error:", error);
     return c.json(
@@ -127,7 +129,7 @@ export async function getSessions(c: Context) {
       if (activeOnly) {
         sessions = await sql<SessionRow[]>`
           SELECT * FROM sessions
-          WHERE project_id = ${projectId} AND ended_at IS NULL
+          WHERE project_id = ${projectId} AND (ended_at IS NULL OR ended_at > NOW() - INTERVAL '30 minutes')
           ORDER BY started_at DESC
           LIMIT ${limit} OFFSET ${offset}
         `;
@@ -143,7 +145,7 @@ export async function getSessions(c: Context) {
       if (activeOnly) {
         sessions = await sql<SessionRow[]>`
           SELECT * FROM sessions
-          WHERE ended_at IS NULL
+          WHERE (ended_at IS NULL OR ended_at > NOW() - INTERVAL '30 minutes')
           ORDER BY started_at DESC
           LIMIT ${limit} OFFSET ${offset}
         `;
@@ -264,10 +266,10 @@ export async function patchSession(c: Context) {
       return c.json({ error: "No fields to update" }, 400);
     }
 
-    // Simple update - just update all fields that were provided
+    // Update fields — ended_at=null explicitly sets it to NULL (reactivation)
     const result = await sql<SessionRow[]>`
       UPDATE sessions SET
-        ended_at = COALESCE(${body.ended_at ? new Date(body.ended_at) : null}, ended_at),
+        ended_at = ${body.ended_at === null ? null : body.ended_at !== undefined ? new Date(body.ended_at) : sql`ended_at`},
         total_tools_used = COALESCE(${body.total_tools_used ?? null}, total_tools_used),
         total_success = COALESCE(${body.total_success ?? null}, total_success),
         total_errors = COALESCE(${body.total_errors ?? null}, total_errors)
@@ -303,7 +305,7 @@ export async function getSessionsStats(c: Context) {
     const stats = await sql`
       SELECT
         COUNT(*) as total_sessions,
-        COUNT(CASE WHEN ended_at IS NULL THEN 1 END) as active_sessions,
+        COUNT(CASE WHEN ended_at IS NULL OR ended_at > NOW() - INTERVAL '30 minutes' THEN 1 END) as active_sessions,
         SUM(total_tools_used) as total_tools,
         SUM(total_success) as total_success,
         SUM(total_errors) as total_errors,

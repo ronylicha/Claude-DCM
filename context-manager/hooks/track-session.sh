@@ -50,6 +50,36 @@ if [[ -f "$cache_file" ]]; then
     exit 0
 fi
 
+# Reactivate session if it exists with ended_at set (e.g., after DCM restart)
+reactivate_response=$(curl -s -X PATCH "${API_URL}/api/sessions/${session_id}" \
+    -H "Content-Type: application/json" \
+    -d '{"ended_at": null}' \
+    --connect-timeout 1 \
+    --max-time 2 2>/dev/null || echo "")
+if [[ -n "$reactivate_response" ]] && echo "$reactivate_response" | jq -e '.id' >/dev/null 2>&1; then
+    # Session was reactivated — reload cache from existing data
+    existing_req=$(curl -s "${API_URL}/api/requests?session_id=${session_id}&limit=1" \
+        --connect-timeout 1 --max-time 2 2>/dev/null || echo "{}")
+    req_id=$(echo "$existing_req" | jq -r '.requests[0].id // empty' 2>/dev/null)
+    existing_task=$(curl -s "${API_URL}/api/tasks?request_id=${req_id}&limit=1" \
+        --connect-timeout 1 --max-time 2 2>/dev/null || echo "{}")
+    task_id_val=$(echo "$existing_task" | jq -r '.tasks[0].id // empty' 2>/dev/null)
+    proj_id=$(echo "$reactivate_response" | jq -r '.project_id // empty' 2>/dev/null)
+
+    if [[ -n "$task_id_val" ]]; then
+        jq -n \
+            --arg session_id "$session_id" \
+            --arg project_id "$proj_id" \
+            --arg request_id "${req_id:-}" \
+            --arg task_id "$task_id_val" \
+            --arg created_at "$(date -Iseconds)" \
+            '{session_id: $session_id, project_id: $project_id, request_id: $request_id, task_id: $task_id, created_at: $created_at}' \
+            > "$cache_file" 2>/dev/null || true
+        chmod 600 "$cache_file" 2>/dev/null || true
+        exit 0
+    fi
+fi
+
 # Check circuit breaker
 if ! dcm_api_available; then
     exit 0

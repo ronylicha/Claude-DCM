@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # post-compact-restore.sh - SessionStart(compact) hook: restore context from DCM
-# v3.1: Fixed string concat with printf, API error handling, agent type extraction, real newlines
+# v3.2: Fixed agent_id to session-scoped, compact_summary forwarding, dynamic agent_type
 #
 # Claude Code Hook: SessionStart (matcher: compact)
 #
@@ -39,10 +39,14 @@ fi
 # Extract agent type from stdin JSON (not hardcoded default)
 agent_type=$(echo "$RAW_INPUT" | jq -r '.agent_type // empty' 2>/dev/null)
 if [[ -z "$agent_type" ]]; then
-    # Fallback to env or orchestrator
     agent_type="${AGENT_TYPE:-orchestrator}"
 fi
-agent_id="${AGENT_ID:-orchestrator}"
+
+# Use session-scoped agent_id (matches pre-compact-save.sh)
+agent_id="session-${session_id}"
+
+# Extract compact_summary from stdin JSON if available
+compact_summary=$(echo "$RAW_INPUT" | jq -r '.compact_summary // empty' 2>/dev/null)
 
 # v3.0: Try to fetch enriched context with scope injection
 scope_brief=""
@@ -62,33 +66,34 @@ if [[ "$agent_type" != "orchestrator" ]]; then
     fi
 fi
 
-# 1. Try to restore from DCM compact/restore endpoint (generates a full brief)
+# 1. Try to restore from DCM compact/restore endpoint (snapshot-first strategy)
+restore_payload=$(jq -n \
+    --arg session_id "$session_id" \
+    --arg agent_id "$agent_id" \
+    --arg agent_type "$agent_type" \
+    --arg compact_summary "$compact_summary" \
+    '{
+        session_id: $session_id,
+        agent_id: $agent_id,
+        agent_type: $agent_type,
+        max_tokens: 3000
+    }
+    | if $compact_summary != "" then . + {compact_summary: $compact_summary} else . end')
+
 restore_response=$(curl -s -X POST "${API_URL}/api/compact/restore" \
     -H "Content-Type: application/json" \
-    -d "$(jq -n \
-        --arg session_id "$session_id" \
-        --arg agent_id "$agent_id" \
-        --arg agent_type "$agent_type" \
-        '{
-            session_id: $session_id,
-            agent_id: $agent_id,
-            agent_type: $agent_type,
-            max_tokens: 3000
-        }')" \
+    -d "$restore_payload" \
     --connect-timeout 2 \
     --max-time 5 2>/dev/null || echo "")
 
 brief=""
-http_status=""
 
 # Verify HTTP status and parse response
 if [[ -n "$restore_response" ]]; then
-    # Check if response is valid JSON
     if echo "$restore_response" | jq empty 2>/dev/null; then
         brief=$(echo "$restore_response" | jq -r '.brief // empty' 2>/dev/null)
         dcm_api_success
     else
-        # Invalid JSON, log error
         dcm_api_failed
         brief=""
     fi
@@ -108,7 +113,6 @@ if [[ -z "$brief" ]]; then
             snapshot=$(echo "$snapshot_response" | jq -r '.snapshot // empty' 2>/dev/null)
             summary=$(echo "$snapshot_response" | jq -r '.summary // empty' 2>/dev/null)
 
-            # Build a minimal brief from the snapshot using printf for real newlines
             brief=$(printf "## Context Restored After Compact\n\n")
             [[ -n "$summary" ]] && brief+=$(printf "**Summary:** %s\n\n" "$summary")
 
@@ -135,6 +139,12 @@ if [[ -z "$brief" ]]; then
             if [[ -n "$decisions" ]]; then
                 brief+=$(printf "### Key Decisions\n%s\n\n" "$decisions")
             fi
+
+            # Wave state
+            wave_info=$(echo "$snapshot" | jq -r '.wave_state.current // {} | if .wave_number then "Wave \(.wave_number): \(.status // "unknown") (\(.completed_tasks // 0)/\(.total_tasks // 0) tasks)" else empty end' 2>/dev/null)
+            if [[ -n "$wave_info" ]]; then
+                brief+=$(printf "### Wave State\n%s\n\n" "$wave_info")
+            fi
         fi
         dcm_api_success
     fi
@@ -158,7 +168,6 @@ fi
 [[ -z "$final_brief" ]] && exit 0
 
 # 4. Output JSON with additionalContext for Claude Code to inject
-# Use jq to properly encode the string (handles newlines correctly)
 jq -n \
     --arg context "$final_brief" \
     '{

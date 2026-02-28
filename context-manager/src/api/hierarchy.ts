@@ -48,6 +48,7 @@ export interface SubtaskRow {
   task_list_id: string;
   agent_type: string | null;
   agent_id: string | null;
+  parent_agent_id: string | null;
   description: string;
   status: string;
   blocked_by: string[] | null;
@@ -99,6 +100,7 @@ export async function getHierarchy(c: Context): Promise<Response> {
         st.task_list_id,
         st.agent_type,
         st.agent_id,
+        st.parent_agent_id,
         st.description AS subtask_description,
         st.status AS subtask_status,
         st.blocked_by,
@@ -119,7 +121,7 @@ export async function getHierarchy(c: Context): Promise<Response> {
     }
 
     // Build the project from the first row
-    const firstRow = rows[0];
+    const firstRow = rows[0]!;
     const project: ProjectRow = {
       id: firstRow['project_id'] as string,
       path: firstRow['project_path'] as string,
@@ -187,6 +189,7 @@ export async function getHierarchy(c: Context): Promise<Response> {
         task_id: taskId,
         agent_type: row['agent_type'] as string | null,
         agent_id: row['agent_id'] as string | null,
+        parent_agent_id: row['parent_agent_id'] as string | null,
         description: row['subtask_description'] as string,
         status: row['subtask_status'] as string,
         blocked_by: row['blocked_by'] as string[] | null,

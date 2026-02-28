@@ -32,6 +32,9 @@ description=$(echo "$tool_input" | jq -r '.description // empty' 2>/dev/null || 
 
 [[ -z "$agent_type" ]] && exit 0
 
+# Detect parent agent: CLAUDE_AGENT_ID is set when running inside a subagent
+parent_agent_id="${CLAUDE_AGENT_ID:-}"
+
 # Check circuit breaker
 if ! dcm_api_available; then
     exit 0
@@ -108,15 +111,20 @@ fi
 
 [[ ${#description} -gt 500 ]] && description="${description:0:497}..."
 
+# Build subtask payload (with optional parent_agent_id for subagent detection)
+subtask_payload=$(jq -n \
+    --arg task_id "$task_id" \
+    --arg agent_type "$agent_type" \
+    --arg agent_id "$agent_id" \
+    --arg description "$description" \
+    --arg parent_agent_id "$parent_agent_id" \
+    '{task_id: $task_id, agent_type: $agent_type, agent_id: $agent_id, description: $description, status: "running"}
+    | if $parent_agent_id != "" then . + {parent_agent_id: $parent_agent_id} else . end')
+
 # Create subtask as RUNNING (centralized in DB)
 result=$(curl -s -X POST "${API_URL}/api/subtasks" \
     -H "Content-Type: application/json" \
-    -d "$(jq -n \
-        --arg task_id "$task_id" \
-        --arg agent_type "$agent_type" \
-        --arg agent_id "$agent_id" \
-        --arg description "$description" \
-        '{task_id: $task_id, agent_type: $agent_type, agent_id: $agent_id, description: $description, status: "running"}')" \
+    -d "$subtask_payload" \
     --connect-timeout 1 --max-time 2 2>/dev/null || echo "{}")
 
 subtask_id=$(echo "$result" | jq -r '.subtask.id // .id // empty' 2>/dev/null || echo "")

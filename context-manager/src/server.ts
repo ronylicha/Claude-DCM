@@ -9,7 +9,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { config, validateConfig } from "./config";
 import { createLogger } from "./lib/logger";
-import { getDb, closeDb, testConnection, healthCheck, getDbStats } from "./db/client";
+import { closeDb, testConnection, healthCheck, getDbStats } from "./db/client";
 import { postAction, getActions, getActionsHourly, deleteAction, deleteActionsBySession } from "./api/actions";
 import { suggestRouting, getRoutingStats, postRoutingFeedback } from "./api/routing";
 import { postProject, getProjects, getProjectById, getProjectByPath, deleteProject } from "./api/projects";
@@ -34,7 +34,6 @@ import {
 } from "./api/blocking";
 import {
   startCleanupInterval,
-  stopCleanupInterval,
   getLastCleanupStats,
   getMessageStats,
 } from "./cleanup";
@@ -60,6 +59,9 @@ import { getCatalog } from "./api/catalog";
 import { postBatchSubmit, getBatch, getSynthesis, getConflicts, postBatchComplete } from "./api/orchestration";
 import { postCraftPrompt, postDecompose } from "./api/orchestration-planner";
 import { getWaveCurrent, getWaveHistoryHandler, postWaveTransition, postWaveCreate, postWaveStart } from "./api/waves";
+
+// Version from package.json (single source of truth)
+import pkg from "../package.json";
 
 // Initialize logger after imports
 const log = createLogger("Server");
@@ -121,7 +123,7 @@ app.get("/health", async (c) => {
   return c.json({
     status,
     timestamp: new Date().toISOString(),
-    version: "3.1.0",
+    version: pkg.version,
     database: dbHealth,
     features: {
       phase1: "active",

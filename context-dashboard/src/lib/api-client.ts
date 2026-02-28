@@ -79,6 +79,7 @@ export interface Subtask {
   task_list_id: string;
   agent_type: string | null;
   agent_id: string | null;
+  parent_agent_id?: string | null;
   description: string;
   status: "pending" | "running" | "paused" | "blocked" | "completed" | "failed";
   blocked_by: string[] | null;
@@ -223,6 +224,7 @@ export interface ActiveAgent {
   subtask_id: string;
   agent_type: string;
   agent_id: string;
+  parent_agent_id?: string | null;
   description: string;
   started_at: string | null;
   created_at: string;
