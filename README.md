@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <strong>Persistent memory, compact recovery, multi-agent orchestration, and safety enforcement for Claude Code sessions.</strong>
+  <strong>Persistent memory, compact recovery, multi-agent orchestration, agent hierarchy, and safety enforcement for Claude Code sessions.</strong>
 </p>
 
 ---
@@ -74,9 +74,9 @@ DCM protects against context loss with four layers of defense, each catching wha
 | **1. Local Monitor** | `context-guardian.sh` | Every tool call | <10ms | Checks transcript file size locally. Green (<500KB), Yellow (500-750KB), Orange (750KB-1MB, alerts Claude), Red (>1MB, alerts + saves snapshot). |
 | **2. API Health Check** | `monitor-context.sh` | Every 5th call | 25-100ms | Queries the API for capacity metrics. Triggers a proactive snapshot if usage exceeds 80%. Cooldown prevents snapshot spam. |
 | **3. Stop Guard** | `context-stop-guard.sh` | On Stop event | <100ms | Blocks session termination if running tasks exist, preventing accidental context loss. |
-| **4. Compact Save/Restore** | `pre-compact-save.sh` + `post-compact-restore.sh` | Each compaction | 500ms-2s | Saves a comprehensive snapshot before compact. Restores a token-optimized context brief after compact via `additionalContext` injection. |
+| **4. Compact Save/Restore** | `pre-compact-save.sh` + `post-compact-restore.sh` | Each compaction | 500ms-2s | Saves a comprehensive snapshot before compact. Restores context using **snapshot-first** strategy via `additionalContext` injection. |
 
-### Compact Save/Restore Lifecycle
+### Compact Save/Restore Lifecycle (v3.1.0 — Snapshot-First)
 
 <p align="center">
   <img src="docs/images/compact-flow.png" alt="Compact Save/Restore Flow" width="700"/>
@@ -84,21 +84,31 @@ DCM protects against context loss with four layers of defense, each catching wha
 
 When Claude's context window fills up:
 
-1. **PreCompact** -- DCM collects active tasks, modified files, agent states, key decisions, and recent messages, then saves them as a compressed snapshot in PostgreSQL.
+1. **PreCompact** -- DCM collects active tasks (running + pending + blocked), modified files, agent states, **key decisions** (pattern-extracted from transcript), **wave state**, and a **3000-character summary** (last 15 assistant messages), then saves them as a snapshot in PostgreSQL.
 2. **Compaction** -- Claude compresses the conversation. Without DCM, everything before this point is gone.
-3. **SessionStart (compact)** -- DCM fetches the latest snapshot, generates a token-optimized context brief using role-specific templates, and injects it back into the session. Claude resumes with full awareness of prior work.
+3. **SessionStart (compact)** -- DCM uses a **snapshot-first** restore strategy:
+   - First, looks for the saved snapshot in the database
+   - If found, generates a structured Markdown brief directly from the snapshot data (tasks by status, decisions, wave progress, modified files, agent states)
+   - Enriches with any live subtasks created after the snapshot
+   - If no snapshot exists, falls back to `generateContextBrief()` with a **session-scoped fallback** (queries by session_id when agent_id returns no results)
+   - The brief is injected via `additionalContext`, so Claude resumes with full awareness of prior work.
 
-### Subagent Monitoring
+### Subagent Monitoring & Agent Hierarchy (v3.1.0)
 
-DCM tracks the full lifecycle of every subagent through centralized database tracking:
+DCM tracks the full lifecycle of every subagent through centralized database tracking, with **parent/child hierarchy**:
 
 | Event | Hook | Scope | What Is Tracked |
 |-------|------|-------|-----------------|
-| **Agent spawned** | `track-agent-start.sh` | PreToolUse (Task) | agent_id, type, description, session, task chain creation |
+| **Agent spawned** | `track-agent-start.sh` | PreToolUse (Task) | agent_id, type, description, session, task chain, **parent_agent_id** |
 | **Tool call (any)** | `track-action.sh` | PostToolUse (*) | tool_name, type, input, exit_code, token consumption |
 | **Agent completed** | `track-agent-end.sh` | PostToolUse (Task) | status update, cache cleanup |
 | **Agent result** | `save-agent-result.sh` | SubagentStop | result summary broadcast, batch completion check |
 | **Operation blocked** | `safety-gate.sh` | PreToolUse (Bash, Write) | blocked command, reason, session context |
+
+**Agent hierarchy**: When a subagent spawns another subagent, the `CLAUDE_AGENT_ID` environment variable is detected by `track-agent-start.sh` and stored as `parent_agent_id`. This enables:
+- Filtering by `?is_subagent=true|false` on the subtasks API
+- Dashboard split into **Main Agents** and **Subagents** sections with parent link indicators
+- Per-level success rate statistics
 
 All tracking data flows to PostgreSQL via the DCM API, providing a single centralized source of truth accessible from both the web dashboard and the CLI dashboard.
 
@@ -195,7 +205,7 @@ The monitoring dashboard runs at `http://localhost:3848` and provides live visib
 |------|---------------|
 | **Dashboard** | Health gauge, KPI cards (success rate, actions/hour, active agents), agent distribution, activity feed |
 | **Sessions** | Session browser with filters, tool counters, timeline view |
-| **Agents** | Active agents with animated gradient cards, agent topology grid, Safety Gate blocked operations, type statistics with success rates |
+| **Agents** | **Main Agents / Subagents** split sections, parent link indicators, animated gradient cards, agent topology grid, Safety Gate blocked operations, Main/Sub KPI, type statistics with success rates |
 | **Messages** | Inter-agent message history with expandable payloads |
 | **Waves** | Wave execution tracking, batch progress, agent capacity gauges |
 | **Flows** | Real-time data flow topology with animated connections |
@@ -636,6 +646,16 @@ cp .env.example .env
 | `NODE_ENV` | `development` | Environment (`production` enforces WS auth) |
 
 ---
+
+## Performance
+
+### Version Management (v3.1.0)
+
+`package.json` is the single source of truth for versioning. The API server reads it dynamically (`import pkg from "../package.json"`), the dashboard sidebar fetches it from `/health`, and `plugin.json` + `openapi.yaml` are kept in sync. No more hardcoded version strings.
+
+### Session Reactivation (v3.1.0)
+
+Sessions are considered "active" if `ended_at IS NULL` **or** `ended_at` is within the last 30 minutes. When DCM restarts and a session resumes, `track-session.sh` reactivates it by setting `ended_at = NULL`. This fixes the Flows/Live pages showing 0 active sessions after a DCM restart.
 
 ## Performance
 
