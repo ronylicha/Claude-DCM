@@ -121,7 +121,7 @@ app.get("/health", async (c) => {
   return c.json({
     status,
     timestamp: new Date().toISOString(),
-    version: "3.0.0",
+    version: "3.1.0",
     database: dbHealth,
     features: {
       phase1: "active",
