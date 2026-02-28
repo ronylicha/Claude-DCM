@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # track-agent-end.sh - PostToolUse hook: marks subtask as "completed"
-# v3.2: Fixed cache key lookup to match track-agent-start.sh (agent_type:description key)
+# v3.3: All tracking via DCM API (centralized DB), no local files
 #
 # Paired with track-agent-start.sh (PreToolUse) which creates it as "running"
 
 set -uo pipefail
 
-# Load circuit breaker library
+# Load libraries
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HOOK_DIR/lib/circuit-breaker.sh" 2>/dev/null || true
+source "$HOOK_DIR/lib/common.sh" 2>/dev/null || true
 
 API_URL="${CONTEXT_MANAGER_URL:-http://127.0.0.1:3847}"
 CACHE_DIR="/tmp/.claude-context"
@@ -41,7 +42,7 @@ cache_key="${agent_type}:${description}"
 subtask_id=$(jq -r --arg key "$cache_key" '.[$key] // empty' "$agents_file" 2>/dev/null || echo "")
 [[ -z "$subtask_id" ]] && exit 0
 
-# Mark subtask as completed
+# Mark subtask as completed in DB
 curl -s -X PATCH "${API_URL}/api/subtasks/${subtask_id}" \
     -H "Content-Type: application/json" \
     -d '{"status": "completed"}' \
@@ -51,7 +52,6 @@ curl -s -X PATCH "${API_URL}/api/subtasks/${subtask_id}" \
 agents_lock="${agents_file}.lock"
 (
     flock -x 200 || exit 1
-
     tmp_file="${agents_file}.tmp.$$"
     jq --arg key "$cache_key" 'del(.[$key])' "$agents_file" > "$tmp_file" 2>/dev/null && \
         mv "$tmp_file" "$agents_file" 2>/dev/null || rm -f "$tmp_file" 2>/dev/null

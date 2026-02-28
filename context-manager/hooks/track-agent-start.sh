@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # track-agent-start.sh - PreToolUse hook: creates subtask as "running"
-# v3.2: Fixed cache key to use agent_type:description (matching track-agent-end.sh lookup)
+# v3.3: All tracking via DCM API (centralized DB), no local files
 #
 # Paired with track-agent-end.sh (PostToolUse) which marks it "completed"
 
 set -uo pipefail
 
-# Load circuit breaker library
+# Load libraries
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HOOK_DIR/lib/circuit-breaker.sh" 2>/dev/null || true
+source "$HOOK_DIR/lib/common.sh" 2>/dev/null || true
+
+dcm_init_dirs
 
 API_URL="${CONTEXT_MANAGER_URL:-http://127.0.0.1:3847}"
 CACHE_DIR="/tmp/.claude-context"
@@ -83,7 +86,6 @@ if [[ -z "$task_id" ]]; then
     fi
 
     if [[ -n "$task_id" ]]; then
-        # Save task chain to cache
         existing=$(cat "$cache_file" 2>/dev/null || echo "{}")
         echo "$existing" | jq --arg task_id "$task_id" --arg request_id "${request_id:-}" \
             '. + {task_id: $task_id, request_id: $request_id}' > "$cache_file" 2>/dev/null || true
@@ -100,14 +102,13 @@ elif [[ -f /proc/sys/kernel/random/uuid ]]; then
     agent_id=$(cat /proc/sys/kernel/random/uuid 2>/dev/null)
 fi
 
-# Fallback to timestamp-based if UUID unavailable
 if [[ -z "$agent_id" ]]; then
     agent_id="agent-$(date +%s%N | cut -c1-13)-$(head -c 4 /dev/urandom | xxd -p 2>/dev/null || echo "xxxx")"
 fi
 
 [[ ${#description} -gt 500 ]] && description="${description:0:497}..."
 
-# Create subtask as RUNNING
+# Create subtask as RUNNING (centralized in DB)
 result=$(curl -s -X POST "${API_URL}/api/subtasks" \
     -H "Content-Type: application/json" \
     -d "$(jq -n \
@@ -126,10 +127,8 @@ if [[ -n "$subtask_id" ]]; then
     agents_lock="${agents_file}.lock"
     cache_key="${agent_type}:${description}"
 
-    # Atomic cache update with flock
     (
         flock -x 200 || exit 1
-
         existing=$(cat "$agents_file" 2>/dev/null || echo "{}")
         echo "$existing" | jq --arg key "$cache_key" --arg sid "$subtask_id" \
             '. + {($key): $sid}' > "${agents_file}.tmp.$$" 2>/dev/null && \
