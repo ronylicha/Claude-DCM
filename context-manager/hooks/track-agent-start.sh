@@ -29,6 +29,7 @@ cwd=$(echo "$RAW_INPUT" | jq -r '.cwd // empty' 2>/dev/null)
 
 agent_type=$(echo "$tool_input" | jq -r '.subagent_type // empty' 2>/dev/null || echo "")
 description=$(echo "$tool_input" | jq -r '.description // empty' 2>/dev/null || echo "")
+max_turns=$(echo "$tool_input" | jq -r '.max_turns // empty' 2>/dev/null || echo "")
 
 [[ -z "$agent_type" ]] && exit 0
 
@@ -118,8 +119,10 @@ subtask_payload=$(jq -n \
     --arg agent_id "$agent_id" \
     --arg description "$description" \
     --arg parent_agent_id "$parent_agent_id" \
+    --arg max_turns "$max_turns" \
     '{task_id: $task_id, agent_type: $agent_type, agent_id: $agent_id, description: $description, status: "running"}
-    | if $parent_agent_id != "" then . + {parent_agent_id: $parent_agent_id} else . end')
+    | if $parent_agent_id != "" then . + {parent_agent_id: $parent_agent_id} else . end
+    | if $max_turns != "" then . + {max_turns: ($max_turns | tonumber)} else . end')
 
 # Create subtask as RUNNING (centralized in DB)
 result=$(curl -s -X POST "${API_URL}/api/subtasks" \

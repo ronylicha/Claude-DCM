@@ -19,6 +19,7 @@ export interface SubtaskInput {
   agent_type?: string;
   agent_id?: string;
   parent_agent_id?: string; // If set, this is a subagent spawned by parent
+  max_turns?: number; // Max turns budget for this agent
   status?: string; // pending, running, paused, blocked, completed, failed
   blocked_by?: string[]; // UUIDs of blocking subtasks
   context_snapshot?: Record<string, unknown>;
@@ -62,6 +63,7 @@ const SubtaskInputSchema = z.object({
   agent_type: z.string().optional(),
   agent_id: z.string().optional(),
   parent_agent_id: z.string().optional(),
+  max_turns: z.number().int().positive().optional(),
   status: z.enum(VALID_SUBTASK_STATUSES).optional(),
   blocked_by: z.array(z.string().uuid()).optional(),
   context_snapshot: z.record(z.string(), z.unknown()).optional(),
@@ -123,7 +125,8 @@ export async function postSubtask(c: Context): Promise<Response> {
         status,
         started_at,
         blocked_by,
-        context_snapshot
+        context_snapshot,
+        max_turns
       ) VALUES (
         ${body.task_id},
         ${body.agent_type ?? null},
@@ -133,7 +136,8 @@ export async function postSubtask(c: Context): Promise<Response> {
         ${body.status ?? "pending"},
         ${body.status === "running" ? sql`NOW()` : null},
         ${body.blocked_by ?? []},
-        ${body.context_snapshot ? sql.json(body.context_snapshot as any) : null}
+        ${body.context_snapshot ? sql.json(body.context_snapshot as any) : null},
+        ${body.max_turns ?? null}
       )
       RETURNING
         id,
