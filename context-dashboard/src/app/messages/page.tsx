@@ -17,10 +17,8 @@ import {
   RefreshCw,
   Clock,
   CheckCircle,
-  XCircle,
   Activity,
   Users,
-  Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
@@ -48,8 +46,31 @@ const AGENT_TYPE_COLORS: Record<string, { badge: string; dot: string }> = {
 
 const DEFAULT_AGENT_COLOR = { badge: "bg-gray-500/15 text-gray-600 border-gray-500/30", dot: "bg-gray-500" };
 
+function hashStringToColor(str: string): { badge: string; dot: string } {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const colors = [
+    { badge: "bg-blue-500/15 text-blue-600 border-blue-500/30", dot: "bg-blue-500" },
+    { badge: "bg-red-500/15 text-red-600 border-red-500/30", dot: "bg-red-500" },
+    { badge: "bg-green-500/15 text-green-600 border-green-500/30", dot: "bg-green-500" },
+    { badge: "bg-purple-500/15 text-purple-600 border-purple-500/30", dot: "bg-purple-500" },
+    { badge: "bg-amber-500/15 text-amber-600 border-amber-500/30", dot: "bg-amber-500" },
+    { badge: "bg-cyan-500/15 text-cyan-600 border-cyan-500/30", dot: "bg-cyan-500" },
+    { badge: "bg-pink-500/15 text-pink-600 border-pink-500/30", dot: "bg-pink-500" },
+    { badge: "bg-indigo-500/15 text-indigo-600 border-indigo-500/30", dot: "bg-indigo-500" },
+    { badge: "bg-teal-500/15 text-teal-600 border-teal-500/30", dot: "bg-teal-500" },
+    { badge: "bg-orange-500/15 text-orange-600 border-orange-500/30", dot: "bg-orange-500" },
+    { badge: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30", dot: "bg-emerald-500" },
+    { badge: "bg-rose-500/15 text-rose-600 border-rose-500/30", dot: "bg-rose-500" },
+  ];
+  return colors[Math.abs(hash) % colors.length];
+}
+
 function getAgentTypeColor(agentType: string) {
-  return AGENT_TYPE_COLORS[agentType] || DEFAULT_AGENT_COLOR;
+  // First check known agent types, then fall back to deterministic hash color
+  return AGENT_TYPE_COLORS[agentType] || hashStringToColor(agentType);
 }
 
 // Status indicator configuration

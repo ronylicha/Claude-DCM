@@ -3,8 +3,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  LineChart,
-  Line,
   BarChart as RechartsBarChart,
   Bar,
   XAxis,
@@ -22,6 +20,7 @@ import apiClient, {
   type HealthResponse,
   type StatsResponse,
   type CleanupStats,
+  type ActionsResponse,
 } from "@/lib/api-client";
 import {
   Gauge,
@@ -226,12 +225,7 @@ function PerformanceMetricCard({
 // System Health Card
 // ============================================
 
-function SystemHealthCard() {
-  const { data: health, isLoading, error } = useQuery<HealthResponse, Error>({
-    queryKey: ["health"],
-    queryFn: apiClient.getHealth,
-    refetchInterval: 10000,
-  });
+function SystemHealthCard({ health, isLoading, error }: { health?: HealthResponse; isLoading: boolean; error: Error | null }) {
 
   if (isLoading) {
     return (
@@ -265,9 +259,6 @@ function SystemHealthCard() {
   }
 
   const isHealthy = health?.status === "healthy" && health?.database?.healthy;
-  const uptime = health?.timestamp
-    ? Math.floor((Date.now() - new Date(health.timestamp).getTime()) / 1000)
-    : 0;
 
   return (
     <Card className="glass-card">
@@ -302,19 +293,19 @@ function SystemHealthCard() {
               <Server className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium">API Status</span>
             </div>
-            <span className="text-sm text-green-500 font-semibold capitalize">
+            <span className={`text-sm font-semibold capitalize ${isHealthy ? "text-green-500" : "text-red-500"}`}>
               {health?.status}
             </span>
           </div>
 
-          {/* Uptime */}
+          {/* Database Latency */}
           <div className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-card/50">
             <div className="flex items-center gap-2">
               <Clock className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Uptime</span>
+              <span className="text-sm font-medium">DB Latency</span>
             </div>
-            <span className="text-sm text-muted-foreground font-semibold">
-              {formatUptime(uptime)}
+            <span className={`text-sm font-semibold ${getLatencyColor(health?.database?.latencyMs ?? 0)}`}>
+              {health?.database?.latencyMs ?? 0}ms — {getLatencyStatus(health?.database?.latencyMs ?? 0)}
             </span>
           </div>
 
@@ -370,26 +361,34 @@ function SystemHealthCard() {
 }
 
 // ============================================
-// API Latency Chart
+// Recent Actions Duration Chart (real data)
 // ============================================
 
-function APILatencyChart() {
-  const { data: health } = useQuery<HealthResponse, Error>({
-    queryKey: ["health-latency"],
-    queryFn: apiClient.getHealth,
-    refetchInterval: 5000,
+function RecentActionsDurationChart() {
+  const { data: actionsData, isLoading } = useQuery<ActionsResponse, Error>({
+    queryKey: ["actions-duration"],
+    queryFn: () => apiClient.getActions(20),
+    refetchInterval: 30000,
   });
 
-  // Simulated latency data - in a real scenario, you'd track this over time
-  const latencyData = useMemo(() => {
-    const dbLatency = health?.database?.latencyMs ?? 0;
-    // Generate mock data based on current latency
-    return Array.from({ length: 20 }, (_, i) => ({
-      time: `${20 - i}s`,
-      "DB Query": Math.max(0, dbLatency + Math.random() * 20 - 10),
-      "API Response": Math.max(0, dbLatency + 50 + Math.random() * 30 - 15),
-    }));
-  }, [health?.database?.latencyMs]);
+  const chartData = useMemo(() => {
+    if (!actionsData?.actions) return [];
+    return actionsData.actions
+      .filter((a) => a.duration_ms !== null && a.duration_ms > 0)
+      .slice(0, 20)
+      .reverse()
+      .map((action) => ({
+        name: action.tool_name.length > 12
+          ? action.tool_name.slice(0, 11) + "…"
+          : action.tool_name,
+        duration: action.duration_ms ?? 0,
+        fullName: action.tool_name,
+      }));
+  }, [actionsData]);
+
+  const avgDuration = chartData.length > 0
+    ? Math.round(chartData.reduce((sum, d) => sum + d.duration, 0) / chartData.length)
+    : 0;
 
   return (
     <Card className="glass-card">
@@ -397,68 +396,63 @@ function APILatencyChart() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Activity className="h-5 w-5 text-purple-500" />
-            <h3 className="text-base font-semibold">API Latency</h3>
+            <h3 className="text-base font-semibold">Recent Actions Duration</h3>
           </div>
-          {health?.database?.latencyMs !== undefined && (
+          {avgDuration > 0 && (
             <Badge
               variant="outline"
-              className={getLatencyColor(health.database.latencyMs)}
+              className={getLatencyColor(avgDuration)}
             >
-              {getLatencyStatus(health.database.latencyMs)}
+              avg {avgDuration}ms
             </Badge>
           )}
         </div>
 
-        <ResponsiveContainer width="100%" height={280}>
-          <LineChart
-            data={latencyData}
-            margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
-          >
-            <defs>
-              <linearGradient id="dbGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-              </linearGradient>
-              <linearGradient id="apiGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
-            <XAxis
-              dataKey="time"
-              tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis
-              tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-              tickLine={false}
-              axisLine={false}
-              label={{
-                value: "ms",
-                angle: -90,
-                position: "insideLeft",
-                style: { fontSize: 11, fill: "hsl(var(--muted-foreground))" },
-              }}
-            />
-            <RechartsTooltip content={<GlassChartTooltip />} />
-            <Line
-              type="monotone"
-              dataKey="DB Query"
-              stroke="#3b82f6"
-              strokeWidth={2}
-              dot={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="API Response"
-              stroke="#8b5cf6"
-              strokeWidth={2}
-              dot={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+        {isLoading ? (
+          <Skeleton className="w-full" style={{ height: 280 }} />
+        ) : chartData.length === 0 ? (
+          <div className="flex items-center justify-center h-[280px] text-muted-foreground">
+            No action data available
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={280}>
+            <RechartsBarChart
+              data={chartData}
+              margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+                tickLine={false}
+                axisLine={false}
+                angle={-45}
+                textAnchor="end"
+                height={60}
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                tickLine={false}
+                axisLine={false}
+                label={{
+                  value: "ms",
+                  angle: -90,
+                  position: "insideLeft",
+                  style: { fontSize: 11, fill: "hsl(var(--muted-foreground))" },
+                }}
+              />
+              <RechartsTooltip content={<GlassChartTooltip />} />
+              <Bar dataKey="duration" name="Duration (ms)" radius={[4, 4, 0, 0]}>
+                {chartData.map((entry, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={entry.duration < 100 ? "#10b981" : entry.duration < 500 ? "#f59e0b" : "#ef4444"}
+                  />
+                ))}
+              </Bar>
+            </RechartsBarChart>
+          </ResponsiveContainer>
+        )}
       </div>
     </Card>
   );
@@ -468,13 +462,7 @@ function APILatencyChart() {
 // Database Stats
 // ============================================
 
-function DatabaseStats() {
-  const { data: stats, isLoading } = useQuery<StatsResponse, Error>({
-    queryKey: ["stats-db"],
-    queryFn: apiClient.getStats,
-    refetchInterval: 30000,
-  });
-
+function DatabaseStats({ stats, isLoading }: { stats?: StatsResponse; isLoading: boolean }) {
   const tableStats = [
     {
       name: "Projects",
@@ -490,6 +478,11 @@ function DatabaseStats() {
       name: "Messages",
       records: stats?.messageCount ?? 0,
       color: "#f59e0b",
+    },
+    {
+      name: "Requests",
+      records: stats?.requestCount ?? 0,
+      color: "#8b5cf6",
     },
   ];
 
@@ -539,7 +532,8 @@ function DatabaseStats() {
               {formatNumber(
                 (stats?.projectCount ?? 0) +
                   (stats?.actionCount ?? 0) +
-                  (stats?.messageCount ?? 0)
+                  (stats?.messageCount ?? 0) +
+                  (stats?.requestCount ?? 0)
               )}
             </span>
           </div>
@@ -678,11 +672,11 @@ function CleanupStatsCard() {
 // ============================================
 
 export default function PerformancePage() {
-  const { data: health, isLoading: healthLoading } = useQuery<
+  const { data: health, isLoading: healthLoading, error: healthError } = useQuery<
     HealthResponse,
     Error
   >({
-    queryKey: ["health-kpi"],
+    queryKey: ["health"],
     queryFn: apiClient.getHealth,
     refetchInterval: 10000,
   });
@@ -691,9 +685,9 @@ export default function PerformancePage() {
     StatsResponse,
     Error
   >({
-    queryKey: ["stats-kpi"],
+    queryKey: ["stats"],
     queryFn: apiClient.getStats,
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
 
   const isHealthy = health?.status === "healthy" && health?.database?.healthy;
@@ -753,7 +747,8 @@ export default function PerformancePage() {
           value={formatNumber(
             (stats?.projectCount ?? 0) +
               (stats?.actionCount ?? 0) +
-              (stats?.messageCount ?? 0)
+              (stats?.messageCount ?? 0) +
+              (stats?.requestCount ?? 0)
           )}
           icon={<HardDrive className="h-4 w-4 text-white" />}
           iconGradient="bg-gradient-to-br from-emerald-500 to-green-500"
@@ -767,7 +762,6 @@ export default function PerformancePage() {
           value={formatNumber(stats?.actionCount ?? 0)}
           icon={<Activity className="h-4 w-4 text-white" />}
           iconGradient="bg-gradient-to-br from-violet-500 to-purple-500"
-          trend={{ value: 8, label: "vs yesterday" }}
           loading={statsLoading}
         />
 
@@ -786,15 +780,15 @@ export default function PerformancePage() {
       {/* Charts Row - 2 columns                      */}
       {/* =========================================== */}
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <APILatencyChart />
-        <SystemHealthCard />
+        <RecentActionsDurationChart />
+        <SystemHealthCard health={health} isLoading={healthLoading} error={healthError} />
       </div>
 
       {/* =========================================== */}
       {/* Stats Row - 2 columns                       */}
       {/* =========================================== */}
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <DatabaseStats />
+        <DatabaseStats stats={stats} isLoading={statsLoading} />
         <CleanupStatsCard />
       </div>
 

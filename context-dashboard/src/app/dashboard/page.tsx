@@ -221,7 +221,6 @@ export default function DashboardPage() {
           value={displayStats.projectCount}
           icon={<FolderKanban className="h-4 w-4 text-white" />}
           iconGradient="bg-gradient-to-br from-indigo-500 to-cyan-500"
-          trend={{ value: 12, label: "this month" }}
           sparklineData={sparklineData}
           sparklineColor="#3b82f6"
           loading={statsLoading}
@@ -232,7 +231,6 @@ export default function DashboardPage() {
           value={displayStats.activeAgents}
           icon={<Users className="h-4 w-4 text-white" />}
           iconGradient="bg-gradient-to-br from-violet-500 to-indigo-600"
-          trend={{ value: 5, label: "vs last hour" }}
           sparklineData={sparklineData}
           sparklineColor="#8b5cf6"
           loading={statsLoading}
@@ -243,7 +241,6 @@ export default function DashboardPage() {
           value={avgTaskDuration}
           icon={<Timer className="h-4 w-4 text-white" />}
           iconGradient="bg-gradient-to-br from-amber-500 to-orange-500"
-          trend={{ value: -8, label: "improvement" }}
           sparklineData={sparklineData}
           sparklineColor="#f59e0b"
           loading={statsLoading && !wsConnected}
@@ -254,7 +251,6 @@ export default function DashboardPage() {
           value={recoveryRate}
           icon={<RefreshCw className="h-4 w-4 text-white" />}
           iconGradient="bg-gradient-to-br from-emerald-500 to-green-600"
-          trend={{ value: 4, label: "this session" }}
           loading={!contextStats}
         />
       </div>
@@ -276,7 +272,6 @@ export default function DashboardPage() {
           value={stats?.messageCount ?? 0}
           icon={<Send className="h-4 w-4 text-white" />}
           iconGradient="bg-gradient-to-br from-indigo-500 to-violet-600"
-          trend={{ value: 3, label: "this hour" }}
           loading={statsLoading}
         />
 
@@ -289,7 +284,7 @@ export default function DashboardPage() {
         />
 
         <PremiumKPICard
-          title="Proactive Saves"
+          title="Agent Contexts"
           value={proactiveSavesCount}
           icon={<Save className="h-4 w-4 text-white" />}
           iconGradient="bg-gradient-to-br from-amber-500 to-orange-500"
@@ -368,7 +363,7 @@ export default function DashboardPage() {
         <Card className="glass-card animate-fade-in overflow-hidden">
           <div className="p-6">
             <h3 className="text-base font-semibold mb-4">
-              Top 10 Agents by Actions
+              Top 10 Tools by Usage
             </h3>
             {agentsLoading && !agentActionsData ? (
               <Skeleton className="w-full" style={{ height: 280 }} />

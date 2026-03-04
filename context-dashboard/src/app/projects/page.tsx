@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/table";
 import { KPICard } from "@/components/charts/KPICard";
 import { ErrorDisplay } from "@/components/ErrorBoundary";
-import apiClient, { type Project, type PaginatedResponse } from "@/lib/api-client";
+import apiClient, { type Project, type PaginatedResponse, type SessionsStats } from "@/lib/api-client";
 import {
   FolderOpen,
   Search,
@@ -32,6 +32,7 @@ import {
   Activity,
   Trash2,
   Loader2,
+  Hash,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -133,6 +134,13 @@ export default function ProjectsPage() {
   const projects = useMemo(() => projectsResponse?.data ?? [], [projectsResponse?.data]);
   const totalProjects = projectsResponse?.total || 0;
   const totalPages = projectsResponse?.totalPages || 1;
+
+  // Fetch sessions stats for Total Sessions KPI
+  const { data: sessionsStats } = useQuery<SessionsStats>({
+    queryKey: ["sessions-stats"],
+    queryFn: apiClient.getSessionsStats,
+    staleTime: 60000,
+  });
 
   // Memoize the "one week ago" date to avoid impure Date.now() calls during render
   const oneWeekAgo = useMemo(() => {
@@ -259,21 +267,21 @@ export default function ProjectsPage() {
           title="Active This Week"
           value={recentProjectsCount}
           icon={<Activity className="h-4 w-4" />}
-          description="Projects updated recently"
+          description={`Updated in last 7 days (page ${page}/${totalPages})`}
           loading={isLoading}
           trend={
-            recentProjectsCount > 0
-              ? { value: Math.round((recentProjectsCount / totalProjects) * 100), label: "of total" }
+            recentProjectsCount > 0 && totalProjects > 0
+              ? { value: Math.round((recentProjectsCount / Math.min(totalProjects, projects.length)) * 100), label: "of visible" }
               : undefined
           }
           className="glass-card"
         />
         <KPICard
-          title="Current Page"
-          value={`${page} / ${totalPages}`}
-          icon={<FolderOpen className="h-4 w-4" />}
-          description={`Showing ${filteredAndSortedProjects.length} projects`}
-          loading={isLoading}
+          title="Total Sessions"
+          value={sessionsStats?.overview?.total_sessions ?? 0}
+          icon={<Hash className="h-4 w-4" />}
+          description={`${sessionsStats?.overview?.active_sessions ?? 0} active now`}
+          loading={!sessionsStats}
           className="glass-card"
         />
       </div>

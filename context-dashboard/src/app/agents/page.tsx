@@ -12,6 +12,9 @@ import apiClient, {
   type SubtasksResponse,
   type ActiveSessionsResponse,
   type ActionsResponse,
+  type Session,
+  type PaginatedResponse,
+  type ProjectsResponse,
 } from "@/lib/api-client";
 import {
   Users,
@@ -26,6 +29,9 @@ import {
   ShieldCheck,
   Timer,
   TrendingUp,
+  FolderOpen,
+  Wrench,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -123,8 +129,14 @@ function ActiveAgentCard({
               #{index}
             </span>
           </div>
-          {agent.parent_agent_id && (
+          {agent.project_name && (
             <div className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground bg-muted/50 rounded px-2 py-0.5 w-fit">
+              <FolderOpen className="h-3 w-3" />
+              <span className="truncate max-w-[180px]">{agent.project_name}</span>
+            </div>
+          )}
+          {agent.parent_agent_id && (
+            <div className="mt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground bg-muted/50 rounded px-2 py-0.5 w-fit">
               <Network className="h-3 w-3" />
               <span>Subagent of <span className="font-mono">{agent.parent_agent_id.slice(0, 8)}</span></span>
             </div>
@@ -245,21 +257,43 @@ function AgentTypeCard({
 }
 
 // ============================================
-// Agent Grid with visual topology
+// Agent Topology Tree — hierarchical main→sub
 // ============================================
-function AgentGrid({
-  agentStats,
-  activeAgentTypes,
+function AgentTopologyTree({
+  subtasks,
 }: {
-  agentStats: Record<string, { count: number; statuses: Record<string, number> }>;
-  activeAgentTypes: Set<string>;
+  subtasks: SubtasksResponse["subtasks"];
 }) {
-  const agents = Object.entries(agentStats)
-    .filter(([type]) => type !== "unassigned")
-    .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, 16);
+  // Group by session_id, then by parent_agent_id to build hierarchy
+  const tree = useMemo(() => {
+    if (!subtasks || subtasks.length === 0) return [];
 
-  if (agents.length === 0) {
+    // Group by session
+    const bySession = new Map<string, typeof subtasks>();
+    for (const s of subtasks) {
+      const sid = (s as { session_id?: string }).session_id || s.task_list_id || "unknown";
+      if (!bySession.has(sid)) bySession.set(sid, []);
+      bySession.get(sid)!.push(s);
+    }
+
+    // For each session, separate main agents (no parent) from subagents
+    return Array.from(bySession.entries()).map(([sessionId, tasks]) => {
+      const mainAgents = tasks.filter((t) => !t.parent_agent_id);
+      const subAgents = tasks.filter((t) => !!t.parent_agent_id);
+
+      // Group subagents under their parent
+      const childrenByParent = new Map<string, typeof tasks>();
+      for (const sub of subAgents) {
+        const pid = sub.parent_agent_id!;
+        if (!childrenByParent.has(pid)) childrenByParent.set(pid, []);
+        childrenByParent.get(pid)!.push(sub);
+      }
+
+      return { sessionId, mainAgents, childrenByParent, total: tasks.length };
+    }).sort((a, b) => b.total - a.total).slice(0, 8);
+  }, [subtasks]);
+
+  if (tree.length === 0) {
     return (
       <Card className="glass-card">
         <CardHeader>
@@ -286,62 +320,110 @@ function AgentGrid({
             <Network className="h-5 w-5" />
             Agent Topology
           </CardTitle>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-              <div className="h-2 w-2 rounded-full bg-green-500" /> Active
-            </div>
-            <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-              <div className="h-2 w-2 rounded-full bg-muted-foreground/40" /> Idle
-            </div>
-          </div>
+          <Badge variant="outline" className="text-[10px]">
+            {tree.reduce((acc, t) => acc + t.total, 0)} tasks
+          </Badge>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-4 gap-2.5">
-          {agents.map(([agentType, data], index) => {
-            const category = getAgentCategory(agentType);
-            const isActive = activeAgentTypes.has(agentType);
-            const shortName = agentType.length > 14 ? agentType.slice(0, 13) + "…" : agentType;
-
-            return (
-              <div
-                key={agentType}
-                className={cn(
-                  "flex flex-col items-center justify-center rounded-xl border p-2.5 transition-all duration-300",
-                  isActive
-                    ? "border-primary/30 bg-primary/5 shadow-sm shadow-primary/10"
-                    : "opacity-40 border-border/50 bg-card hover:opacity-70"
-                )}
-                style={{ animationDelay: `${index * 30}ms` }}
-                title={`${agentType} — ${data.count} tasks`}
-              >
-                <div className="relative">
-                  <div className={cn(
-                    "h-9 w-9 rounded-lg flex items-center justify-center transition-all duration-300",
-                    isActive ? `bg-gradient-to-br ${category.gradient}` : "bg-muted"
-                  )}>
-                    <Bot className={cn(
-                      "h-4 w-4",
-                      isActive ? "text-white" : "text-muted-foreground"
-                    )} />
-                  </div>
-                  <div className={cn(
-                    "absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background transition-colors",
-                    isActive ? "bg-green-500 animate-pulse" : "bg-muted-foreground/30"
-                  )} />
-                </div>
-                <span className={cn(
-                  "mt-1.5 text-[9px] font-medium text-center leading-tight truncate w-full",
-                  isActive ? category.color : "text-muted-foreground"
-                )}>
-                  {shortName}
-                </span>
-                <span className="text-[8px] text-muted-foreground mt-0.5">
-                  {data.count}
-                </span>
+        <div className="space-y-4 max-h-[400px] overflow-y-auto">
+          {tree.map(({ sessionId, mainAgents, childrenByParent }) => (
+            <div key={sessionId} className="border border-border/50 rounded-lg p-3">
+              <div className="text-[10px] text-muted-foreground font-mono mb-2 flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                Session {sessionId.slice(0, 12)}…
               </div>
-            );
-          })}
+              <div className="space-y-1.5">
+                {mainAgents.map((agent) => {
+                  const category = getAgentCategory(agent.agent_type || "");
+                  const children = childrenByParent.get(agent.agent_id || "") || [];
+                  const isRunning = agent.status === "running";
+
+                  return (
+                    <div key={agent.id}>
+                      {/* Main agent node */}
+                      <div className={cn(
+                        "flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors",
+                        isRunning ? "bg-primary/5" : "bg-muted/30"
+                      )}>
+                        <div className={cn(
+                          "h-6 w-6 rounded-md flex items-center justify-center",
+                          isRunning ? `bg-gradient-to-br ${category.gradient}` : "bg-muted"
+                        )}>
+                          <Bot className={cn("h-3 w-3", isRunning ? "text-white" : "text-muted-foreground")} />
+                        </div>
+                        <span className={cn("text-xs font-medium flex-1 truncate", category.color)}>
+                          {agent.agent_type || "unknown"}
+                        </span>
+                        {isRunning && (
+                          <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                        )}
+                        <Badge variant="outline" className="text-[8px] py-0 px-1.5">
+                          {agent.status}
+                        </Badge>
+                      </div>
+
+                      {/* Subagent children */}
+                      {children.length > 0 && (
+                        <div className="ml-4 mt-1 space-y-1 border-l-2 border-border/30 pl-3">
+                          {children.map((child) => {
+                            const childCat = getAgentCategory(child.agent_type || "");
+                            const childRunning = child.status === "running";
+                            return (
+                              <div
+                                key={child.id}
+                                className="flex items-center gap-2 text-xs py-1"
+                              >
+                                <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
+                                <div className={cn(
+                                  "h-5 w-5 rounded flex items-center justify-center",
+                                  childRunning ? `bg-gradient-to-br ${childCat.gradient}` : "bg-muted"
+                                )}>
+                                  <Bot className={cn("h-2.5 w-2.5", childRunning ? "text-white" : "text-muted-foreground")} />
+                                </div>
+                                <span className={cn("truncate flex-1", childCat.color)}>
+                                  {child.agent_type || "unknown"}
+                                </span>
+                                {childRunning && (
+                                  <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Orphan subagents (parent not in this session's main agents) */}
+                {(() => {
+                  const mainIds = new Set(mainAgents.map((a) => a.agent_id));
+                  const orphans = Array.from(childrenByParent.entries())
+                    .filter(([pid]) => !mainIds.has(pid))
+                    .flatMap(([, children]) => children);
+                  if (orphans.length === 0) return null;
+                  return orphans.map((child) => {
+                    const childCat = getAgentCategory(child.agent_type || "");
+                    return (
+                      <div key={child.id} className="flex items-center gap-2 text-xs py-1 ml-4 border-l-2 border-dashed border-border/20 pl-3">
+                        <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
+                        <div className={cn("h-5 w-5 rounded flex items-center justify-center bg-muted")}>
+                          <Bot className="h-2.5 w-2.5 text-muted-foreground" />
+                        </div>
+                        <span className={cn("truncate flex-1", childCat.color)}>
+                          {child.agent_type || "unknown"}
+                        </span>
+                        <Badge variant="outline" className="text-[8px] py-0 px-1.5">
+                          {child.status}
+                        </Badge>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          ))}
         </div>
       </CardContent>
     </Card>
@@ -453,6 +535,20 @@ export default function AgentsPage() {
     refetchInterval: 10000,
   });
 
+  // Fetch live sessions (to show even when no subtasks are running)
+  const { data: sessionsData, isLoading: sessionsLoading } = useQuery<PaginatedResponse<Session>>({
+    queryKey: ["sessions-for-agents"],
+    queryFn: () => apiClient.getSessions(1, 50),
+    refetchInterval: 30000,
+  });
+
+  // Fetch projects for name mapping
+  const { data: projectsData } = useQuery<ProjectsResponse>({
+    queryKey: ["projects-for-agents"],
+    queryFn: () => apiClient.getProjectsRaw(1, 100),
+    staleTime: 60000,
+  });
+
   // Fetch blocked operations from Safety Gate
   const { data: blockedActions } = useQuery<ActionsResponse>({
     queryKey: ["actions", "blocked"],
@@ -502,6 +598,28 @@ export default function AgentsPage() {
     }
     return types;
   }, [activeSessions]);
+
+  // Build project name map
+  const projectMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (projectsData?.projects) {
+      for (const p of projectsData.projects) {
+        map.set(p.id, p.name || p.path.split("/").pop() || p.path);
+      }
+    }
+    return map;
+  }, [projectsData]);
+
+  // Active sessions (ended_at === null)
+  const liveSessions = useMemo(() => {
+    if (!sessionsData?.data) return [];
+    return sessionsData.data
+      .filter((s) => s.ended_at === null)
+      .map((s) => ({
+        ...s,
+        projectName: projectMap.get(s.project_id || "") || "Unknown Project",
+      }));
+  }, [sessionsData, projectMap]);
 
   const successRate = useMemo(() => {
     const completed = agentStats.statusCounts.completed || 0;
@@ -567,6 +685,74 @@ export default function AgentsPage() {
           loading={subtasksLoading}
           trend={successRate !== null ? { value: successRate >= 80 ? 1 : successRate >= 50 ? 0 : -1, label: "overall" } : undefined}
         />
+      </div>
+
+      {/* Active Sessions Panel — always shows live sessions */}
+      <div className="mt-6">
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-500 to-blue-500">
+            <FolderOpen className="h-4 w-4 text-white" />
+          </div>
+          Active Sessions
+          {liveSessions.length > 0 && (
+            <Badge variant="default" className="bg-indigo-500 text-[10px]">
+              {liveSessions.length} live
+            </Badge>
+          )}
+        </h3>
+        {sessionsLoading ? (
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3].map((i) => <AgentCardSkeleton key={i} />)}
+          </div>
+        ) : liveSessions.length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {liveSessions.map((session) => (
+              <Card key={session.id} className="glass-card hover:shadow-md transition-all duration-200">
+                <CardContent className="pt-4 pb-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br from-indigo-500 to-blue-500">
+                        <FolderOpen className="h-4 w-4 text-white" />
+                      </div>
+                      <div>
+                        <span className="font-semibold text-sm truncate block max-w-[180px]" title={session.projectName}>
+                          {session.projectName}
+                        </span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Live</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Timer className="h-3 w-3" />
+                      {formatDuration(session.started_at)}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Wrench className="h-3 w-3" />
+                      {session.total_tools_used} tools
+                    </span>
+                    <span className="truncate max-w-[100px] font-mono text-[10px]" title={session.id}>
+                      {session.id.slice(0, 8)}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card className="glass-card">
+            <CardContent className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+              <FolderOpen className="h-12 w-12 mb-3 opacity-20" />
+              <p className="text-sm">No active sessions</p>
+              <p className="text-[10px] mt-1 text-muted-foreground/70">
+                Sessions appear here when Claude Code is running
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Active Agents Section — Split into Main Agents and Subagents */}
@@ -663,7 +849,7 @@ export default function AgentsPage() {
           horizontal
           barLabel="Tasks"
         />
-        <AgentGrid agentStats={agentStats.byType} activeAgentTypes={activeAgentTypes} />
+        <AgentTopologyTree subtasks={subtasksData?.subtasks ?? []} />
       </div>
 
       {/* Safety Gate */}

@@ -159,7 +159,7 @@ export default function SessionsPage() {
   const { data: sessionsResponse, isLoading: sessionsLoading, error: sessionsError } = useQuery<SessionsApiResponse>({
     queryKey: ["sessions"],
     queryFn: async () => {
-      const paginated = await apiClient.getSessions(1, 500);
+      const paginated = await apiClient.getSessions(1, 100);
       return {
         sessions: paginated.data,
         total: paginated.total,
@@ -466,6 +466,7 @@ export default function SessionsPage() {
                     </TableHead>
                     <TableHead>Duration</TableHead>
                     <TableHead>Agents</TableHead>
+                    <TableHead>Success Rate</TableHead>
                     <TableHead>Requests</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -520,6 +521,21 @@ export default function SessionsPage() {
                                 {agents.types.length > 2 ? ` +${agents.types.length - 2}` : ""}
                               </span>
                             </div>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const rate = getSuccessRate(session.total_success, session.total_tools_used);
+                          return (
+                            <span className={cn(
+                              "text-sm font-medium",
+                              rate >= 90 ? "text-green-600 dark:text-green-400"
+                                : rate >= 70 ? "text-yellow-600 dark:text-yellow-400"
+                                : "text-red-600 dark:text-red-400"
+                            )}>
+                              {rate}%
+                            </span>
                           );
                         })()}
                       </TableCell>
