@@ -59,6 +59,7 @@ import { getCatalog } from "./api/catalog";
 import { postBatchSubmit, getBatch, getSynthesis, getConflicts, postBatchComplete } from "./api/orchestration";
 import { postCraftPrompt, postDecompose } from "./api/orchestration-planner";
 import { getWaveCurrent, getWaveHistoryHandler, postWaveTransition, postWaveCreate, postWaveStart } from "./api/waves";
+import { trackAgentTurn, getAgentStatus, relaunchAgent } from "./api/agents";
 
 // Version from package.json (single source of truth)
 import pkg from "../package.json";
@@ -477,6 +478,14 @@ app.get("/api/waves/:session_id/current", getWaveCurrent);
 
 // GET /api/waves/:session_id/history - All waves for session
 app.get("/api/waves/:session_id/history", getWaveHistoryHandler);
+
+// ============================================
+// Agent Turns & Relaunch API - Phase 10
+// ============================================
+
+app.post("/api/agents/track-turn", trackAgentTurn);
+app.get("/api/agents/:agent_id/status", getAgentStatus);
+app.post("/api/agents/relaunch", relaunchAgent);
 
 // ============================================
 // Server Startup
