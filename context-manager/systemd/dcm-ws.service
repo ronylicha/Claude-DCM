@@ -2,7 +2,7 @@
 Description=DCM WebSocket Server
 PartOf=dcm.target
 After=dcm-api.service
-Requires=dcm-api.service
+Wants=dcm-api.service
 StartLimitBurst=5
 StartLimitIntervalSec=60
 

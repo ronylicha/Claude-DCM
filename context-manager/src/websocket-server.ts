@@ -5,7 +5,7 @@
  */
 
 import { config, validateConfig } from "./config";
-import { testConnection, closeDb } from "./db/client";
+import { testConnectionWithRetry, closeDb } from "./db/client";
 import { startWebSocketServer, stopWebSocketServer, getWSStats } from "./websocket/server";
 import { createLogger } from "./lib/logger";
 
@@ -31,11 +31,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Test database connection (needed for bridge)
+  // Test database connection with retries (needed for bridge, PG may still start)
   log.info("Testing database connection...");
-  const dbConnected = await testConnection();
+  const dbConnected = await testConnectionWithRetry();
   if (!dbConnected) {
-    log.error("Failed to connect to database. Exiting.");
+    log.error("Failed to connect to database after retries. Exiting.");
     process.exit(1);
   }
   log.info("Database connected");

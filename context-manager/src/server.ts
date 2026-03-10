@@ -9,7 +9,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { config, validateConfig } from "./config";
 import { createLogger } from "./lib/logger";
-import { closeDb, testConnection, healthCheck, getDbStats } from "./db/client";
+import { closeDb, testConnectionWithRetry, healthCheck, getDbStats } from "./db/client";
 import { postAction, getActions, getActionsHourly, deleteAction, deleteActionsBySession } from "./api/actions";
 import { suggestRouting, getRoutingStats, postRoutingFeedback } from "./api/routing";
 import { postProject, getProjects, getProjectById, getProjectByPath, deleteProject } from "./api/projects";
@@ -495,10 +495,10 @@ async function startServer() {
   log.info("Starting...");
   log.info(`Config: API port ${config.server.port}, WS port ${config.websocket.port}`);
 
-  // Test database connection
-  const connected = await testConnection();
+  // Test database connection (with retries for boot race conditions)
+  const connected = await testConnectionWithRetry();
   if (!connected) {
-    log.error("Failed to connect to database. Exiting.");
+    log.error("Failed to connect to database after retries. Exiting.");
     process.exit(1);
   }
   log.info("Database connected");

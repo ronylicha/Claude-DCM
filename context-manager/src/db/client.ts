@@ -55,6 +55,32 @@ export async function testConnection(): Promise<boolean> {
 }
 
 /**
+ * Test database connectivity with retries (for startup race conditions)
+ * PostgreSQL may still be starting when systemd launches DCM services.
+ * @param maxRetries - Number of retry attempts (default: 10)
+ * @param delayMs - Base delay between retries in ms (default: 2000)
+ * @returns true if connection successful within retry window
+ */
+export async function testConnectionWithRetry(maxRetries = 10, delayMs = 2000): Promise<boolean> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const connected = await testConnection();
+    if (connected) return true;
+
+    if (attempt < maxRetries) {
+      const wait = Math.min(delayMs * attempt, 10000);
+      log.info(`Database not ready, retrying in ${wait}ms (attempt ${attempt}/${maxRetries})...`);
+      await new Promise(r => setTimeout(r, wait));
+      // Reset connection pool so postgres.js reconnects
+      if (sql) {
+        await sql.end().catch(() => {});
+        sql = null;
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Execute a health check query
  * @returns Health check result with timing
  */
