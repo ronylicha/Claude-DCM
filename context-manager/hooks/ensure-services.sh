@@ -88,9 +88,53 @@ release_lock() {
     rm -rf "$LOCK_DIR" 2>/dev/null
 }
 
-# Quick health check - if API responds, everything is likely fine
+# Quick health check - ALL services must respond, not just API
+api_ok=false
+ws_ok=false
+
 if curl -s --connect-timeout 1 --max-time 2 "${API_URL}/health" | grep -q '"healthy"' 2>/dev/null; then
+    api_ok=true
+fi
+
+if lsof -i ":${WS_PORT}" >/dev/null 2>&1; then
+    ws_ok=true
+fi
+
+if [[ "$api_ok" == "true" && "$ws_ok" == "true" ]]; then
     exit 0
+fi
+
+# If supervisor (systemd) is managing services, let it handle restarts
+if [[ -f "$DCM_ROOT/.supervisor-installed" ]]; then
+    # Reset failed services first (otherwise 'start' is a no-op on failed units)
+    systemctl --user reset-failed dcm-api.service dcm-ws.service dcm-dashboard.service 2>/dev/null || true
+    # Restart individual failed services rather than just the target
+    if [[ "$api_ok" != "true" ]]; then
+        systemctl --user restart dcm-api.service 2>/dev/null || true
+        dcm_log "INFO: Supervisor restart requested for dcm-api (was not healthy)"
+    fi
+    if [[ "$ws_ok" != "true" ]]; then
+        systemctl --user restart dcm-ws.service 2>/dev/null || true
+        dcm_log "INFO: Supervisor restart requested for dcm-ws (was not running)"
+    fi
+    # Wait briefly for systemd to bring services up
+    for i in $(seq 1 8); do
+        local_api_ok=false
+        local_ws_ok=false
+        if curl -s --connect-timeout 1 --max-time 2 "${API_URL}/health" | grep -q '"healthy"' 2>/dev/null; then
+            local_api_ok=true
+        fi
+        if lsof -i ":${WS_PORT}" >/dev/null 2>&1; then
+            local_ws_ok=true
+        fi
+        if [[ "$local_api_ok" == "true" && "$local_ws_ok" == "true" ]]; then
+            dcm_log "OK: Supervisor restored services (api=${API_PORT}, ws=${WS_PORT})"
+            exit 0
+        fi
+        sleep 1
+    done
+    dcm_log "WARN: Supervisor failed to restore all services after 8s, falling through to nohup"
+    # Fall through to nohup fallback instead of exit 0
 fi
 
 # Services not running - acquire lock and start them

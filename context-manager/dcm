@@ -4,7 +4,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="2.1.0"
+VERSION="2.2.0"
 
 # Colors
 RED='\033[0;31m'
@@ -25,22 +25,36 @@ WS_PORT="${WS_PORT:-3849}"
 DASHBOARD_PORT="${DASHBOARD_PORT:-3848}"
 API_URL="http://127.0.0.1:${API_PORT}"
 
+# Detect if supervisor (systemd) is installed
+has_supervisor() {
+    [[ -f "$SCRIPT_DIR/.supervisor-installed" ]] && systemctl --user is-active dcm.target >/dev/null 2>&1
+}
+
 usage() {
     echo -e "${BLUE}DCM - Distributed Context Manager v${VERSION}${NC}"
     echo ""
     echo "Usage: dcm <command> [options]"
     echo ""
     echo "Commands:"
-    echo "  install     Install DCM: deps + database + hooks (one-command setup)"
+    echo "  install     Install DCM: deps + database + hooks + supervisor"
     echo "  start       Start all DCM services (API + WebSocket + Dashboard)"
     echo "  stop        Stop all DCM services"
     echo "  restart     Restart all DCM services"
     echo "  status      Show health status of all services"
-    echo "  logs        Show logs (api|ws|dashboard)"
+    echo "  logs        Show logs (api|ws|dashboard|all)"
     echo "  hooks       Install/update Claude Code hooks"
     echo "  unhook      Remove DCM hooks from Claude Code settings"
     echo "  health      Quick health check"
     echo "  version     Show version"
+    echo ""
+    echo "Supervisor:"
+    echo "  supervisor status     Show supervisor & service status"
+    echo "  supervisor logs       Follow all service logs (journalctl)"
+    echo "  supervisor restart    Restart all via systemd"
+    echo "  supervisor enable     Enable auto-start on boot"
+    echo "  supervisor disable    Disable auto-start"
+    echo "  supervisor reload     Re-template & restart after update"
+    echo "  supervisor uninstall  Remove supervisor completely"
     echo ""
     echo "Advanced:"
     echo "  db:setup    Initialize database schema"
@@ -49,10 +63,10 @@ usage() {
     echo "  context     Get context brief for an agent"
     echo ""
     echo "Examples:"
-    echo "  dcm install          # First-time setup"
+    echo "  dcm install          # First-time setup (includes supervisor)"
     echo "  dcm start            # Start everything"
     echo "  dcm status           # Check what's running"
-    echo "  dcm context backend-laravel  # Get context for agent"
+    echo "  dcm supervisor status  # Detailed systemd status"
 }
 
 cmd_install() {
@@ -60,7 +74,7 @@ cmd_install() {
     echo ""
 
     # Step 1: Prerequisites
-    echo -e "${YELLOW}[1/5]${NC} Checking prerequisites..."
+    echo -e "${YELLOW}[1/6]${NC} Checking prerequisites..."
     local missing=""
     command -v bun &>/dev/null || missing="$missing bun"
     command -v psql &>/dev/null || missing="$missing psql"
@@ -77,13 +91,13 @@ cmd_install() {
     echo -e "  ${GREEN}All prerequisites found.${NC}"
 
     # Step 2: Dependencies
-    echo -e "${YELLOW}[2/5]${NC} Installing dependencies..."
+    echo -e "${YELLOW}[2/6]${NC} Installing dependencies..."
     cd "$SCRIPT_DIR"
     bun install --silent 2>/dev/null || bun install
     echo -e "  ${GREEN}Dependencies installed.${NC}"
 
     # Step 3: Environment
-    echo -e "${YELLOW}[3/5]${NC} Configuring environment..."
+    echo -e "${YELLOW}[3/6]${NC} Configuring environment..."
     if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
         cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env" 2>/dev/null || true
         echo "  Created .env from template."
@@ -98,7 +112,7 @@ cmd_install() {
     set +a
 
     # Step 4: Database
-    echo -e "${YELLOW}[4/5]${NC} Setting up database..."
+    echo -e "${YELLOW}[4/6]${NC} Setting up database..."
     if [[ -f "$SCRIPT_DIR/scripts/setup-db.sh" ]]; then
         bash "$SCRIPT_DIR/scripts/setup-db.sh" 2>&1 | sed 's/^/  /'
     else
@@ -106,16 +120,41 @@ cmd_install() {
     fi
 
     # Step 5: Hooks
-    echo -e "${YELLOW}[5/5]${NC} Installing Claude Code hooks..."
+    echo -e "${YELLOW}[5/6]${NC} Installing Claude Code hooks..."
     bash "$SCRIPT_DIR/scripts/setup-hooks.sh" 2>&1 | sed 's/^/  /'
+
+    # Step 6: Supervisor (systemd user services)
+    echo -e "${YELLOW}[6/6]${NC} Installing supervisor (auto-start on boot)..."
+    if systemctl --user status >/dev/null 2>&1; then
+        bash "$SCRIPT_DIR/scripts/setup-supervisor.sh" install 2>&1 | sed 's/^/  /'
+    else
+        echo -e "  ${YELLOW}systemd user session not available, skipping supervisor.${NC}"
+        echo "  Services will use nohup mode (dcm start)."
+        echo "  To install supervisor later: dcm supervisor install"
+    fi
 
     echo ""
     echo -e "${GREEN}Installation complete!${NC}"
     echo ""
-    echo "Next: dcm start"
+    if [[ -f "$SCRIPT_DIR/.supervisor-installed" ]]; then
+        echo "DCM services are running via systemd and will auto-restart on failure/reboot."
+        echo "  dcm supervisor status   # Check supervisor"
+        echo "  dcm status              # Check health"
+    else
+        echo "Next: dcm start"
+    fi
 }
 
 cmd_start() {
+    # If supervisor is installed, delegate to systemd
+    if [[ -f "$SCRIPT_DIR/.supervisor-installed" ]] && systemctl --user status >/dev/null 2>&1; then
+        echo -e "${BLUE}Starting DCM services via supervisor...${NC}"
+        systemctl --user start dcm.target
+        sleep 2
+        cmd_status
+        return
+    fi
+
     echo -e "${BLUE}Starting DCM services...${NC}"
 
     local pids_dir="/tmp/.dcm-pids"
@@ -169,6 +208,14 @@ cmd_start() {
 }
 
 cmd_stop() {
+    # If supervisor is installed, delegate to systemd
+    if [[ -f "$SCRIPT_DIR/.supervisor-installed" ]] && systemctl --user status >/dev/null 2>&1; then
+        echo -e "${BLUE}Stopping DCM services via supervisor...${NC}"
+        systemctl --user stop dcm.target
+        echo -e "${GREEN}All services stopped.${NC}"
+        return
+    fi
+
     echo -e "${BLUE}Stopping DCM services...${NC}"
 
     local pids_dir="/tmp/.dcm-pids"
@@ -201,6 +248,18 @@ cmd_stop() {
 cmd_status() {
     echo -e "${BLUE}DCM Status${NC}"
     echo ""
+
+    # Supervisor mode
+    echo -n "  Supervisor:          "
+    if [[ -f "$SCRIPT_DIR/.supervisor-installed" ]]; then
+        if systemctl --user is-active dcm.target >/dev/null 2>&1; then
+            echo -e "${GREEN}active${NC} (systemd, auto-restart)"
+        else
+            echo -e "${YELLOW}installed but inactive${NC}"
+        fi
+    else
+        echo -e "${YELLOW}not installed${NC} (nohup mode)"
+    fi
 
     # API
     echo -n "  API (port ${API_PORT}):       "
@@ -336,12 +395,30 @@ cmd_context() {
 
 cmd_logs() {
     local service="${1:-api}"
+
+    # If supervisor mode, use journalctl
+    if [[ -f "$SCRIPT_DIR/.supervisor-installed" ]] && systemctl --user status >/dev/null 2>&1; then
+        case "$service" in
+            api)       journalctl --user -u dcm-api -f --no-pager ;;
+            ws)        journalctl --user -u dcm-ws -f --no-pager ;;
+            dashboard) journalctl --user -u dcm-dashboard -f --no-pager ;;
+            all)       journalctl --user -u dcm-api -u dcm-ws -u dcm-dashboard -f --no-pager ;;
+            *)         echo "Usage: dcm logs (api|ws|dashboard|all)" ;;
+        esac
+        return
+    fi
+
     case "$service" in
         api)       tail -f /tmp/dcm-api.log 2>/dev/null || echo "No API logs" ;;
         ws)        tail -f /tmp/dcm-ws.log 2>/dev/null || echo "No WS logs" ;;
         dashboard) tail -f /tmp/dcm-dashboard.log 2>/dev/null || echo "No dashboard logs" ;;
         *)         echo "Usage: dcm logs (api|ws|dashboard)" ;;
     esac
+}
+
+cmd_supervisor() {
+    local subcmd="${1:-status}"
+    bash "$SCRIPT_DIR/scripts/setup-supervisor.sh" "$subcmd"
 }
 
 cmd_db_setup() {
@@ -365,19 +442,29 @@ cmd_db_reset() {
 
 # Route commands
 case "${1:-}" in
-    install)   cmd_install ;;
-    start)     cmd_start ;;
-    stop)      cmd_stop ;;
-    restart)   cmd_stop; sleep 1; cmd_start ;;
-    status)    cmd_status ;;
-    health)    cmd_health ;;
-    hooks)     shift; cmd_hooks "$@" ;;
-    unhook)    cmd_unhook ;;
-    logs)      shift; cmd_logs "$@" ;;
-    snapshot)  shift; cmd_snapshot "$@" ;;
-    context)   shift; cmd_context "$@" ;;
-    db:setup)  cmd_db_setup ;;
-    db:reset)  cmd_db_reset ;;
+    install)    cmd_install ;;
+    start)      cmd_start ;;
+    stop)       cmd_stop ;;
+    restart)
+        if [[ -f "$SCRIPT_DIR/.supervisor-installed" ]] && systemctl --user status >/dev/null 2>&1; then
+            echo -e "${BLUE}Restarting DCM services via supervisor...${NC}"
+            systemctl --user restart dcm.target
+            sleep 2
+            cmd_status
+        else
+            cmd_stop; sleep 1; cmd_start
+        fi
+        ;;
+    status)     cmd_status ;;
+    health)     cmd_health ;;
+    hooks)      shift; cmd_hooks "$@" ;;
+    unhook)     cmd_unhook ;;
+    logs)       shift; cmd_logs "$@" ;;
+    supervisor) shift; cmd_supervisor "$@" ;;
+    snapshot)   shift; cmd_snapshot "$@" ;;
+    context)    shift; cmd_context "$@" ;;
+    db:setup)   cmd_db_setup ;;
+    db:reset)   cmd_db_reset ;;
     version|-v|--version) echo "DCM v${VERSION}" ;;
     help|-h|--help|"") usage ;;
     *)

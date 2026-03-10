@@ -1,0 +1,7 @@
+[Unit]
+Description=DCM - Distributed Context Manager (all services)
+Documentation=https://github.com/rony/Claude-DCM
+After=default.target
+
+[Install]
+WantedBy=default.target

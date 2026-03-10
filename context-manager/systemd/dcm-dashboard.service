@@ -1,0 +1,29 @@
+[Unit]
+Description=DCM Dashboard (Next.js)
+PartOf=dcm.target
+After=dcm-api.service
+Wants=dcm-api.service
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+WorkingDirectory=__DASHBOARD_ROOT__
+Environment=NODE_ENV=development
+Environment=PORT=__DASHBOARD_PORT__
+Environment=NEXT_PUBLIC_API_URL=http://127.0.0.1:__API_PORT__
+Environment=NEXT_PUBLIC_WS_URL=ws://127.0.0.1:__WS_PORT__
+ExecStart=__BUN_PATH__ run dev
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=15
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dcm-dashboard
+LimitNOFILE=65536
+MemoryMax=1G
+
+[Install]
+WantedBy=dcm.target

@@ -1,0 +1,27 @@
+[Unit]
+Description=DCM WebSocket Server
+PartOf=dcm.target
+After=dcm-api.service
+Requires=dcm-api.service
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+WorkingDirectory=__DCM_ROOT__
+EnvironmentFile=__DCM_ROOT__/.env
+ExecStart=__BUN_PATH__ run src/websocket-server.ts
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dcm-ws
+LimitNOFILE=65536
+MemoryMax=128M
+MemoryHigh=96M
+
+[Install]
+WantedBy=dcm.target
