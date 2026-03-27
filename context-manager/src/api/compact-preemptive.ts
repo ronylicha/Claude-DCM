@@ -107,14 +107,13 @@ export async function getRawContext(c: Context) {
           AND st.status IN ('running', 'pending', 'blocked')
         ORDER BY tl.wave_number, st.created_at
       `,
-      // Recent actions (last 50)
+      // Recent actions (last 50) — use a.session_id directly
       db`
-        SELECT a.tool_name, a.exit_code, a.file_paths, a.created_at, st.agent_id
+        SELECT a.tool_name, a.exit_code, a.file_paths, a.created_at,
+               COALESCE(st.agent_id, 'unknown') as agent_id
         FROM actions a
-        JOIN subtasks st ON a.subtask_id = st.id
-        JOIN task_lists tl ON st.task_list_id = tl.id
-        JOIN requests r ON tl.request_id = r.id
-        WHERE r.session_id = ${session_id}
+        LEFT JOIN subtasks st ON a.subtask_id = st.id
+        WHERE a.session_id = ${session_id}
         ORDER BY a.created_at DESC
         LIMIT 50
       `,
@@ -139,14 +138,11 @@ export async function getRawContext(c: Context) {
         FROM agent_capacity
         WHERE session_id = ${session_id}
       `,
-      // Modified files (from actions)
+      // Modified files (from actions) — use a.session_id directly
       db`
         SELECT DISTINCT unnest(a.file_paths) as file_path
         FROM actions a
-        JOIN subtasks st ON a.subtask_id = st.id
-        JOIN task_lists tl ON st.task_list_id = tl.id
-        JOIN requests r ON tl.request_id = r.id
-        WHERE r.session_id = ${session_id}
+        WHERE a.session_id = ${session_id}
           AND a.file_paths IS NOT NULL
           AND a.tool_name IN ('Write', 'Edit', 'MultiEdit')
         LIMIT 100

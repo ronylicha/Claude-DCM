@@ -157,14 +157,13 @@ export async function getCockpitGrid(c: Context) {
           WHERE r.session_id = ${sess.session_id}
             AND st.status IN ('running', 'blocked', 'pending')
         `.then(r => r[0]),
-        // Last action
+        // Last action (use a.session_id directly — no JOIN chain needed)
         db`
-          SELECT a.tool_name, st.agent_id, a.file_paths, a.created_at
+          SELECT a.tool_name, a.file_paths, a.created_at,
+                 COALESCE(st.agent_id, 'unknown') as agent_id
           FROM actions a
-          JOIN subtasks st ON a.subtask_id = st.id
-          JOIN task_lists tl ON st.task_list_id = tl.id
-          JOIN requests r ON tl.request_id = r.id
-          WHERE r.session_id = ${sess.session_id}
+          LEFT JOIN subtasks st ON a.subtask_id = st.id
+          WHERE a.session_id = ${sess.session_id}
           ORDER BY a.created_at DESC LIMIT 1
         `.then(r => r[0]),
         // Sparkline: 12 points over last hour (5min buckets)
@@ -174,10 +173,7 @@ export async function getCockpitGrid(c: Context) {
             (EXTRACT(minute FROM a.created_at)::int % 5) * INTERVAL '1 minute' as bucket,
             COUNT(*) as count
           FROM actions a
-          JOIN subtasks st ON a.subtask_id = st.id
-          JOIN task_lists tl ON st.task_list_id = tl.id
-          JOIN requests r ON tl.request_id = r.id
-          WHERE r.session_id = ${sess.session_id}
+          WHERE a.session_id = ${sess.session_id}
             AND a.created_at > NOW() - INTERVAL '1 hour'
           GROUP BY bucket
           ORDER BY bucket
