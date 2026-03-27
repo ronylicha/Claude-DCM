@@ -32,30 +32,30 @@ export async function getCockpitGlobal(c: Context) {
         WHERE status IN ('running', 'blocked', 'completed', 'pending')
           AND created_at > NOW() - INTERVAL '24 hours'
       `,
-      // Per-session capacity
+      // Per-session capacity (include sessions without statusline data)
       db`
         SELECT
-          ac.session_id,
+          s.id as session_id,
           p.name as project_name,
-          ac.model_id,
-          ROUND((ac.current_usage::numeric / NULLIF(ac.max_capacity, 0) * 100), 1) as used_percentage,
-          ac.zone,
+          COALESCE(ac.model_id, 'unknown') as model_id,
+          COALESCE(ROUND((ac.current_usage::numeric / NULLIF(ac.max_capacity, 0) * 100), 1), 0) as used_percentage,
+          COALESCE(ac.zone, 'green') as zone,
           ac.predicted_exhaustion_minutes,
-          ac.consumption_rate,
-          ac.current_usage,
-          ac.max_capacity,
-          ac.source,
+          COALESCE(ac.consumption_rate, 0) as consumption_rate,
+          COALESCE(ac.current_usage, 0) as current_usage,
+          COALESCE(ac.max_capacity, 200000) as max_capacity,
+          COALESCE(ac.source, 'estimated') as source,
           (SELECT COUNT(*) FROM subtasks st
            JOIN task_lists tl ON st.task_list_id = tl.id
            JOIN requests r ON tl.request_id = r.id
-           WHERE r.session_id = ac.session_id AND st.status = 'running') as agents_count,
+           WHERE r.session_id = s.id AND st.status = 'running') as agents_count,
           (SELECT MAX(ws.wave_number) FROM wave_states ws
-           WHERE ws.session_id = ac.session_id AND ws.status = 'running') as current_wave
-        FROM agent_capacity ac
-        JOIN sessions s ON s.id = ac.session_id
+           WHERE ws.session_id = s.id AND ws.status = 'running') as current_wave
+        FROM sessions s
+        LEFT JOIN agent_capacity ac ON ac.session_id = s.id
         LEFT JOIN projects p ON s.project_id = p.id
-        WHERE s.ended_at IS NULL AND ac.source = 'statusline'
-        ORDER BY ac.current_usage DESC
+        WHERE s.ended_at IS NULL
+        ORDER BY s.started_at DESC
       `,
       // Summaries status
       db`
@@ -131,7 +131,7 @@ export async function getCockpitGrid(c: Context) {
         ac.source
       FROM sessions s
       LEFT JOIN projects p ON s.project_id = p.id
-      LEFT JOIN agent_capacity ac ON ac.session_id = s.id AND ac.source = 'statusline'
+      LEFT JOIN agent_capacity ac ON ac.session_id = s.id
       WHERE s.ended_at IS NULL
       ORDER BY s.started_at DESC
     `;

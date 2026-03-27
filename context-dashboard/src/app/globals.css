@@ -104,6 +104,8 @@
   --color-sidebar-ring: var(--md-sys-color-primary);
 }
 
+@layer base {
+
 /* ============================================
    Light Mode — M3 Color System
    ============================================ */
@@ -216,14 +218,13 @@
   --dcm-agent-devops: #B6CBD8;
 }
 
-@layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
   }
-}
+} /* end @layer base */
 
 /* ============================================
    M3 Elevation
