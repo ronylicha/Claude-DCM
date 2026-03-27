@@ -110,15 +110,18 @@ curl -s -X POST "${API_URL}/api/actions" \
     --max-time 2 \
     >/dev/null 2>&1 &
 
-# v4.1: Detect model from Claude Code environment
-MODEL_ID="${CLAUDE_MODEL_ID:-}"
-if [[ -z "$MODEL_ID" ]]; then
-    # Try to extract from hook input (some hooks include model info)
-    MODEL_ID=$(echo "$RAW_INPUT" | jq -r '.model // empty' 2>/dev/null || echo "")
+# v4.1: Detect model from transcript (the only reliable source)
+MODEL_ID=""
+TRANSCRIPT_PATH=$(echo "$RAW_INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || echo "")
+if [[ -n "$TRANSCRIPT_PATH" && -f "$TRANSCRIPT_PATH" ]]; then
+    # Extract model from the last assistant message in transcript (fast: read last 50 lines)
+    MODEL_ID=$(tail -50 "$TRANSCRIPT_PATH" 2>/dev/null | jq -r 'select(.type == "assistant") | .message.model // empty' 2>/dev/null | tail -1 || echo "")
 fi
-# Fallback: detect from CLAUDE_MODEL env or default based on context
-if [[ -z "$MODEL_ID" ]]; then
-    MODEL_ID="${CLAUDE_MODEL:-}"
+# Cache model_id per session to avoid re-reading transcript every time
+if [[ -n "$MODEL_ID" && -n "$SESSION_ID" ]]; then
+    echo "$MODEL_ID" > "${CACHE_DIR}/${SESSION_ID}_model" 2>/dev/null || true
+elif [[ -z "$MODEL_ID" && -n "$SESSION_ID" ]]; then
+    MODEL_ID=$(cat "${CACHE_DIR}/${SESSION_ID}_model" 2>/dev/null || echo "")
 fi
 
 # Track token consumption (fire-and-forget) with model_id
