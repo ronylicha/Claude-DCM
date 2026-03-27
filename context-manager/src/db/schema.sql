@@ -1,7 +1,7 @@
 -- Distributed Context Manager - Schema PostgreSQL
--- Version: 3.1.0
+-- Version: 4.0.0
 -- Created: 2026-01-30
--- Updated: 2026-02-28
+-- Updated: 2026-03-27
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -205,7 +205,12 @@ CREATE TABLE IF NOT EXISTS agent_capacity (
     compact_count INTEGER DEFAULT 0,
     zone TEXT DEFAULT 'green',
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    last_updated_at TIMESTAMPTZ DEFAULT NOW()
+    last_updated_at TIMESTAMPTZ DEFAULT NOW(),
+    real_input_tokens BIGINT DEFAULT 0,
+    real_output_tokens BIGINT DEFAULT 0,
+    model_id TEXT,
+    source TEXT DEFAULT 'estimated',  -- 'estimated' | 'statusline'
+    last_statusline_at TIMESTAMPTZ
 );
 
 -- ============================================
@@ -239,6 +244,35 @@ CREATE TABLE IF NOT EXISTS wave_states (
     completed_at TIMESTAMPTZ,
     UNIQUE(session_id, wave_number),
     CONSTRAINT chk_wave_number_positive CHECK (wave_number >= 0)
+);
+
+-- ============================================
+-- TABLE: preemptive_summaries
+-- Resumes de contexte pre-generes avant compaction
+-- ============================================
+CREATE TABLE IF NOT EXISTS preemptive_summaries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id TEXT NOT NULL,
+    agent_id TEXT,
+    summary TEXT NOT NULL,
+    source TEXT DEFAULT 'headless-agent',
+    context_tokens_at_trigger BIGINT,
+    status TEXT DEFAULT 'ready',  -- 'generating' | 'ready' | 'consumed'
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    consumed_at TIMESTAMPTZ
+);
+
+-- ============================================
+-- TABLE: calibration_ratios
+-- Ratio reel vs estime pour calibration des sub-agents
+-- ============================================
+CREATE TABLE IF NOT EXISTS calibration_ratios (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id TEXT NOT NULL,
+    ratio FLOAT NOT NULL DEFAULT 1.0,
+    real_tokens BIGINT NOT NULL,
+    estimated_tokens BIGINT NOT NULL,
+    calculated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ============================================
@@ -301,6 +335,13 @@ CREATE INDEX IF NOT EXISTS idx_batches_status ON orchestration_batches(status);
 
 -- Wave states indexes
 CREATE INDEX IF NOT EXISTS idx_waves_session ON wave_states(session_id, wave_number);
+
+-- Preemptive summaries indexes
+CREATE INDEX IF NOT EXISTS idx_preemptive_session_status ON preemptive_summaries(session_id, status);
+CREATE INDEX IF NOT EXISTS idx_preemptive_created ON preemptive_summaries(created_at DESC);
+
+-- Calibration ratios indexes
+CREATE INDEX IF NOT EXISTS idx_calibration_session ON calibration_ratios(session_id, calculated_at DESC);
 
 -- ============================================
 -- JSONB GIN Indexes pour requetes complexes
@@ -455,6 +496,8 @@ COMMENT ON TABLE agent_capacity IS 'Suivi capacite contexte des agents';
 COMMENT ON TABLE token_consumption IS 'Consommation de tokens par agent';
 COMMENT ON TABLE wave_states IS 'Etats des waves d orchestration';
 COMMENT ON TABLE orchestration_batches IS 'Batches d orchestration par wave';
+COMMENT ON TABLE preemptive_summaries IS 'Pre-generated context summaries before compaction via headless agent';
+COMMENT ON TABLE calibration_ratios IS 'Calibration ratio between real (statusline) and estimated (hooks) tokens';
 
 -- Schema version
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -463,4 +506,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 );
 
 INSERT INTO schema_version (version) VALUES ('3.1.0')
+ON CONFLICT (version) DO NOTHING;
+
+INSERT INTO schema_version (version) VALUES ('4.0.0')
 ON CONFLICT (version) DO NOTHING;

@@ -70,11 +70,11 @@ function calculateNodePositions(
 
 function getStatusColor(status: string): string {
   switch (status) {
-    case "active": return "#22c55e";
-    case "idle": return "#71717a";
-    case "compacting": return "#eab308";
-    case "error": return "#ef4444";
-    default: return "#71717a";
+    case "active": return "var(--dcm-zone-green)";
+    case "idle": return "var(--md-sys-color-outline)";
+    case "compacting": return "var(--dcm-zone-yellow)";
+    case "error": return "var(--dcm-zone-red)";
+    default: return "var(--md-sys-color-outline)";
   }
 }
 
@@ -130,12 +130,12 @@ function TopologyNode({
     return (
       <g>
         {/* Pulse ring */}
-        <circle cx={node.x} cy={node.y} r={42} fill="none" stroke={pulseColor || "#6366f1"} strokeWidth={1.5} opacity={0.3}>
+        <circle cx={node.x} cy={node.y} r={42} fill="none" stroke={pulseColor || "var(--md-sys-color-primary)"} strokeWidth={1.5} opacity={0.3}>
           <animate attributeName="r" values="38;48;38" dur="3s" repeatCount="indefinite" />
           <animate attributeName="opacity" values="0.4;0.1;0.4" dur="3s" repeatCount="indefinite" />
         </circle>
         {/* Hexagon */}
-        <polygon points={points} fill="url(#dcm-gradient)" stroke="#818cf8" strokeWidth={2} />
+        <polygon points={points} fill="url(#dcm-gradient)" stroke="var(--md-sys-color-primary)" strokeWidth={2} />
         {/* Label */}
         <text x={node.x} y={node.y + 1} textAnchor="middle" dominantBaseline="middle" fill="white" fontSize={12} fontWeight={700}>
           DCM
@@ -179,7 +179,7 @@ function FlowLine({
   to: { x: number; y: number };
   active?: boolean;
 }) {
-  const color = active ? "#818cf8" : "var(--border)";
+  const color = active ? "var(--md-sys-color-primary)" : "var(--border)";
   return (
     <line
       x1={from.x}
@@ -213,9 +213,9 @@ function EventRow({ event }: { event: WSEvent }) {
       {/* Direction arrow */}
       <div className={cn(
         "flex items-center justify-center h-6 w-6 rounded-full shrink-0",
-        direction === "outbound" && "bg-indigo-500/20 text-indigo-400",
-        direction === "inbound" && "bg-emerald-500/20 text-emerald-400",
-        direction === "internal" && "bg-zinc-500/20 text-zinc-400",
+        direction === "outbound" && "bg-[color-mix(in_srgb,var(--md-sys-color-primary)_20%,transparent)] text-[var(--md-sys-color-primary)]",
+        direction === "inbound" && "bg-[color-mix(in_srgb,var(--dcm-zone-green)_20%,transparent)] text-[var(--dcm-zone-green)]",
+        direction === "internal" && "bg-[color-mix(in_srgb,var(--md-sys-color-on-surface-variant)_20%,transparent)] text-[var(--md-sys-color-on-surface-variant)]",
       )}>
         {direction === "outbound" ? (
           <ArrowRight className="h-3 w-3" />
@@ -231,13 +231,13 @@ function EventRow({ event }: { event: WSEvent }) {
         variant="outline"
         className={cn(
           "text-[10px] font-mono shrink-0",
-          event.event.startsWith("wave.") && "border-violet-500/40 text-violet-400",
-          event.event.startsWith("batch.") && "border-cyan-500/40 text-cyan-400",
-          event.event.startsWith("session.") && "border-green-500/40 text-green-400",
-          event.event.startsWith("agent.") && "border-amber-500/40 text-amber-400",
-          event.event.startsWith("task.") && "border-blue-500/40 text-blue-400",
-          event.event.startsWith("subtask.") && "border-blue-500/40 text-blue-400",
-          event.event === "scope.injected" && "border-purple-500/40 text-purple-400",
+          event.event.startsWith("wave.") && "border-[color-mix(in_srgb,var(--md-sys-color-secondary)_40%,transparent)] text-[var(--md-sys-color-secondary)]",
+          event.event.startsWith("batch.") && "border-[color-mix(in_srgb,var(--md-sys-color-tertiary)_40%,transparent)] text-[var(--md-sys-color-tertiary)]",
+          event.event.startsWith("session.") && "border-[color-mix(in_srgb,var(--dcm-zone-green)_40%,transparent)] text-[var(--dcm-zone-green)]",
+          event.event.startsWith("agent.") && "border-[color-mix(in_srgb,var(--dcm-zone-yellow)_40%,transparent)] text-[var(--dcm-zone-yellow)]",
+          event.event.startsWith("task.") && "border-[color-mix(in_srgb,var(--md-sys-color-primary)_40%,transparent)] text-[var(--md-sys-color-primary)]",
+          event.event.startsWith("subtask.") && "border-[color-mix(in_srgb,var(--md-sys-color-primary)_40%,transparent)] text-[var(--md-sys-color-primary)]",
+          event.event === "scope.injected" && "border-[color-mix(in_srgb,var(--dcm-agent-orchestrator)_40%,transparent)] text-[var(--dcm-agent-orchestrator)]",
         )}
       >
         {event.event}
@@ -289,19 +289,19 @@ export default function FlowsPage() {
     maxEvents: 50,
   });
 
-  const { data: activeSessions, isLoading: sessionsLoading } = useQuery<ActiveSessionsResponse>({
+  const { data: activeSessions, isLoading: sessionsLoading, error: sessionsError } = useQuery<ActiveSessionsResponse>({
     queryKey: ["active-sessions"],
     queryFn: apiClient.getActiveSessions,
     refetchInterval: 5000,
   });
 
-  const { data: sessionsStats, isLoading: statsLoading } = useQuery<SessionsStats>({
+  const { data: sessionsStats, isLoading: statsLoading, error: statsError } = useQuery<SessionsStats>({
     queryKey: ["sessions-stats"],
     queryFn: apiClient.getSessionsStats,
     refetchInterval: 10000,
   });
 
-  const { data: recentActions } = useQuery<ActionsResponse>({
+  const { data: recentActions, error: actionsError } = useQuery<ActionsResponse>({
     queryKey: ["recent-actions-flows"],
     queryFn: () => apiClient.getActions(20),
     refetchInterval: 10000,
@@ -374,6 +374,22 @@ export default function FlowsPage() {
     return events.filter((e) => getEventFilterMatch(e, timelineFilter));
   }, [events, timelineFilter]);
 
+  // --- Error handling ---
+
+  const queryError = sessionsError || statsError || actionsError;
+  if (queryError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <p className="text-[var(--dcm-zone-red)] text-[14px]">
+          Erreur de chargement des donnees
+        </p>
+        <p className="text-[var(--md-sys-color-outline)] text-[12px]">
+          {queryError instanceof Error ? queryError.message : 'Erreur inconnue'}
+        </p>
+      </div>
+    );
+  }
+
   // --- KPI values ---
 
   const activeSessCount = metrics?.active_sessions ?? sessionsStats?.overview?.active_sessions ?? 0;
@@ -391,9 +407,9 @@ export default function FlowsPage() {
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="gap-1.5">
             {wsConnected ? (
-              <Wifi className="h-3 w-3 text-green-400" />
+              <Wifi className="h-3 w-3 text-[var(--dcm-zone-green)]" />
             ) : (
-              <WifiOff className="h-3 w-3 text-red-400" />
+              <WifiOff className="h-3 w-3 text-[var(--dcm-zone-red)]" />
             )}
             {wsConnected ? "Live" : "Disconnected"}
           </Badge>
@@ -407,33 +423,33 @@ export default function FlowsPage() {
           title="Active Sessions"
           value={activeSessCount}
           icon={<Radio className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-green-500 to-emerald-600"
+          iconGradient="bg-[var(--dcm-zone-green)]"
           loading={statsLoading && !metrics}
         />
         <PremiumKPICard
           title="Active Agents"
           value={activeAgentsCount}
           icon={<Users className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-violet-500 to-purple-600"
+          iconGradient="bg-[var(--md-sys-color-secondary)]"
           loading={sessionsLoading && !metrics}
         />
         <PremiumKPICard
           title="Orchestration Calls"
           value={craftPromptCalls}
           icon={<Zap className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-amber-500 to-orange-600"
+          iconGradient="bg-[var(--dcm-zone-yellow)]"
           trend={{ value: craftPromptCalls, label: "recent" }}
         />
         <PremiumKPICard
           title="Actions / min"
           value={actionsPerMin.toFixed(1)}
           icon={<Activity className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-cyan-500 to-blue-600"
+          iconGradient="bg-[var(--md-sys-color-tertiary)]"
         />
       </div>
 
       {/* ========== Section B: Topology View ========== */}
-      <div className="glass-card rounded-xl p-5">
+      <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-foreground">Topology</h3>
           <span className="text-xs text-muted-foreground">
@@ -449,8 +465,8 @@ export default function FlowsPage() {
           >
             <defs>
               <linearGradient id="dcm-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#4f46e5" />
-                <stop offset="100%" stopColor="#7c3aed" />
+                <stop offset="0%" stopColor="var(--md-sys-color-primary)" />
+                <stop offset="100%" stopColor="var(--md-sys-color-tertiary)" />
               </linearGradient>
               <filter id="glow">
                 <feGaussianBlur stdDeviation="3" result="blur" />
@@ -491,7 +507,7 @@ export default function FlowsPage() {
             <TopologyNode
               node={{ x: 250, y: 180, label: "DCM" }}
               isCenter
-              pulseColor={wsConnected ? "#6366f1" : "#ef4444"}
+              pulseColor={wsConnected ? "var(--md-sys-color-primary)" : "var(--dcm-zone-red)"}
             />
 
             {/* Empty state */}
@@ -524,14 +540,14 @@ export default function FlowsPage() {
                   key={agent.subtask_id}
                   className="flex items-center gap-2.5 p-2.5 rounded-lg bg-card/80 border border-border/60"
                 >
-                  <div className="flex items-center justify-center h-7 w-7 rounded-md bg-violet-500/20">
-                    <Users className="h-3.5 w-3.5 text-violet-400" />
+                  <div className="flex items-center justify-center h-7 w-7 rounded-md bg-[color-mix(in_srgb,var(--dcm-agent-orchestrator)_20%,transparent)]">
+                    <Users className="h-3.5 w-3.5 text-[var(--dcm-agent-orchestrator)]" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium text-foreground/80 truncate">{agent.agent_type}</div>
                     <div className="text-[10px] text-muted-foreground/50 truncate">{agent.description}</div>
                   </div>
-                  <Badge variant="outline" className="text-[9px] px-1 py-0 shrink-0 border-green-500/30 text-green-400">
+                  <Badge variant="outline" className="text-[9px] px-1 py-0 shrink-0 border-[color-mix(in_srgb,var(--dcm-zone-green)_30%,transparent)] text-[var(--dcm-zone-green)]">
                     running
                   </Badge>
                 </div>
@@ -542,7 +558,7 @@ export default function FlowsPage() {
       </div>
 
       {/* ========== Section C: Event Timeline ========== */}
-      <div className="glass-card rounded-xl overflow-hidden">
+      <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl overflow-hidden">
         {/* Filter tabs */}
         <div className="flex items-center gap-1 px-4 py-3 border-b border-border">
           <Filter className="h-3.5 w-3.5 text-muted-foreground mr-2" />
@@ -553,7 +569,7 @@ export default function FlowsPage() {
               className={cn(
                 "px-3 py-1 rounded-md text-xs font-medium transition-colors",
                 timelineFilter === tab.key
-                  ? "bg-indigo-500/20 text-indigo-400"
+                  ? "bg-[color-mix(in_srgb,var(--md-sys-color-primary)_20%,transparent)] text-[var(--md-sys-color-primary)]"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
               )}
             >

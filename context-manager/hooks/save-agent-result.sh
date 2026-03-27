@@ -43,11 +43,12 @@ last_task_result=""
 if [[ -n "$transcript_path" && -f "$transcript_path" ]]; then
     # Use jq slurp mode for robust parsing of JSONL transcript
     # Get the last Task tool result
-    last_task_result=$(jq -s '[.[] | select(.type == "tool_result" and .tool_name == "Task")] | last | .content // empty' \
+    # Try "Agent" first (current name), fall back to "Task" (legacy name)
+    last_task_result=$(jq -s '[.[] | select(.type == "tool_result" and (.tool_name == "Agent" or .tool_name == "Task"))] | last | .content // empty' \
         "$transcript_path" 2>/dev/null | head -c 1000 || echo "")
 
-    # Get the last Task tool call to find agent info
-    last_task_input=$(jq -s '[.[] | select(.type == "tool_use" and .name == "Task")] | last | .input // {}' \
+    # Get the last Agent/Task tool call to find agent info
+    last_task_input=$(jq -s '[.[] | select(.type == "tool_use" and (.name == "Agent" or .name == "Task"))] | last | .input // {}' \
         "$transcript_path" 2>/dev/null || echo "{}")
 
     agent_type=$(echo "$last_task_input" | jq -r '.subagent_type // empty' 2>/dev/null || echo "")
@@ -122,6 +123,21 @@ if [[ -n "$batch_id" && "$batch_id" != "null" && "$batch_id" != "" ]]; then
         -H "Content-Type: application/json" \
         --connect-timeout 1 \
         --max-time 3 >/dev/null 2>&1 &
+fi
+
+# v4.0: Clean up background agent cache entry (was skipped in track-agent-end.sh)
+if [[ -n "$agent_type" && -n "$agent_description" ]]; then
+    cache_key="${agent_type}:${agent_description}"
+    agents_file="${CACHE_DIR}/${session_id}_agents.json"
+    if [[ -f "$agents_file" ]]; then
+        agents_lock="${agents_file}.lock"
+        (
+            flock -x 200 || exit 1
+            tmp_file="${agents_file}.tmp.$$"
+            jq --arg key "$cache_key" 'del(.[$key])' "$agents_file" > "$tmp_file" 2>/dev/null && \
+                mv "$tmp_file" "$agents_file" 2>/dev/null || rm -f "$tmp_file" 2>/dev/null
+        ) 200>"$agents_lock"
+    fi
 fi
 
 exit 0

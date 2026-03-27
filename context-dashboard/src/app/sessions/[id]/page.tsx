@@ -62,13 +62,13 @@ function getStatusDotClass(status: string): string {
 function getStatusIcon(status: string) {
   switch (status) {
     case "completed":
-      return <CheckCircle className="h-4 w-4 text-green-500" />;
+      return <CheckCircle className="h-4 w-4 text-[var(--dcm-zone-green)]" />;
     case "failed":
-      return <XCircle className="h-4 w-4 text-red-500" />;
+      return <XCircle className="h-4 w-4 text-[var(--dcm-zone-red)]" />;
     case "running":
-      return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
+      return <Loader2 className="h-4 w-4 text-[var(--md-sys-color-primary)] animate-spin" />;
     case "pending":
-      return <Clock className="h-4 w-4 text-yellow-500" />;
+      return <Clock className="h-4 w-4 text-[var(--dcm-zone-yellow)]" />;
     default:
       return <Play className="h-4 w-4 text-muted-foreground" />;
   }
@@ -207,12 +207,10 @@ export default function SessionDetailPage() {
     queryKey: ["tasks", { request_ids: requestIds }],
     queryFn: async () => {
       if (!requests || requests.length === 0) return [];
-      const allTasks: Task[] = [];
-      for (const request of requests) {
-        const requestTasks = await apiClient.getTasks({ request_id: request.id });
-        allTasks.push(...requestTasks);
-      }
-      return allTasks;
+      const results = await Promise.all(
+        requests.map(request => apiClient.getTasks({ request_id: request.id }))
+      );
+      return results.flat() as Task[];
     },
     enabled: requestIds.length > 0,
   });
@@ -245,11 +243,11 @@ export default function SessionDetailPage() {
     );
   }
 
-  if (requestsError || !requests || requests.length === 0) {
+  if (requestsError) {
     return (
       <PageContainer
-        title="Session Not Found"
-        description="The requested session could not be found"
+        title="Error Loading Session"
+        description="A network error occurred while fetching session data"
         actions={
           <Link href="/sessions">
             <Button variant="outline">
@@ -264,7 +262,32 @@ export default function SessionDetailPage() {
             <p className="text-destructive">
               {requestsError instanceof Error
                 ? requestsError.message
-                : "No requests found for this session"}
+                : "Failed to load session data"}
+            </p>
+          </CardContent>
+        </Card>
+      </PageContainer>
+    );
+  }
+
+  if (!requests || requests.length === 0) {
+    return (
+      <PageContainer
+        title="Empty Session"
+        description="This session has no requests yet"
+        actions={
+          <Link href="/sessions">
+            <Button variant="outline">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Sessions
+            </Button>
+          </Link>
+        }
+      >
+        <Card>
+          <CardContent className="py-8 text-center">
+            <p className="text-muted-foreground">
+              No requests found for session <code className="font-mono text-xs">{sessionId}</code>
             </p>
           </CardContent>
         </Card>
@@ -462,10 +485,10 @@ export default function SessionDetailPage() {
                             >
                               <div className={cn(
                                 "mt-0.5 h-6 w-6 flex items-center justify-center rounded-full shrink-0",
-                                task.status === "completed" && "bg-green-500/10 text-green-600",
-                                task.status === "failed" && "bg-red-500/10 text-red-600",
-                                task.status === "running" && "bg-blue-500/10 text-blue-600",
-                                task.status === "pending" && "bg-yellow-500/10 text-yellow-600"
+                                task.status === "completed" && "bg-[color-mix(in_srgb,var(--dcm-zone-green)_12%,transparent)] text-[var(--dcm-zone-green)]",
+                                task.status === "failed" && "bg-[color-mix(in_srgb,var(--dcm-zone-red)_12%,transparent)] text-[var(--dcm-zone-red)]",
+                                task.status === "running" && "bg-[color-mix(in_srgb,var(--md-sys-color-primary)_12%,transparent)] text-[var(--md-sys-color-primary)]",
+                                task.status === "pending" && "bg-[color-mix(in_srgb,var(--dcm-zone-yellow)_12%,transparent)] text-[var(--dcm-zone-yellow)]"
                               )}>
                                 <FileText className="h-3 w-3" />
                               </div>

@@ -21,31 +21,31 @@ export function SystemPulseBar() {
     for (let i = 0; i < 60; i++) {
       if (i < events.length) {
         const evt = events[i];
-        let color = "#6b7280";
+        let color = "var(--md-sys-color-outline-variant)";
         const label = evt.event;
         if (evt.event.includes("completed")) {
-          color = "#22C55E";
+          color = "var(--dcm-zone-green)";
         } else if (
           evt.event.includes("agent.") ||
           evt.event.includes("subtask.running")
         ) {
-          color = "#8B5CF6";
+          color = "var(--md-sys-color-tertiary)";
         } else if (evt.event.includes("message.")) {
-          color = "#06B6D4";
+          color = "var(--md-sys-color-primary)";
         } else if (
           evt.event.includes("compact") ||
           evt.event.includes("capacity")
         ) {
-          color = "#F59E0B";
+          color = "var(--dcm-zone-yellow)";
         } else if (
           evt.event.includes("error") ||
           evt.event.includes("failed")
         ) {
-          color = "#EF4444";
+          color = "var(--dcm-zone-red)";
         }
         slots.push({ color, label });
       } else {
-        slots.push({ color: "#1f2937", label: "no data" });
+        slots.push({ color: "var(--md-sys-color-surface-container-high)", label: "no data" });
       }
     }
     return slots;

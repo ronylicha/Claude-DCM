@@ -56,18 +56,18 @@ export function PremiumKPICard({
       {trend && !loading && (
         <div className="flex items-center gap-1">
           {trend.value > 0 ? (
-            <TrendingUp className="h-3.5 w-3.5 text-green-500" />
+            <TrendingUp className="h-3.5 w-3.5 text-[var(--dcm-zone-green)]" />
           ) : trend.value < 0 ? (
-            <TrendingDown className="h-3.5 w-3.5 text-red-500" />
+            <TrendingDown className="h-3.5 w-3.5 text-[var(--dcm-zone-red)]" />
           ) : (
             <Minus className="h-3.5 w-3.5 text-muted-foreground" />
           )}
           <span
             className={`text-xs font-medium ${
               trend.value > 0
-                ? "text-green-500"
+                ? "text-[var(--dcm-zone-green)]"
                 : trend.value < 0
-                  ? "text-red-500"
+                  ? "text-[var(--dcm-zone-red)]"
                   : "text-muted-foreground"
             }`}
           >

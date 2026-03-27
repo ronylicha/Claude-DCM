@@ -67,13 +67,13 @@ function getStatusBadgeVariant(status: "active" | "completed" | "failed"): "defa
 function getStatusColor(status: "active" | "completed" | "failed"): string {
   switch (status) {
     case "active":
-      return "bg-green-500";
+      return "bg-[var(--dcm-zone-green)]";
     case "completed":
-      return "bg-blue-500";
+      return "bg-[var(--md-sys-color-primary)]";
     case "failed":
-      return "bg-red-500";
+      return "bg-[var(--dcm-zone-red)]";
     default:
-      return "bg-gray-500";
+      return "bg-[var(--md-sys-color-outline)]";
   }
 }
 
@@ -156,7 +156,7 @@ export default function SessionsPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   // Fetch sessions directly from API
-  const { data: sessionsResponse, isLoading: sessionsLoading, error: sessionsError } = useQuery<SessionsApiResponse>({
+  const { data: sessionsResponse, isLoading: sessionsLoading, error: sessionsError, refetch } = useQuery<SessionsApiResponse>({
     queryKey: ["sessions"],
     queryFn: async () => {
       const paginated = await apiClient.getSessions(1, 100);
@@ -314,8 +314,8 @@ export default function SessionsPage() {
       <div className="grid gap-4 md:grid-cols-4 stagger-children">
         <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
           <div className="flex items-center gap-2.5">
-            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br from-indigo-500 to-blue-500">
-              <Hash className="h-4 w-4 text-white" />
+            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-[var(--md-sys-color-primary)]">
+              <Hash className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />
             </div>
             <span className="text-sm font-medium text-muted-foreground">Total Sessions</span>
           </div>
@@ -323,30 +323,30 @@ export default function SessionsPage() {
         </div>
         <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
           <div className="flex items-center gap-2.5">
-            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-emerald-500">
-              <Activity className="h-4 w-4 text-white" />
+            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-[var(--dcm-zone-green)]">
+              <Activity className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />
             </div>
             <span className="text-sm font-medium text-muted-foreground">Active</span>
           </div>
-          <div className="text-3xl font-bold tracking-tight text-green-600 dark:text-green-400">{stats.active}</div>
+          <div className="text-3xl font-bold tracking-tight text-[var(--dcm-zone-green)]">{stats.active}</div>
         </div>
         <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
           <div className="flex items-center gap-2.5">
-            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500">
-              <Clock className="h-4 w-4 text-white" />
+            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-[var(--md-sys-color-secondary)]">
+              <Clock className="h-4 w-4 text-[var(--md-sys-color-on-secondary)]" />
             </div>
             <span className="text-sm font-medium text-muted-foreground">Completed</span>
           </div>
-          <div className="text-3xl font-bold tracking-tight text-blue-600 dark:text-blue-400">{stats.completed}</div>
+          <div className="text-3xl font-bold tracking-tight text-[var(--md-sys-color-primary)]">{stats.completed}</div>
         </div>
         <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
           <div className="flex items-center gap-2.5">
-            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br from-red-500 to-orange-500">
-              <Activity className="h-4 w-4 text-white" />
+            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-[var(--dcm-zone-red)]">
+              <Activity className="h-4 w-4 text-[var(--md-sys-color-on-error)]" />
             </div>
             <span className="text-sm font-medium text-muted-foreground">Failed</span>
           </div>
-          <div className="text-3xl font-bold tracking-tight text-red-600 dark:text-red-400">{stats.failed}</div>
+          <div className="text-3xl font-bold tracking-tight text-[var(--dcm-zone-red)]">{stats.failed}</div>
         </div>
       </div>
 
@@ -374,7 +374,7 @@ export default function SessionsPage() {
               <select
                 value={projectFilter}
                 onChange={(e) => setProjectFilter(e.target.value)}
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm cursor-pointer transition-colors focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring hover:bg-accent"
+                className="bg-[var(--md-sys-color-surface-container)] text-[var(--md-sys-color-on-surface)] border border-[var(--md-sys-color-outline-variant)] rounded-md-sm px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-[var(--md-sys-color-primary)] cursor-pointer"
               >
                 <option value="all">All Projects</option>
                 {uniqueProjects.map((project: Project) => (
@@ -409,11 +409,14 @@ export default function SessionsPage() {
           {sessionsLoading ? (
             <TableSkeleton />
           ) : sessionsError ? (
-            <div className="py-8 text-center">
+            <div className="py-8 text-center flex flex-col items-center gap-3">
               <p className="text-destructive">Failed to load sessions</p>
               <p className="text-sm text-muted-foreground">
                 {sessionsError instanceof Error ? sessionsError.message : "Unknown error"}
               </p>
+              <button onClick={() => refetch()} className="px-4 py-2 rounded-md-sm bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] text-[14px]">
+                Reessayer
+              </button>
             </div>
           ) : filteredSessions.length === 0 ? (
             <div className="py-8 text-center">
@@ -497,7 +500,7 @@ export default function SessionsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <div className={cn("h-2 w-2 rounded-full", session.status === "active" ? "dot-healthy" : session.status === "failed" ? "dot-error" : "bg-blue-500")} />
+                          <div className={cn("h-2 w-2 rounded-full", session.status === "active" ? "dot-healthy" : session.status === "failed" ? "dot-error" : "bg-[var(--md-sys-color-primary)]")} />
                           <Badge variant={getStatusBadgeVariant(session.status)}>
                             {session.status}
                           </Badge>
@@ -514,7 +517,7 @@ export default function SessionsPage() {
                           }
                           return (
                             <div className="flex items-center gap-1.5">
-                              <Users className="h-3.5 w-3.5 text-violet-400" />
+                              <Users className="h-3.5 w-3.5 text-[var(--md-sys-color-tertiary)]" />
                               <span className="text-sm font-medium">{agents.count}</span>
                               <span className="text-[10px] text-muted-foreground truncate max-w-[120px]" title={agents.types.join(", ")}>
                                 {agents.types.slice(0, 2).join(", ")}
@@ -530,9 +533,9 @@ export default function SessionsPage() {
                           return (
                             <span className={cn(
                               "text-sm font-medium",
-                              rate >= 90 ? "text-green-600 dark:text-green-400"
-                                : rate >= 70 ? "text-yellow-600 dark:text-yellow-400"
-                                : "text-red-600 dark:text-red-400"
+                              rate >= 90 ? "text-[var(--dcm-zone-green)]"
+                                : rate >= 70 ? "text-[var(--dcm-zone-yellow)]"
+                                : "text-[var(--dcm-zone-red)]"
                             )}>
                               {rate}%
                             </span>

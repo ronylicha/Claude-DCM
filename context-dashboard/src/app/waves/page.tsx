@@ -45,19 +45,19 @@ import { cn } from "@/lib/utils";
 // ============================================
 
 const ZONE_COLORS: Record<string, string> = {
-  green: "#22c55e",
-  yellow: "#eab308",
-  orange: "#f97316",
-  red: "#ef4444",
-  critical: "#dc2626",
+  green: "var(--dcm-zone-green)",
+  yellow: "var(--dcm-zone-yellow)",
+  orange: "var(--dcm-zone-orange)",
+  red: "var(--dcm-zone-red)",
+  critical: "var(--dcm-zone-critical)",
 };
 
 const STATUS_CONFIG: Record<string, { color: string; bg: string; border: string; icon: string; label: string }> = {
-  completed: { color: "text-emerald-400", bg: "bg-emerald-500/20", border: "border-emerald-500/40", icon: "emerald", label: "Completed" },
-  running:   { color: "text-blue-400",    bg: "bg-blue-500/20",    border: "border-blue-500/40",    icon: "blue",    label: "Running" },
-  failed:    { color: "text-red-400",     bg: "bg-red-500/20",     border: "border-red-500/40",     icon: "red",     label: "Failed" },
-  blocked:   { color: "text-amber-400",   bg: "bg-amber-500/20",   border: "border-amber-500/40",   icon: "amber",   label: "Blocked" },
-  pending:   { color: "text-muted-foreground",    bg: "bg-zinc-500/20",    border: "border-zinc-500/40",    icon: "zinc",    label: "Pending" },
+  completed: { color: "text-[var(--dcm-zone-green)]", bg: "bg-[color-mix(in_srgb,var(--dcm-zone-green)_12%,transparent)]", border: "border-[color-mix(in_srgb,var(--dcm-zone-green)_30%,transparent)]", icon: "green", label: "Completed" },
+  running:   { color: "text-[var(--md-sys-color-primary)]", bg: "bg-[var(--md-sys-color-primary-container)]", border: "border-[var(--md-sys-color-outline-variant)]", icon: "primary", label: "Running" },
+  failed:    { color: "text-[var(--dcm-zone-red)]", bg: "bg-[color-mix(in_srgb,var(--dcm-zone-red)_12%,transparent)]", border: "border-[color-mix(in_srgb,var(--dcm-zone-red)_30%,transparent)]", icon: "red", label: "Failed" },
+  blocked:   { color: "text-[var(--dcm-zone-orange)]", bg: "bg-[color-mix(in_srgb,var(--dcm-zone-orange)_12%,transparent)]", border: "border-[color-mix(in_srgb,var(--dcm-zone-orange)_30%,transparent)]", icon: "orange", label: "Blocked" },
+  pending:   { color: "text-[var(--md-sys-color-on-surface-variant)]", bg: "bg-[var(--md-sys-color-surface-container)]", border: "border-[var(--md-sys-color-outline-variant)]", icon: "muted", label: "Pending" },
 };
 
 // ============================================
@@ -104,14 +104,14 @@ function WaveTimelineItem({ wave, isSelected, isLast, onClick }: {
         <div className={cn(
           "flex items-center justify-center w-10 h-10 rounded-full border-2 transition-all duration-200",
           c.border, c.bg,
-          isSelected ? "ring-2 ring-blue-500/50 scale-110" : "hover:scale-105",
+          isSelected ? "ring-2 ring-[var(--md-sys-color-primary)] ring-opacity-50 scale-110" : "hover:scale-105",
         )}>
           <span className={cn("text-sm font-bold", c.color)}>{wave.wave_number}</span>
         </div>
         {!isLast && (
           <div className={cn(
             "w-0.5 flex-1 min-h-[20px]",
-            wave.status === "completed" ? "bg-emerald-500/50" : "bg-muted-foreground/30",
+            wave.status === "completed" ? "bg-[color-mix(in_srgb,var(--dcm-zone-green)_40%,transparent)]" : "bg-[var(--md-sys-color-outline-variant)]",
           )} />
         )}
       </div>
@@ -120,8 +120,8 @@ function WaveTimelineItem({ wave, isSelected, isLast, onClick }: {
       <div className={cn(
         "flex-1 rounded-lg p-3 mb-2 transition-all duration-200 border",
         isSelected
-          ? "bg-muted/80 border-blue-500/50 shadow-lg shadow-blue-500/5"
-          : "bg-muted/40 border-border/60 hover:bg-muted/60 hover:border-border",
+          ? "bg-[var(--md-sys-color-surface-container-high)] border-[var(--md-sys-color-primary)] shadow-md"
+          : "bg-[var(--md-sys-color-surface-container)] border-[var(--md-sys-color-outline-variant)] hover:bg-[var(--md-sys-color-surface-container-high)]",
       )}>
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-2">
@@ -140,9 +140,9 @@ function WaveTimelineItem({ wave, isSelected, isLast, onClick }: {
           <div
             className={cn(
               "absolute top-0 left-0 h-full rounded-full transition-all duration-700",
-              wave.status === "completed" ? "bg-emerald-500" :
-              wave.status === "running" ? "bg-blue-500" :
-              wave.status === "failed" ? "bg-red-500" : "bg-zinc-500",
+              wave.status === "completed" ? "bg-[var(--dcm-zone-green)]" :
+              wave.status === "running" ? "bg-[var(--md-sys-color-primary)]" :
+              wave.status === "failed" ? "bg-[var(--dcm-zone-red)]" : "bg-[var(--md-sys-color-outline)]",
             )}
             style={{ width: `${Math.max(progress, 2)}%` }}
           />
@@ -157,12 +157,12 @@ function WaveTimelineItem({ wave, isSelected, isLast, onClick }: {
             </span>
           )}
           {wave.failed_tasks > 0 && (
-            <span className="flex items-center gap-1 text-red-400">
+            <span className="flex items-center gap-1 text-[var(--dcm-zone-red)]">
               <XCircle className="h-3 w-3" /> {wave.failed_tasks} failed
             </span>
           )}
           {wave.status === "completed" && wave.started_at && wave.completed_at && (
-            <span className="text-emerald-400">
+            <span className="text-[var(--dcm-zone-green)]">
               {formatDuration(new Date(wave.completed_at).getTime() - new Date(wave.started_at).getTime())}
             </span>
           )}
@@ -211,8 +211,8 @@ function WaveDetailPanel({ wave, sessionId }: { wave: WaveState; sessionId: stri
         </div>
         {wave.status === "running" && (
           <div className="ml-auto flex items-center gap-1.5">
-            <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-            <span className="text-xs text-blue-400 font-medium">In Progress</span>
+            <div className="h-2 w-2 rounded-full bg-[var(--md-sys-color-primary)] animate-pulse" />
+            <span className="text-xs text-[var(--md-sys-color-primary)] font-medium">In Progress</span>
           </div>
         )}
       </div>
@@ -242,13 +242,13 @@ function WaveDetailPanel({ wave, sessionId }: { wave: WaveState; sessionId: stri
             <div className="text-2xl font-bold text-foreground">{wave.total_tasks}</div>
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground mt-0.5">Total</div>
           </div>
-          <div className="text-center p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700/30">
-            <div className="text-2xl font-bold text-emerald-400">{wave.completed_tasks}</div>
-            <div className="text-[11px] uppercase tracking-wider text-emerald-400/70 mt-0.5">Done</div>
+          <div className="text-center p-3 rounded-lg bg-[color-mix(in_srgb,var(--dcm-zone-green)_10%,transparent)] border border-[color-mix(in_srgb,var(--dcm-zone-green)_25%,transparent)]">
+            <div className="text-2xl font-bold text-[var(--dcm-zone-green)]">{wave.completed_tasks}</div>
+            <div className="text-[11px] uppercase tracking-wider text-[var(--dcm-zone-green)] opacity-70 mt-0.5">Done</div>
           </div>
-          <div className="text-center p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-700/30">
-            <div className="text-2xl font-bold text-red-400">{wave.failed_tasks}</div>
-            <div className="text-[11px] uppercase tracking-wider text-red-400/70 mt-0.5">Failed</div>
+          <div className="text-center p-3 rounded-lg bg-[color-mix(in_srgb,var(--dcm-zone-red)_10%,transparent)] border border-[color-mix(in_srgb,var(--dcm-zone-red)_25%,transparent)]">
+            <div className="text-2xl font-bold text-[var(--dcm-zone-red)]">{wave.failed_tasks}</div>
+            <div className="text-[11px] uppercase tracking-wider text-[var(--dcm-zone-red)] opacity-70 mt-0.5">Failed</div>
           </div>
         </div>
 
@@ -377,9 +377,9 @@ function WaveDistributionChart({ waves }: { waves: WaveState[] }) {
             color: "var(--card-foreground)",
           }}
         />
-        <Bar dataKey="completed" stackId="a" fill="#22c55e" radius={[0, 0, 0, 0]} name="Done" />
-        <Bar dataKey="failed" stackId="a" fill="#ef4444" name="Failed" />
-        <Bar dataKey="pending" stackId="a" fill="#52525b" radius={[3, 3, 0, 0]} name="Pending" />
+        <Bar dataKey="completed" stackId="a" fill="var(--dcm-zone-green)" radius={[0, 0, 0, 0]} name="Done" />
+        <Bar dataKey="failed" stackId="a" fill="var(--dcm-zone-red)" name="Failed" />
+        <Bar dataKey="pending" stackId="a" fill="var(--md-sys-color-outline)" radius={[3, 3, 0, 0]} name="Pending" />
       </RechartsBarChart>
     </ResponsiveContainer>
   );
@@ -439,8 +439,8 @@ function SessionAgentsPanel({ agents }: { agents: Array<{ agent_type: string; ag
     <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
       {agents.map((agent) => (
         <div key={agent.agent_id || agent.agent_type} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-muted/40 border border-border/50">
-          <div className="flex items-center justify-center h-8 w-8 rounded-md bg-blue-500/15 border border-blue-500/20 shrink-0">
-            <Bot className="h-3.5 w-3.5 text-blue-400" />
+          <div className="flex items-center justify-center h-8 w-8 rounded-md bg-[var(--md-sys-color-primary-container)] border border-[var(--md-sys-color-outline-variant)] shrink-0">
+            <Bot className="h-3.5 w-3.5 text-[var(--md-sys-color-on-primary-container)]" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-xs font-medium text-foreground/80 truncate">{agent.agent_type}</div>
@@ -451,7 +451,7 @@ function SessionAgentsPanel({ agents }: { agents: Array<{ agent_type: string; ag
               {new Date(agent.started_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
             </span>
           )}
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0 border-emerald-500/30 text-emerald-400">
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0 border-[color-mix(in_srgb,var(--dcm-zone-green)_30%,transparent)] text-[var(--dcm-zone-green)]">
             active
           </Badge>
         </div>
@@ -585,7 +585,7 @@ export default function WavesPage() {
       actions={
         <div className="flex items-center gap-2">
           {waveEvents.length > 0 && (
-            <Badge variant="outline" className="text-xs gap-1.5 border-emerald-500/30 text-emerald-400">
+            <Badge variant="outline" className="text-xs gap-1.5 border-[color-mix(in_srgb,var(--dcm-zone-green)_30%,transparent)] text-[var(--dcm-zone-green)]">
               <Radio className="h-3 w-3" />
               {waveEvents.length} events
             </Badge>

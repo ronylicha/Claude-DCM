@@ -20,14 +20,14 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 
 const AGENT_COLORS: Record<string, string> = {
-  "backend-laravel": "#ef4444", "frontend-react": "#3b82f6", "Explore": "#8b5cf6",
-  "docs-writer": "#6366f1", "explore-codebase": "#a855f7", "impact-analyzer": "#f59e0b",
-  "qa-testing": "#22c55e", "supabase-backend": "#06b6d4", "tech-lead": "#7c3aed",
-  "project-supervisor": "#9333ea", "react-refine": "#60a5fa", "regression-guard": "#eab308",
-  "security-specialist": "#f43f5e", "database-admin": "#f97316", "devops-infra": "#14b8a6",
+  "backend-laravel": "var(--dcm-zone-red)", "frontend-react": "var(--md-sys-color-primary)", "Explore": "var(--md-sys-color-tertiary)",
+  "docs-writer": "var(--md-sys-color-primary)", "explore-codebase": "var(--md-sys-color-tertiary)", "impact-analyzer": "var(--dcm-zone-yellow)",
+  "qa-testing": "var(--dcm-zone-green)", "supabase-backend": "var(--md-sys-color-secondary)", "tech-lead": "var(--md-sys-color-tertiary)",
+  "project-supervisor": "var(--md-sys-color-tertiary)", "react-refine": "var(--md-sys-color-primary)", "regression-guard": "var(--dcm-zone-yellow)",
+  "security-specialist": "var(--dcm-zone-red)", "database-admin": "var(--dcm-zone-orange)", "devops-infra": "var(--md-sys-color-secondary)",
 };
 
-function getColor(t: string) { return AGENT_COLORS[t] || "#6b7280"; }
+function getColor(t: string) { return AGENT_COLORS[t] || "var(--md-sys-color-outline)"; }
 
 function relTime(d: string | null) {
   if (!d) return "N/A";
@@ -43,7 +43,7 @@ function AgentTypesChart({ topTypes, loading }: { topTypes: AgentContextsStatsRe
 }
 
 function ToolsUsageChart({ toolsUsed, loading }: { toolsUsed: AgentContextsStatsResponse["tools_used"]; loading: boolean }) {
-  const colors = ["#3b82f6","#8b5cf6","#22c55e","#f59e0b","#ef4444","#ec4899","#06b6d4","#f97316","#14b8a6","#6366f1"];
+  const colors = ["var(--md-sys-color-primary)","var(--md-sys-color-tertiary)","var(--dcm-zone-green)","var(--dcm-zone-yellow)","var(--dcm-zone-red)","var(--md-sys-color-secondary)","var(--md-sys-color-secondary)","var(--dcm-zone-orange)","var(--md-sys-color-secondary)","var(--md-sys-color-primary)"];
   const data = (toolsUsed || []).slice(0, 10).map((t, i) => ({ name: t.tool, value: t.usage_count, color: colors[i % colors.length] }));
   return <PieChart title="Top Tools Used by Agents" data={data} loading={loading} height={350} showLegend innerRadius={55} outerRadius={95} />;
 }
@@ -55,7 +55,7 @@ function RecentActivityList({ recentActivity, loading }: { recentActivity: Agent
   return (
     <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
       {recentActivity.map((a, idx) => {
-        const sc = a.status === "running" ? "bg-green-500 animate-pulse" : a.status === "completed" ? "bg-blue-500" : a.status === "failed" ? "bg-red-500" : "bg-gray-400";
+        const sc = a.status === "running" ? "dot-healthy animate-pulse" : a.status === "completed" ? "bg-[var(--md-sys-color-primary)]" : a.status === "failed" ? "dot-error" : "bg-[var(--md-sys-color-outline)]";
         return (
           <div key={a.id || idx} className="flex gap-3 items-start p-3 rounded-lg border bg-card/50 hover:bg-accent/30 transition-colors">
             <div className={cn("h-2.5 w-2.5 rounded-full mt-1.5 shrink-0", sc)} />
@@ -88,7 +88,7 @@ function TopTypesTable({ topTypes, loading }: { topTypes: AgentContextsStatsResp
               <span className="text-[10px] text-white font-bold">{type.count}</span>
             </div>
           </div>
-          {type.running > 0 && <Badge variant="outline" className="text-xs text-green-600 border-green-500/30 shrink-0">{type.running} active</Badge>}
+          {type.running > 0 && <Badge variant="outline" className="text-xs text-[var(--dcm-zone-green)] border-[color-mix(in_srgb,var(--dcm-zone-green)_30%,transparent)] shrink-0">{type.running} active</Badge>}
         </div>
       ))}
     </div>
@@ -140,14 +140,14 @@ export default function ContextPage() {
 
       {/* Bottom: Types + Activity */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="glass-card animate-fade-in">
+        <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 animate-fade-in">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" />Agent Types Breakdown</CardTitle>
             <CardDescription>Distribution of context creation by agent type</CardDescription>
           </CardHeader>
           <CardContent><TopTypesTable topTypes={data?.top_types || []} loading={isLoading} /></CardContent>
         </Card>
-        <Card className="glass-card animate-fade-in">
+        <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 animate-fade-in">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Activity className="h-5 w-5" />Recent Activity</CardTitle>
             <CardDescription>Latest agent context changes</CardDescription>
@@ -157,7 +157,7 @@ export default function ContextPage() {
       </div>
 
       {/* Tools Summary */}
-      <Card className="glass-card animate-fade-in">
+      <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 animate-fade-in">
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Wrench className="h-5 w-5" />Tools Usage Across Agents</CardTitle>
           <CardDescription>Most commonly used tools by all agents</CardDescription>

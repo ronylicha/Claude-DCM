@@ -558,6 +558,131 @@ export interface CatalogCommand { id: string; name: string; description: string;
 export interface CatalogResponse { agents?: CatalogAgent[]; skills?: CatalogSkill[]; commands?: CatalogCommand[]; counts: { agents: number; skills: number; commands: number } }
 
 // ============================================
+// v4 Cockpit & Token types
+// ============================================
+
+export interface SessionCapacity {
+  session_id: string;
+  project_name: string;
+  model_id: string;
+  used_percentage: number;
+  zone: string;
+  predicted_exhaustion_minutes: number | null;
+  agents_count: number;
+  current_wave: number | null;
+}
+
+export interface GlobalCapacity {
+  sessions: {
+    total_active: number;
+    by_model: { opus: number; sonnet: number; haiku: number };
+  };
+  agents: {
+    total: number;
+    running: number;
+    blocked: number;
+    completed: number;
+  };
+  tokens: {
+    total_consumed: number;
+    total_rate: number;
+    by_session: SessionCapacity[];
+  };
+  summaries: {
+    generating: number;
+    ready: number;
+  };
+}
+
+export interface MiniCockpitData {
+  session_id: string;
+  project_name: string;
+  project_path: string;
+  model_id: string;
+  started_at: string;
+  context: {
+    used_percentage: number;
+    current_usage: number;
+    context_window_size: number;
+    zone: string;
+    consumption_rate: number;
+    predicted_exhaustion_minutes: number | null;
+    source: string;
+  };
+  wave: {
+    current_number: number;
+    completed: number;
+    total: number;
+    status: string;
+  } | null;
+  agents: {
+    total: number;
+    running: number;
+    blocked: number;
+    last_action: {
+      agent_id: string;
+      tool_name: string;
+      file_path?: string;
+      timestamp: string;
+    } | null;
+  };
+  sparkline: number[];
+  preemptive_summary: {
+    status: string;
+  };
+}
+
+export interface CockpitDetail {
+  session_id: string;
+  project_name: string;
+  context: {
+    used_percentage: number;
+    current_usage: number;
+    context_window_size: number;
+    zone: string;
+    consumption_rate: number;
+    predicted_exhaustion_minutes: number | null;
+    model_id?: string;
+    preemptive_summary?: { status: string };
+  };
+  agents: {
+    total: number;
+    running: number;
+    blocked: number;
+    list?: Array<{
+      id: string;
+      agent_id?: string;
+      agent_type: string;
+      parent_agent_id?: string | null;
+      status: string;
+    }>;
+  };
+  waves: {
+    pipeline?: Array<{
+      wave_number: number;
+      status: string;
+      completed_tasks: number;
+      total_tasks: number;
+    }>;
+  };
+}
+
+export interface TokenProjection {
+  session_id: string;
+  agent_id: string;
+  model_id: string;
+  current: {
+    usage: number;
+    max: number;
+    remaining: number;
+    zone: string;
+    rate: number;
+  };
+  projection_5h: { total_tokens: number; compactions: number };
+  projection_7d: { total_tokens: number; compactions: number };
+}
+
+// ============================================
 // API Error
 // ============================================
 
@@ -1050,6 +1175,30 @@ export const apiClient = {
     apiFetch<{ wave: WaveState }>(`/api/waves/${sessionId}/current`),
   getWaveHistory: (sessionId: string) =>
     apiFetch<{ waves: WaveState[]; count: number }>(`/api/waves/${sessionId}/history`),
+
+  // ==========================================
+  // Cockpit API - /api/cockpit (v4)
+  // ==========================================
+  getCockpitGlobal: () => apiFetch<GlobalCapacity>('/api/cockpit/global'),
+  getCockpitGrid: () => apiFetch<{ sessions: MiniCockpitData[] }>('/api/cockpit/grid'),
+  getCockpitSession: (sessionId: string) => apiFetch<CockpitDetail>(`/api/cockpit/${sessionId}`),
+
+  // ==========================================
+  // Token Projection - /api/tokens (v4)
+  // ==========================================
+  getTokenProjection: (sessionId: string) => apiFetch<TokenProjection>(`/api/tokens/projection/${sessionId}`),
+  getTokenCalibration: (sessionId: string) => apiFetch<Record<string, unknown>>(`/api/tokens/calibration/${sessionId}`),
+
+  // ==========================================
+  // Preemptive Compact - /api/compact (v4)
+  // ==========================================
+  getPreemptiveSummary: (sessionId: string) => apiFetch<Record<string, unknown>>(`/api/compact/preemptive/${sessionId}`),
+  getRawContext: (sessionId: string) => apiFetch<Record<string, unknown>>(`/api/compact/raw-context/${sessionId}`),
+
+  // ==========================================
+  // Active Sessions (v4) - /api/sessions/active
+  // ==========================================
+  getActiveSessionsV4: () => apiFetch<ActiveSessionsResponse>('/api/sessions/active'),
 
   // ==========================================
   // Compact Snapshots - /api/agent-contexts

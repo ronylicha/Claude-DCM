@@ -68,10 +68,10 @@ function formatRelativeTime(dateString: string): string {
 }
 
 function getTriggerBadgeColor(trigger: string): string {
-  if (trigger === "auto") return "bg-blue-500/10 text-blue-400 border-blue-500/20";
-  if (trigger === "manual") return "bg-violet-500/10 text-violet-400 border-violet-500/20";
-  if (trigger === "proactive") return "bg-amber-500/10 text-amber-400 border-amber-500/20";
-  return "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
+  if (trigger === "auto") return "bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)] border-[var(--md-sys-color-outline-variant)]";
+  if (trigger === "manual") return "bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)] border-[var(--md-sys-color-outline-variant)]";
+  if (trigger === "proactive") return "bg-[color-mix(in_srgb,var(--dcm-zone-orange)_12%,transparent)] text-[var(--dcm-zone-orange)] border-[color-mix(in_srgb,var(--dcm-zone-orange)_25%,transparent)]";
+  return "bg-[var(--md-sys-color-surface-container)] text-[var(--md-sys-color-on-surface-variant)] border-[var(--md-sys-color-outline-variant)]";
 }
 
 function getTriggerIcon(trigger: string) {
@@ -97,7 +97,7 @@ function GlassChartTooltip({
   if (!active || !payload?.length) return null;
 
   return (
-    <div className="glass-card rounded-lg px-3 py-2 shadow-lg">
+    <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-lg px-3 py-2 shadow-lg">
       <p className="text-xs font-medium text-muted-foreground mb-1">{label}</p>
       {payload.map((entry, i) => (
         <p
@@ -134,7 +134,7 @@ function StatsCard({
   subtitle,
 }: StatsCardProps) {
   return (
-    <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
+    <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl p-5 flex flex-col gap-3">
       <div className="flex items-center gap-2.5">
         <div
           className={cn(
@@ -183,13 +183,13 @@ function TimelineEvent({ event, isLast }: TimelineEventProps) {
     <div className="relative flex gap-4">
       {/* Timeline Line */}
       {!isLast && (
-        <div className="absolute left-4 top-12 bottom-0 w-0.5 bg-zinc-700" />
+        <div className="absolute left-4 top-12 bottom-0 w-0.5 bg-[var(--md-sys-color-outline-variant)]" />
       )}
 
       {/* Timeline Dot */}
       <div className="relative z-10 flex flex-col items-center">
         <div className={cn(
-          "flex items-center justify-center h-8 w-8 rounded-full border-2 border-zinc-700",
+          "flex items-center justify-center h-8 w-8 rounded-full border-2 border-[var(--md-sys-color-outline-variant)]",
           getTriggerBadgeColor(event.trigger)
         )}>
           {getTriggerIcon(event.trigger)}
@@ -199,7 +199,7 @@ function TimelineEvent({ event, isLast }: TimelineEventProps) {
       {/* Event Card */}
       <div className="flex-1 pb-8">
         <div
-          className="glass-card rounded-xl p-4 cursor-pointer hover:border-zinc-600 transition-colors"
+          className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl p-4 cursor-pointer hover:border-[var(--md-sys-color-outline)] transition-colors"
           onClick={() => setExpanded(!expanded)}
         >
           {/* Header */}
@@ -212,7 +212,7 @@ function TimelineEvent({ event, isLast }: TimelineEventProps) {
                 <span className="text-xs text-muted-foreground">
                   {formatDate(event.created_at)}
                 </span>
-                <span className="text-xs text-zinc-500">
+                <span className="text-xs text-[var(--md-sys-color-on-surface-variant)]">
                   {formatRelativeTime(event.created_at)}
                 </span>
               </div>
@@ -256,13 +256,13 @@ function TimelineEvent({ event, isLast }: TimelineEventProps) {
 
           {/* Expanded Details */}
           {expanded && (
-            <div className="mt-4 pt-4 border-t border-zinc-700">
+            <div className="mt-4 pt-4 border-t border-[var(--md-sys-color-outline-variant)]">
               <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
                 <Database className="h-4 w-4" />
                 Snapshot Data
               </h4>
-              <pre className="text-xs bg-zinc-950 rounded-lg p-3 overflow-x-auto max-h-96 overflow-y-auto">
-                <code className="text-zinc-300">
+              <pre className="text-xs bg-[var(--md-sys-color-surface-container-highest)] rounded-lg p-3 overflow-x-auto max-h-96 overflow-y-auto">
+                <code className="text-[var(--md-sys-color-on-surface)]">
                   {JSON.stringify(event.snapshot, null, 2)}
                 </code>
               </pre>
@@ -400,7 +400,7 @@ export default function CompactHistoryPage() {
         title="Compact History"
         description="Timeline of context compaction events"
       >
-        <Card className="glass-card border-destructive/30">
+        <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 border-destructive/30">
           <div className="p-6 flex items-center gap-3 text-destructive">
             <AlertCircle className="h-5 w-5" />
             <div>
@@ -422,7 +422,7 @@ export default function CompactHistoryPage() {
         title="Compact History"
         description="Timeline of context compaction events"
       >
-        <Card className="glass-card">
+        <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1">
           <div className="p-12 flex flex-col items-center justify-center gap-3 text-center">
             <Archive className="h-12 w-12 text-muted-foreground opacity-50" />
             <p className="text-lg font-semibold text-muted-foreground">
@@ -454,36 +454,36 @@ export default function CompactHistoryPage() {
         <StatsCard
           title="Total Compacts"
           value={stats.totalCompacts}
-          icon={<Archive className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-blue-500 to-cyan-500"
+          icon={<Archive className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />}
+          iconGradient="bg-[var(--md-sys-color-primary)]"
         />
 
         <StatsCard
           title="Avg Snapshot Size"
           value={formatBytes(stats.avgSize)}
-          icon={<Database className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-violet-500 to-purple-600"
+          icon={<Database className="h-4 w-4 text-[var(--md-sys-color-on-tertiary)]" />}
+          iconGradient="bg-[var(--md-sys-color-tertiary)]"
         />
 
         <StatsCard
           title="Most Active Session"
           value={stats.mostActiveSession.split(" ")[0]}
-          icon={<Activity className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-emerald-500 to-green-600"
+          icon={<Activity className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />}
+          iconGradient="bg-[var(--dcm-zone-green)]"
           subtitle={stats.mostActiveSession.includes("(") ? stats.mostActiveSession.split("(")[1].replace(")", " compacts") : undefined}
         />
 
         <StatsCard
           title="Proactive Ratio"
           value={`${stats.proactiveRatio}%`}
-          icon={<TrendingUp className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-amber-500 to-orange-500"
+          icon={<TrendingUp className="h-4 w-4 text-[var(--md-sys-color-on-secondary)]" />}
+          iconGradient="bg-[var(--md-sys-color-secondary)]"
           subtitle="Proactive vs reactive"
         />
       </div>
 
       {/* Area Chart */}
-      <Card className="glass-card mt-6">
+      <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 mt-6">
         <div className="p-6">
           <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
             <Activity className="h-5 w-5" />
@@ -509,12 +509,12 @@ export default function CompactHistoryPage() {
                   >
                     <stop
                       offset="5%"
-                      stopColor="#8b5cf6"
+                      stopColor="var(--md-sys-color-tertiary)"
                       stopOpacity={0.3}
                     />
                     <stop
                       offset="95%"
-                      stopColor="#8b5cf6"
+                      stopColor="var(--md-sys-color-tertiary)"
                       stopOpacity={0}
                     />
                   </linearGradient>
@@ -522,12 +522,12 @@ export default function CompactHistoryPage() {
                 <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
                 <XAxis
                   dataKey="name"
-                  tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                  tick={{ fontSize: 11, fill: "var(--md-sys-color-on-surface-variant)" }}
                   tickLine={false}
                   axisLine={false}
                 />
                 <YAxis
-                  tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                  tick={{ fontSize: 11, fill: "var(--md-sys-color-on-surface-variant)" }}
                   tickLine={false}
                   axisLine={false}
                 />
@@ -536,7 +536,7 @@ export default function CompactHistoryPage() {
                   type="monotone"
                   dataKey="compacts"
                   name="Compacts"
-                  stroke="#8b5cf6"
+                  stroke="var(--md-sys-color-tertiary)"
                   strokeWidth={2}
                   fill="url(#compactsGradient)"
                 />
@@ -548,7 +548,7 @@ export default function CompactHistoryPage() {
 
       {/* Timeline */}
       <div className="mt-6">
-        <Card className="glass-card">
+        <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1">
           <div className="p-6">
             <h3 className="text-base font-semibold mb-6 flex items-center gap-2">
               <History className="h-5 w-5" />

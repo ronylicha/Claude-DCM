@@ -60,6 +60,9 @@ import { postBatchSubmit, getBatch, getSynthesis, getConflicts, postBatchComplet
 import { postCraftPrompt, postDecompose } from "./api/orchestration-planner";
 import { getWaveCurrent, getWaveHistoryHandler, postWaveTransition, postWaveCreate, postWaveStart } from "./api/waves";
 import { trackAgentTurn, getAgentStatus, relaunchAgent } from "./api/agents";
+import { postTokensRealtime, getTokenProjection, getTokenCalibration } from "./api/tokens-realtime";
+import { getCockpitGlobal, getCockpitGrid, getCockpitSession } from "./api/cockpit";
+import { postPreemptiveSummary, getPreemptiveSummary, getRawContext } from "./api/compact-preemptive";
 
 // Version from package.json (single source of truth)
 import pkg from "../package.json";
@@ -486,6 +489,35 @@ app.get("/api/waves/:session_id/history", getWaveHistoryHandler);
 app.post("/api/agents/track-turn", trackAgentTurn);
 app.get("/api/agents/:agent_id/status", getAgentStatus);
 app.post("/api/agents/relaunch", relaunchAgent);
+
+// ============================================
+// Real-time Token Tracking API - Phase 10 (DCM v4.0)
+// ============================================
+
+// POST /api/tokens/realtime - Receive real token data from statusline
+app.post("/api/tokens/realtime", postTokensRealtime);
+
+// GET /api/tokens/projection/:session_id - Token projection 5h/7d
+app.get("/api/tokens/projection/:session_id", getTokenProjection);
+
+// GET /api/tokens/calibration/:session_id - Calibration ratio
+app.get("/api/tokens/calibration/:session_id", getTokenCalibration);
+
+// ============================================
+// Cockpit API - Phase 10 (DCM v4.0)
+// ============================================
+
+app.get("/api/cockpit/global", getCockpitGlobal);
+app.get("/api/cockpit/grid", getCockpitGrid);
+app.get("/api/cockpit/:session_id", getCockpitSession);
+
+// ============================================
+// Preemptive Compact API - Phase 10 (DCM v4.0)
+// ============================================
+
+app.get("/api/compact/raw-context/:session_id", getRawContext);
+app.post("/api/compact/preemptive-summary", postPreemptiveSummary);
+app.get("/api/compact/preemptive/:session_id", getPreemptiveSummary);
 
 // ============================================
 // Server Startup

@@ -36,23 +36,23 @@ import {
 import { cn } from "@/lib/utils";
 
 const AGENT_CATEGORIES: Record<string, { color: string; bgColor: string; gradient: string }> = {
-  "project-supervisor": { color: "text-purple-600 dark:text-purple-400", bgColor: "bg-purple-500", gradient: "from-purple-500 to-violet-600" },
-  "tech-lead": { color: "text-purple-500 dark:text-purple-300", bgColor: "bg-purple-400", gradient: "from-purple-400 to-violet-500" },
-  "impact-analyzer": { color: "text-red-600 dark:text-red-400", bgColor: "bg-red-500", gradient: "from-red-500 to-rose-600" },
-  "regression-guard": { color: "text-red-500 dark:text-red-300", bgColor: "bg-red-400", gradient: "from-red-400 to-rose-500" },
-  "security-specialist": { color: "text-red-600 dark:text-red-400", bgColor: "bg-red-500", gradient: "from-red-500 to-rose-600" },
-  "backend-laravel": { color: "text-orange-600 dark:text-orange-400", bgColor: "bg-orange-500", gradient: "from-orange-500 to-amber-600" },
-  "laravel-api": { color: "text-orange-500 dark:text-orange-300", bgColor: "bg-orange-400", gradient: "from-orange-400 to-amber-500" },
-  "database-admin": { color: "text-amber-600 dark:text-amber-400", bgColor: "bg-amber-500", gradient: "from-amber-500 to-yellow-600" },
-  "frontend-react": { color: "text-blue-600 dark:text-blue-400", bgColor: "bg-blue-500", gradient: "from-blue-500 to-cyan-600" },
-  "react-refine": { color: "text-blue-500 dark:text-blue-300", bgColor: "bg-blue-400", gradient: "from-blue-400 to-cyan-500" },
-  "designer-ui-ux": { color: "text-pink-600 dark:text-pink-400", bgColor: "bg-pink-500", gradient: "from-pink-500 to-rose-600" },
-  "react-native-dev": { color: "text-cyan-600 dark:text-cyan-400", bgColor: "bg-cyan-500", gradient: "from-cyan-500 to-teal-600" },
-  "react-native-ui": { color: "text-cyan-500 dark:text-cyan-300", bgColor: "bg-cyan-400", gradient: "from-cyan-400 to-teal-500" },
-  "step-orchestrator": { color: "text-indigo-600 dark:text-indigo-400", bgColor: "bg-indigo-500", gradient: "from-indigo-500 to-purple-600" },
-  Explore: { color: "text-emerald-600 dark:text-emerald-400", bgColor: "bg-emerald-500", gradient: "from-emerald-500 to-green-600" },
-  "code-reviewer": { color: "text-yellow-600 dark:text-yellow-400", bgColor: "bg-yellow-500", gradient: "from-yellow-500 to-amber-600" },
-  default: { color: "text-gray-600 dark:text-gray-400", bgColor: "bg-gray-500", gradient: "from-gray-500 to-slate-600" },
+  "project-supervisor": { color: "text-[var(--dcm-agent-orchestrator)]", bgColor: "bg-[var(--dcm-agent-orchestrator)]", gradient: "from-[var(--dcm-agent-orchestrator)] to-[var(--md-sys-color-tertiary)]" },
+  "tech-lead": { color: "text-[var(--dcm-agent-orchestrator)]", bgColor: "bg-[var(--dcm-agent-orchestrator)]", gradient: "from-[var(--dcm-agent-orchestrator)] to-[var(--md-sys-color-tertiary)]" },
+  "impact-analyzer": { color: "text-[var(--dcm-agent-security)]", bgColor: "bg-[var(--dcm-agent-security)]", gradient: "from-[var(--dcm-agent-security)] to-[var(--dcm-zone-red)]" },
+  "regression-guard": { color: "text-[var(--dcm-agent-security)]", bgColor: "bg-[var(--dcm-agent-security)]", gradient: "from-[var(--dcm-agent-security)] to-[var(--dcm-zone-red)]" },
+  "security-specialist": { color: "text-[var(--dcm-agent-security)]", bgColor: "bg-[var(--dcm-agent-security)]", gradient: "from-[var(--dcm-agent-security)] to-[var(--dcm-zone-red)]" },
+  "backend-laravel": { color: "text-[var(--dcm-agent-backend)]", bgColor: "bg-[var(--dcm-agent-backend)]", gradient: "from-[var(--dcm-agent-backend)] to-[var(--dcm-zone-orange)]" },
+  "laravel-api": { color: "text-[var(--dcm-agent-backend)]", bgColor: "bg-[var(--dcm-agent-backend)]", gradient: "from-[var(--dcm-agent-backend)] to-[var(--dcm-zone-orange)]" },
+  "database-admin": { color: "text-[var(--dcm-agent-database)]", bgColor: "bg-[var(--dcm-agent-database)]", gradient: "from-[var(--dcm-agent-database)] to-[var(--md-sys-color-secondary)]" },
+  "frontend-react": { color: "text-[var(--dcm-agent-frontend)]", bgColor: "bg-[var(--dcm-agent-frontend)]", gradient: "from-[var(--dcm-agent-frontend)] to-[var(--md-sys-color-primary)]" },
+  "react-refine": { color: "text-[var(--dcm-agent-frontend)]", bgColor: "bg-[var(--dcm-agent-frontend)]", gradient: "from-[var(--dcm-agent-frontend)] to-[var(--md-sys-color-primary)]" },
+  "designer-ui-ux": { color: "text-[var(--dcm-agent-orchestrator)]", bgColor: "bg-[var(--dcm-agent-orchestrator)]", gradient: "from-[var(--dcm-agent-orchestrator)] to-[var(--md-sys-color-tertiary)]" },
+  "react-native-dev": { color: "text-[var(--dcm-agent-frontend)]", bgColor: "bg-[var(--dcm-agent-frontend)]", gradient: "from-[var(--dcm-agent-frontend)] to-[var(--md-sys-color-primary)]" },
+  "react-native-ui": { color: "text-[var(--dcm-agent-frontend)]", bgColor: "bg-[var(--dcm-agent-frontend)]", gradient: "from-[var(--dcm-agent-frontend)] to-[var(--md-sys-color-primary)]" },
+  "step-orchestrator": { color: "text-[var(--dcm-agent-orchestrator)]", bgColor: "bg-[var(--dcm-agent-orchestrator)]", gradient: "from-[var(--dcm-agent-orchestrator)] to-[var(--md-sys-color-tertiary)]" },
+  Explore: { color: "text-[var(--dcm-agent-testing)]", bgColor: "bg-[var(--dcm-agent-testing)]", gradient: "from-[var(--dcm-agent-testing)] to-[var(--dcm-zone-green)]" },
+  "code-reviewer": { color: "text-[var(--dcm-zone-yellow)]", bgColor: "bg-[var(--dcm-zone-yellow)]", gradient: "from-[var(--dcm-zone-yellow)] to-[var(--dcm-zone-orange)]" },
+  default: { color: "text-[var(--md-sys-color-on-surface-variant)]", bgColor: "bg-[var(--md-sys-color-outline)]", gradient: "from-[var(--md-sys-color-outline)] to-[var(--md-sys-color-surface-variant)]" },
 };
 
 function getAgentCategory(agentType: string) {
@@ -113,7 +113,7 @@ function ActiveAgentCard({
                 "flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br",
                 category.gradient
               )}>
-                <Bot className="h-4 w-4 text-white" />
+                <Bot className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />
               </div>
               <div>
                 <span className={cn("font-semibold text-sm", category.color)}>
@@ -201,7 +201,7 @@ function AgentTypeCard({
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-xs">
             <span className="text-muted-foreground">Completed</span>
-            <span className="font-medium text-green-600 dark:text-green-400 flex items-center gap-1">
+            <span className="font-medium text-[var(--dcm-zone-green)] flex items-center gap-1">
               <CheckCircle className="h-3 w-3" />
               {completedCount}
             </span>
@@ -209,7 +209,7 @@ function AgentTypeCard({
           {runningCount > 0 && (
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Running</span>
-              <span className="font-medium text-blue-600 dark:text-blue-400 flex items-center gap-1">
+              <span className="font-medium text-[var(--md-sys-color-primary)] flex items-center gap-1">
                 <Activity className="h-3 w-3 animate-pulse" />
                 {runningCount}
               </span>
@@ -218,7 +218,7 @@ function AgentTypeCard({
           {failedCount > 0 && (
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Failed</span>
-              <span className="font-medium text-red-600 dark:text-red-400 flex items-center gap-1">
+              <span className="font-medium text-[var(--dcm-zone-red)] flex items-center gap-1">
                 <AlertCircle className="h-3 w-3" />
                 {failedCount}
               </span>
@@ -230,9 +230,9 @@ function AgentTypeCard({
               <span className={cn(
                 "font-semibold",
                 successRate === null ? "text-muted-foreground"
-                  : successRate >= 80 ? "text-green-600 dark:text-green-400"
-                  : successRate >= 50 ? "text-yellow-600 dark:text-yellow-400"
-                  : "text-red-600 dark:text-red-400"
+                  : successRate >= 80 ? "text-[var(--dcm-zone-green)]"
+                  : successRate >= 50 ? "text-[var(--dcm-zone-yellow)]"
+                  : "text-[var(--dcm-zone-red)]"
               )}>
                 {successRate !== null ? `${successRate}%` : "—"}
               </span>
@@ -242,9 +242,9 @@ function AgentTypeCard({
                 className={cn(
                   "h-full rounded-full transition-all duration-700 ease-out",
                   successRate === null ? "bg-muted"
-                    : successRate >= 80 ? "bg-gradient-to-r from-green-500 to-emerald-400"
-                    : successRate >= 50 ? "bg-gradient-to-r from-yellow-500 to-amber-400"
-                    : "bg-gradient-to-r from-red-500 to-rose-400"
+                    : successRate >= 80 ? "bg-[var(--dcm-zone-green)]"
+                    : successRate >= 50 ? "bg-[var(--dcm-zone-yellow)]"
+                    : "bg-[var(--dcm-zone-red)]"
                 )}
                 style={{ width: `${successRate ?? 0}%` }}
               />
@@ -350,13 +350,13 @@ function AgentTopologyTree({
                           "h-6 w-6 rounded-md flex items-center justify-center",
                           isRunning ? `bg-gradient-to-br ${category.gradient}` : "bg-muted"
                         )}>
-                          <Bot className={cn("h-3 w-3", isRunning ? "text-white" : "text-muted-foreground")} />
+                          <Bot className={cn("h-3 w-3", isRunning ? "text-[var(--md-sys-color-on-primary)]" : "text-muted-foreground")} />
                         </div>
                         <span className={cn("text-xs font-medium flex-1 truncate", category.color)}>
                           {agent.agent_type || "unknown"}
                         </span>
                         {isRunning && (
-                          <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                          <div className="h-1.5 w-1.5 rounded-full dot-healthy animate-pulse" />
                         )}
                         <Badge variant="outline" className="text-[8px] py-0 px-1.5">
                           {agent.status}
@@ -379,13 +379,13 @@ function AgentTopologyTree({
                                   "h-5 w-5 rounded flex items-center justify-center",
                                   childRunning ? `bg-gradient-to-br ${childCat.gradient}` : "bg-muted"
                                 )}>
-                                  <Bot className={cn("h-2.5 w-2.5", childRunning ? "text-white" : "text-muted-foreground")} />
+                                  <Bot className={cn("h-2.5 w-2.5", childRunning ? "text-[var(--md-sys-color-on-primary)]" : "text-muted-foreground")} />
                                 </div>
                                 <span className={cn("truncate flex-1", childCat.color)}>
                                   {child.agent_type || "unknown"}
                                 </span>
                                 {childRunning && (
-                                  <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                                  <div className="h-1.5 w-1.5 rounded-full dot-healthy animate-pulse" />
                                 )}
                               </div>
                             );
@@ -438,14 +438,14 @@ function SafetyGateSection({ blockedActions }: { blockedActions: ActionsResponse
   const blockedCount = blocked.length;
 
   return (
-    <Card className="glass-card border-red-500/20">
+    <Card className="glass-card border-[var(--md-sys-color-error-container)]">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
             {blockedCount > 0 ? (
-              <ShieldAlert className="h-5 w-5 text-red-500" />
+              <ShieldAlert className="h-5 w-5 text-[var(--dcm-zone-red)]" />
             ) : (
-              <ShieldCheck className="h-5 w-5 text-green-500" />
+              <ShieldCheck className="h-5 w-5 text-[var(--dcm-zone-green)]" />
             )}
             Safety Gate
           </CardTitle>
@@ -459,10 +459,10 @@ function SafetyGateSection({ blockedActions }: { blockedActions: ActionsResponse
       </CardHeader>
       <CardContent>
         {blockedCount === 0 ? (
-          <div className="flex items-center gap-3 py-3 px-4 rounded-lg bg-green-500/5 border border-green-500/10">
-            <ShieldCheck className="h-8 w-8 text-green-500/60" />
+          <div className="flex items-center gap-3 py-3 px-4 rounded-lg bg-[color-mix(in_srgb,var(--dcm-zone-green)_8%,transparent)] border border-[color-mix(in_srgb,var(--dcm-zone-green)_20%,transparent)]">
+            <ShieldCheck className="h-8 w-8 text-[var(--dcm-zone-green)] opacity-60" />
             <div>
-              <p className="text-sm font-medium text-green-600 dark:text-green-400">No blocked operations</p>
+              <p className="text-sm font-medium text-[var(--dcm-zone-green)]">No blocked operations</p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Safety gate is active — rm -rf, DROP DATABASE, .env access are blocked
               </p>
@@ -473,11 +473,11 @@ function SafetyGateSection({ blockedActions }: { blockedActions: ActionsResponse
             {blocked.map((action, idx) => (
               <div
                 key={action.id || idx}
-                className="flex items-start gap-3 rounded-lg border border-red-500/10 bg-red-500/5 px-3 py-2.5"
+                className="flex items-start gap-3 rounded-lg border border-[color-mix(in_srgb,var(--dcm-zone-red)_20%,transparent)] bg-[color-mix(in_srgb,var(--dcm-zone-red)_6%,transparent)] px-3 py-2.5"
               >
-                <ShieldAlert className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                <ShieldAlert className="h-4 w-4 text-[var(--dcm-zone-red)] mt-0.5 shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-red-600 dark:text-red-400 truncate">
+                  <p className="text-xs font-medium text-[var(--dcm-zone-red)] truncate">
                     {typeof action.metadata?.reason === "string" ? action.metadata.reason : "Blocked operation"}
                   </p>
                   <p className="text-[10px] text-muted-foreground mt-0.5 font-mono truncate">
@@ -525,7 +525,7 @@ function AgentCardSkeleton() {
 export default function AgentsPage() {
   const { data: subtasksData, isLoading: subtasksLoading } = useQuery<SubtasksResponse>({
     queryKey: ["subtasks", "all"],
-    queryFn: () => apiClient.getSubtasks({ limit: 1000 }),
+    queryFn: () => apiClient.getSubtasks({ limit: 200 }),
     refetchInterval: 30000,
   });
 
@@ -652,36 +652,36 @@ export default function AgentsPage() {
         <PremiumKPICard
           title="Active Agents"
           value={activeAgentsCount}
-          icon={<Activity className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-green-500 to-emerald-500"
+          icon={<Activity className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />}
+          iconGradient="bg-[var(--dcm-zone-green)]"
           loading={activeLoading}
         />
         <PremiumKPICard
           title="Main / Sub"
           value={`${agentStats.mainAgents} / ${agentStats.subAgents}`}
-          icon={<Network className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-cyan-500 to-teal-500"
+          icon={<Network className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />}
+          iconGradient="bg-[var(--md-sys-color-primary)]"
           loading={subtasksLoading}
         />
         <PremiumKPICard
           title="Agent Types"
           value={uniqueAgentTypes}
-          icon={<Users className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-purple-500 to-violet-600"
+          icon={<Users className="h-4 w-4 text-[var(--md-sys-color-on-tertiary)]" />}
+          iconGradient="bg-[var(--md-sys-color-tertiary)]"
           loading={subtasksLoading}
         />
         <PremiumKPICard
           title="Total Subtasks"
           value={agentStats.total}
-          icon={<Zap className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-amber-500 to-orange-500"
+          icon={<Zap className="h-4 w-4 text-[var(--md-sys-color-on-secondary)]" />}
+          iconGradient="bg-[var(--md-sys-color-secondary)]"
           loading={subtasksLoading}
         />
         <PremiumKPICard
           title="Success Rate"
           value={successRate !== null ? `${successRate}%` : "N/A"}
-          icon={<TrendingUp className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-blue-500 to-cyan-500"
+          icon={<TrendingUp className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />}
+          iconGradient="bg-[var(--md-sys-color-primary)]"
           loading={subtasksLoading}
           trend={successRate !== null ? { value: successRate >= 80 ? 1 : successRate >= 50 ? 0 : -1, label: "overall" } : undefined}
         />
@@ -690,12 +690,12 @@ export default function AgentsPage() {
       {/* Active Sessions Panel — always shows live sessions */}
       <div className="mt-6">
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-500 to-blue-500">
-            <FolderOpen className="h-4 w-4 text-white" />
+          <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-[var(--md-sys-color-primary)]">
+            <FolderOpen className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />
           </div>
           Active Sessions
           {liveSessions.length > 0 && (
-            <Badge variant="default" className="bg-indigo-500 text-[10px]">
+            <Badge variant="default" className="bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] text-[10px]">
               {liveSessions.length} live
             </Badge>
           )}
@@ -711,15 +711,15 @@ export default function AgentsPage() {
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2.5">
-                      <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br from-indigo-500 to-blue-500">
-                        <FolderOpen className="h-4 w-4 text-white" />
+                      <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-[var(--md-sys-color-primary)]">
+                        <FolderOpen className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />
                       </div>
                       <div>
                         <span className="font-semibold text-sm truncate block max-w-[180px]" title={session.projectName}>
                           {session.projectName}
                         </span>
                         <div className="flex items-center gap-1.5 mt-0.5">
-                          <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                          <div className="h-1.5 w-1.5 rounded-full dot-healthy animate-pulse" />
                           <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Live</span>
                         </div>
                       </div>
@@ -765,12 +765,12 @@ export default function AgentsPage() {
             {/* Main Agents */}
             <div className="mt-6">
               <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-gradient-to-br from-green-500 to-emerald-500">
-                  <Activity className="h-4 w-4 text-white" />
+                <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-[var(--dcm-zone-green)]">
+                  <Activity className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />
                 </div>
                 Main Agents
                 {mainAgents.length > 0 && (
-                  <Badge variant="default" className="bg-green-500 text-[10px]">
+                  <Badge variant="default" className="bg-[var(--dcm-zone-green)] text-[var(--md-sys-color-on-primary)] text-[10px]">
                     {mainAgents.length} running
                   </Badge>
                 )}
@@ -803,12 +803,12 @@ export default function AgentsPage() {
             {/* Subagents */}
             <div className="mt-6">
               <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-gradient-to-br from-cyan-500 to-teal-500">
-                  <Network className="h-4 w-4 text-white" />
+                <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-[var(--md-sys-color-secondary)]">
+                  <Network className="h-4 w-4 text-[var(--md-sys-color-on-secondary)]" />
                 </div>
                 Subagents
                 {subAgents.length > 0 && (
-                  <Badge variant="default" className="bg-cyan-500 text-[10px]">
+                  <Badge variant="default" className="bg-[var(--md-sys-color-secondary)] text-[var(--md-sys-color-on-secondary)] text-[10px]">
                     {subAgents.length} running
                   </Badge>
                 )}
@@ -860,8 +860,8 @@ export default function AgentsPage() {
       {/* Agent Types Grid */}
       <div className="mt-6">
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-gradient-to-br from-purple-500 to-violet-600">
-            <Bot className="h-4 w-4 text-white" />
+          <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-[var(--md-sys-color-tertiary)]">
+            <Bot className="h-4 w-4 text-[var(--md-sys-color-on-tertiary)]" />
           </div>
           Agent Type Statistics
         </h3>

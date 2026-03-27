@@ -37,14 +37,14 @@ export function getEventIcon(eventType: string): React.ReactNode {
 }
 
 export function getEventColor(eventType: string): string {
-  if (eventType.includes("completed")) return "text-green-500";
+  if (eventType.includes("completed")) return "text-[var(--dcm-zone-green)]";
   if (eventType.includes("failed") || eventType.includes("error"))
-    return "text-red-500";
+    return "text-[var(--dcm-zone-red)]";
   if (eventType.includes("created") || eventType.includes("new"))
-    return "text-blue-500";
-  if (eventType.includes("connected")) return "text-emerald-500";
-  if (eventType.includes("disconnected")) return "text-amber-500";
-  return "text-muted-foreground";
+    return "text-[var(--md-sys-color-primary)]";
+  if (eventType.includes("connected")) return "text-[var(--dcm-zone-green)]";
+  if (eventType.includes("disconnected")) return "text-[var(--dcm-zone-orange)]";
+  return "text-[var(--md-sys-color-on-surface-variant)]";
 }
 
 export function extractAgentFromEvent(event: WSEvent): string {

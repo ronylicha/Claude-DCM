@@ -23,28 +23,28 @@ import {
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 
-// Agent type color mapping
+// Agent type color mapping using M3/DCM tokens
 const AGENT_TYPE_COLORS: Record<string, { badge: string; dot: string }> = {
-  "frontend-react": { badge: "bg-blue-500/15 text-blue-600 border-blue-500/30", dot: "bg-blue-500" },
-  "react-refine": { badge: "bg-blue-400/15 text-blue-500 border-blue-400/30", dot: "bg-blue-400" },
-  "backend-laravel": { badge: "bg-red-500/15 text-red-600 border-red-500/30", dot: "bg-red-500" },
-  "laravel-api": { badge: "bg-red-400/15 text-red-500 border-red-400/30", dot: "bg-red-400" },
-  "qa-testing": { badge: "bg-green-500/15 text-green-600 border-green-500/30", dot: "bg-green-500" },
-  "project-supervisor": { badge: "bg-purple-500/15 text-purple-600 border-purple-500/30", dot: "bg-purple-500" },
-  "tech-lead": { badge: "bg-purple-400/15 text-purple-500 border-purple-400/30", dot: "bg-purple-400" },
-  "impact-analyzer": { badge: "bg-amber-500/15 text-amber-600 border-amber-500/30", dot: "bg-amber-500" },
-  "regression-guard": { badge: "bg-amber-400/15 text-amber-500 border-amber-400/30", dot: "bg-amber-400" },
-  "security-specialist": { badge: "bg-rose-500/15 text-rose-600 border-rose-500/30", dot: "bg-rose-500" },
-  "database-admin": { badge: "bg-orange-500/15 text-orange-600 border-orange-500/30", dot: "bg-orange-500" },
-  "designer-ui-ux": { badge: "bg-pink-500/15 text-pink-600 border-pink-500/30", dot: "bg-pink-500" },
-  "devops-infra": { badge: "bg-teal-500/15 text-teal-600 border-teal-500/30", dot: "bg-teal-500" },
-  "technical-writer": { badge: "bg-indigo-500/15 text-indigo-600 border-indigo-500/30", dot: "bg-indigo-500" },
-  "react-native-dev": { badge: "bg-cyan-500/15 text-cyan-600 border-cyan-500/30", dot: "bg-cyan-500" },
-  "react-native-ui": { badge: "bg-cyan-400/15 text-cyan-500 border-cyan-400/30", dot: "bg-cyan-400" },
-  "performance-engineer": { badge: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30", dot: "bg-emerald-500" },
+  "frontend-react": { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-frontend)_15%,transparent)] text-[var(--dcm-agent-frontend)] border-[color-mix(in_srgb,var(--dcm-agent-frontend)_30%,transparent)]", dot: "bg-[var(--dcm-agent-frontend)]" },
+  "react-refine": { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-frontend)_10%,transparent)] text-[var(--dcm-agent-frontend)] border-[color-mix(in_srgb,var(--dcm-agent-frontend)_20%,transparent)]", dot: "bg-[var(--dcm-agent-frontend)]" },
+  "backend-laravel": { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-backend)_15%,transparent)] text-[var(--dcm-agent-backend)] border-[color-mix(in_srgb,var(--dcm-agent-backend)_30%,transparent)]", dot: "bg-[var(--dcm-agent-backend)]" },
+  "laravel-api": { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-backend)_10%,transparent)] text-[var(--dcm-agent-backend)] border-[color-mix(in_srgb,var(--dcm-agent-backend)_20%,transparent)]", dot: "bg-[var(--dcm-agent-backend)]" },
+  "qa-testing": { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-testing)_15%,transparent)] text-[var(--dcm-agent-testing)] border-[color-mix(in_srgb,var(--dcm-agent-testing)_30%,transparent)]", dot: "bg-[var(--dcm-agent-testing)]" },
+  "project-supervisor": { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-orchestrator)_15%,transparent)] text-[var(--dcm-agent-orchestrator)] border-[color-mix(in_srgb,var(--dcm-agent-orchestrator)_30%,transparent)]", dot: "bg-[var(--dcm-agent-orchestrator)]" },
+  "tech-lead": { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-orchestrator)_10%,transparent)] text-[var(--dcm-agent-orchestrator)] border-[color-mix(in_srgb,var(--dcm-agent-orchestrator)_20%,transparent)]", dot: "bg-[var(--dcm-agent-orchestrator)]" },
+  "impact-analyzer": { badge: "bg-[color-mix(in_srgb,var(--dcm-zone-yellow)_15%,transparent)] text-[var(--dcm-zone-yellow)] border-[color-mix(in_srgb,var(--dcm-zone-yellow)_30%,transparent)]", dot: "bg-[var(--dcm-zone-yellow)]" },
+  "regression-guard": { badge: "bg-[color-mix(in_srgb,var(--dcm-zone-yellow)_10%,transparent)] text-[var(--dcm-zone-yellow)] border-[color-mix(in_srgb,var(--dcm-zone-yellow)_20%,transparent)]", dot: "bg-[var(--dcm-zone-yellow)]" },
+  "security-specialist": { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-security)_15%,transparent)] text-[var(--dcm-agent-security)] border-[color-mix(in_srgb,var(--dcm-agent-security)_30%,transparent)]", dot: "bg-[var(--dcm-agent-security)]" },
+  "database-admin": { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-database)_15%,transparent)] text-[var(--dcm-agent-database)] border-[color-mix(in_srgb,var(--dcm-agent-database)_30%,transparent)]", dot: "bg-[var(--dcm-agent-database)]" },
+  "designer-ui-ux": { badge: "bg-[color-mix(in_srgb,var(--md-sys-color-tertiary)_15%,transparent)] text-[var(--md-sys-color-tertiary)] border-[color-mix(in_srgb,var(--md-sys-color-tertiary)_30%,transparent)]", dot: "bg-[var(--md-sys-color-tertiary)]" },
+  "devops-infra": { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-devops)_15%,transparent)] text-[var(--dcm-agent-devops)] border-[color-mix(in_srgb,var(--dcm-agent-devops)_30%,transparent)]", dot: "bg-[var(--dcm-agent-devops)]" },
+  "technical-writer": { badge: "bg-[color-mix(in_srgb,var(--md-sys-color-secondary)_15%,transparent)] text-[var(--md-sys-color-secondary)] border-[color-mix(in_srgb,var(--md-sys-color-secondary)_30%,transparent)]", dot: "bg-[var(--md-sys-color-secondary)]" },
+  "react-native-dev": { badge: "bg-[color-mix(in_srgb,var(--md-sys-color-tertiary)_15%,transparent)] text-[var(--md-sys-color-tertiary)] border-[color-mix(in_srgb,var(--md-sys-color-tertiary)_30%,transparent)]", dot: "bg-[var(--md-sys-color-tertiary)]" },
+  "react-native-ui": { badge: "bg-[color-mix(in_srgb,var(--md-sys-color-tertiary)_10%,transparent)] text-[var(--md-sys-color-tertiary)] border-[color-mix(in_srgb,var(--md-sys-color-tertiary)_20%,transparent)]", dot: "bg-[var(--md-sys-color-tertiary)]" },
+  "performance-engineer": { badge: "bg-[color-mix(in_srgb,var(--dcm-zone-green)_15%,transparent)] text-[var(--dcm-zone-green)] border-[color-mix(in_srgb,var(--dcm-zone-green)_30%,transparent)]", dot: "bg-[var(--dcm-zone-green)]" },
 };
 
-const DEFAULT_AGENT_COLOR = { badge: "bg-gray-500/15 text-gray-600 border-gray-500/30", dot: "bg-gray-500" };
+const DEFAULT_AGENT_COLOR = { badge: "bg-[color-mix(in_srgb,var(--md-sys-color-outline)_15%,transparent)] text-[var(--md-sys-color-on-surface-variant)] border-[var(--md-sys-color-outline-variant)]", dot: "bg-[var(--md-sys-color-outline)]" };
 
 function hashStringToColor(str: string): { badge: string; dot: string } {
   let hash = 0;
@@ -52,18 +52,18 @@ function hashStringToColor(str: string): { badge: string; dot: string } {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
   const colors = [
-    { badge: "bg-blue-500/15 text-blue-600 border-blue-500/30", dot: "bg-blue-500" },
-    { badge: "bg-red-500/15 text-red-600 border-red-500/30", dot: "bg-red-500" },
-    { badge: "bg-green-500/15 text-green-600 border-green-500/30", dot: "bg-green-500" },
-    { badge: "bg-purple-500/15 text-purple-600 border-purple-500/30", dot: "bg-purple-500" },
-    { badge: "bg-amber-500/15 text-amber-600 border-amber-500/30", dot: "bg-amber-500" },
-    { badge: "bg-cyan-500/15 text-cyan-600 border-cyan-500/30", dot: "bg-cyan-500" },
-    { badge: "bg-pink-500/15 text-pink-600 border-pink-500/30", dot: "bg-pink-500" },
-    { badge: "bg-indigo-500/15 text-indigo-600 border-indigo-500/30", dot: "bg-indigo-500" },
-    { badge: "bg-teal-500/15 text-teal-600 border-teal-500/30", dot: "bg-teal-500" },
-    { badge: "bg-orange-500/15 text-orange-600 border-orange-500/30", dot: "bg-orange-500" },
-    { badge: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30", dot: "bg-emerald-500" },
-    { badge: "bg-rose-500/15 text-rose-600 border-rose-500/30", dot: "bg-rose-500" },
+    { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-frontend)_15%,transparent)] text-[var(--dcm-agent-frontend)] border-[color-mix(in_srgb,var(--dcm-agent-frontend)_30%,transparent)]", dot: "bg-[var(--dcm-agent-frontend)]" },
+    { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-backend)_15%,transparent)] text-[var(--dcm-agent-backend)] border-[color-mix(in_srgb,var(--dcm-agent-backend)_30%,transparent)]", dot: "bg-[var(--dcm-agent-backend)]" },
+    { badge: "bg-[color-mix(in_srgb,var(--dcm-zone-green)_15%,transparent)] text-[var(--dcm-zone-green)] border-[color-mix(in_srgb,var(--dcm-zone-green)_30%,transparent)]", dot: "bg-[var(--dcm-zone-green)]" },
+    { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-orchestrator)_15%,transparent)] text-[var(--dcm-agent-orchestrator)] border-[color-mix(in_srgb,var(--dcm-agent-orchestrator)_30%,transparent)]", dot: "bg-[var(--dcm-agent-orchestrator)]" },
+    { badge: "bg-[color-mix(in_srgb,var(--dcm-zone-yellow)_15%,transparent)] text-[var(--dcm-zone-yellow)] border-[color-mix(in_srgb,var(--dcm-zone-yellow)_30%,transparent)]", dot: "bg-[var(--dcm-zone-yellow)]" },
+    { badge: "bg-[color-mix(in_srgb,var(--md-sys-color-tertiary)_15%,transparent)] text-[var(--md-sys-color-tertiary)] border-[color-mix(in_srgb,var(--md-sys-color-tertiary)_30%,transparent)]", dot: "bg-[var(--md-sys-color-tertiary)]" },
+    { badge: "bg-[color-mix(in_srgb,var(--md-sys-color-secondary)_15%,transparent)] text-[var(--md-sys-color-secondary)] border-[color-mix(in_srgb,var(--md-sys-color-secondary)_30%,transparent)]", dot: "bg-[var(--md-sys-color-secondary)]" },
+    { badge: "bg-[color-mix(in_srgb,var(--md-sys-color-primary)_15%,transparent)] text-[var(--md-sys-color-primary)] border-[color-mix(in_srgb,var(--md-sys-color-primary)_30%,transparent)]", dot: "bg-[var(--md-sys-color-primary)]" },
+    { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-devops)_15%,transparent)] text-[var(--dcm-agent-devops)] border-[color-mix(in_srgb,var(--dcm-agent-devops)_30%,transparent)]", dot: "bg-[var(--dcm-agent-devops)]" },
+    { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-database)_15%,transparent)] text-[var(--dcm-agent-database)] border-[color-mix(in_srgb,var(--dcm-agent-database)_30%,transparent)]", dot: "bg-[var(--dcm-agent-database)]" },
+    { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-testing)_15%,transparent)] text-[var(--dcm-agent-testing)] border-[color-mix(in_srgb,var(--dcm-agent-testing)_30%,transparent)]", dot: "bg-[var(--dcm-agent-testing)]" },
+    { badge: "bg-[color-mix(in_srgb,var(--dcm-agent-security)_15%,transparent)] text-[var(--dcm-agent-security)] border-[color-mix(in_srgb,var(--dcm-agent-security)_30%,transparent)]", dot: "bg-[var(--dcm-agent-security)]" },
   ];
   return colors[Math.abs(hash) % colors.length];
 }
@@ -77,13 +77,13 @@ function getAgentTypeColor(agentType: string) {
 function getStatusConfig(status: string) {
   switch (status) {
     case "running":
-      return { dot: "bg-green-500 animate-pulse", label: "Running", textColor: "text-green-600 dark:text-green-400" };
+      return { dot: "dot-healthy animate-pulse", label: "Running", textColor: "text-[var(--dcm-zone-green)]" };
     case "completed":
-      return { dot: "bg-blue-500", label: "Completed", textColor: "text-blue-600 dark:text-blue-400" };
+      return { dot: "bg-[var(--md-sys-color-primary)]", label: "Completed", textColor: "text-[var(--md-sys-color-primary)]" };
     case "failed":
-      return { dot: "bg-red-500", label: "Failed", textColor: "text-red-600 dark:text-red-400" };
+      return { dot: "dot-error", label: "Failed", textColor: "text-[var(--dcm-zone-red)]" };
     default:
-      return { dot: "bg-gray-400", label: status, textColor: "text-gray-500 dark:text-gray-400" };
+      return { dot: "bg-[var(--md-sys-color-outline)]", label: status, textColor: "text-[var(--md-sys-color-on-surface-variant)]" };
   }
 }
 
@@ -111,7 +111,7 @@ function MessageCard({
 
   return (
     <Card
-      className={cn("glass-card animate-fade-in hover:shadow-md transition-all duration-200", isRead ? "opacity-75" : "")}
+      className={cn("bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 animate-fade-in hover:shadow-md transition-all duration-200", isRead ? "opacity-75" : "")}
       style={{ animationDelay: `${index * 40}ms` }}
     >
       <CardContent className="pt-5 pb-4">
@@ -119,13 +119,13 @@ function MessageCard({
         <div className="flex items-start justify-between gap-3">
           <Badge
             variant="outline"
-            className={cn("text-xs font-medium px-2.5 py-0.5", "bg-blue-500/15 text-blue-600 border-blue-500/30")}
+            className={cn("text-xs font-medium px-2.5 py-0.5", "bg-[color-mix(in_srgb,var(--md-sys-color-primary)_15%,transparent)] text-[var(--md-sys-color-primary)] border-[color-mix(in_srgb,var(--md-sys-color-primary)_30%,transparent)]")}
           >
             {message.message_type}
           </Badge>
           <div className="flex items-center gap-1.5 shrink-0">
-            <div className={cn("h-2 w-2 rounded-full", isRead ? "bg-gray-400" : "bg-green-500")} />
-            <span className={cn("text-xs font-medium", isRead ? "text-gray-500" : "text-green-600")}>
+            <div className={cn("h-2 w-2 rounded-full", isRead ? "bg-[var(--md-sys-color-outline)]" : "dot-healthy")} />
+            <span className={cn("text-xs font-medium", isRead ? "text-[var(--md-sys-color-on-surface-variant)]" : "text-[var(--dcm-zone-green)]")}>
               {isRead ? "Read" : "Unread"}
             </span>
           </div>
@@ -188,7 +188,7 @@ function MessageCard({
 // Loading skeleton for message cards
 function MessageCardSkeleton() {
   return (
-    <Card className="glass-card">
+    <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1">
       <CardContent className="pt-5 pb-4 space-y-3">
         <div className="flex items-center justify-between">
           <Skeleton className="h-5 w-28" />
@@ -301,7 +301,7 @@ export default function MessagesPage() {
           icon={<BrainCircuit className="h-4 w-4" />}
           description={`${filteredMessages.length} matching filters`}
           loading={isLoading}
-          className="glass-card"
+          className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1"
         />
         <KPICard
           title="Unread"
@@ -309,7 +309,7 @@ export default function MessagesPage() {
           icon={<Activity className="h-4 w-4" />}
           description="Not yet read by recipient"
           loading={isLoading}
-          className="glass-card"
+          className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1"
           trend={stats?.unread ? { value: stats.unread, label: "pending" } : undefined}
         />
         <KPICard
@@ -318,7 +318,7 @@ export default function MessagesPage() {
           icon={<CheckCircle className="h-4 w-4" />}
           description="Successfully read"
           loading={isLoading}
-          className="glass-card"
+          className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1"
         />
         <KPICard
           title="Message Types"
@@ -326,12 +326,12 @@ export default function MessagesPage() {
           icon={<Users className="h-4 w-4" />}
           description="Different message types"
           loading={isLoading}
-          className="glass-card"
+          className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1"
         />
       </div>
 
       {/* Filters */}
-      <Card className="glass-card animate-fade-in">
+      <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 animate-fade-in">
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Search className="h-4 w-4" />
@@ -414,7 +414,7 @@ export default function MessagesPage() {
         ) : error ? (
           <ErrorDisplay error={error} reset={() => refetch()} />
         ) : filteredMessages.length === 0 ? (
-          <Card className="glass-card">
+          <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1">
             <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <BrainCircuit className="h-14 w-14 mb-4 opacity-30" />
               <p className="text-lg font-medium">No messages found</p>

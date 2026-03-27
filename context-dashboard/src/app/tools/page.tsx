@@ -51,22 +51,22 @@ const TAB_LABELS: Record<string, string> = {
 
 // Tool type hex colors for charts (SVG fill)
 const TOOL_TYPE_HEX: Record<string, string> = {
-  builtin: "#64748b",
-  agent: "#7c3aed",
-  skill: "#10b981",
-  command: "#f59e0b",
-  mcp: "#06b6d4",
-  unknown: "#6b7280",
+  builtin: "var(--md-sys-color-outline)",
+  agent: "var(--md-sys-color-tertiary)",
+  skill: "var(--dcm-zone-green)",
+  command: "var(--dcm-zone-yellow)",
+  mcp: "var(--md-sys-color-secondary)",
+  unknown: "var(--md-sys-color-outline)",
 };
 
-// Tool type Tailwind classes for badges
+// Tool type M3 token classes for badges
 const TOOL_TYPE_BADGE: Record<string, string> = {
-  builtin: "bg-slate-500",
-  agent: "bg-violet-600",
-  skill: "bg-emerald-500",
-  command: "bg-amber-500",
-  mcp: "bg-cyan-500",
-  unknown: "bg-gray-500",
+  builtin: "bg-[var(--md-sys-color-surface-container-high)]",
+  agent: "bg-[var(--dcm-agent-orchestrator)]",
+  skill: "bg-[var(--dcm-zone-green)]",
+  command: "bg-[var(--dcm-zone-yellow)]",
+  mcp: "bg-[var(--md-sys-color-tertiary)]",
+  unknown: "bg-[var(--md-sys-color-outline)]",
 };
 
 // Helper to format duration
@@ -111,7 +111,7 @@ function PremiumKPICard({
   description?: string;
 }) {
   return (
-    <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
+    <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl p-5 flex flex-col gap-3">
       <div className="flex items-center gap-2.5">
         <div className={`flex items-center justify-center h-8 w-8 rounded-lg ${iconGradient}`}>
           {icon}
@@ -300,10 +300,10 @@ function ToolsTable({
               <span
                 className={
                   tool.successRate >= 90
-                    ? "text-green-500"
+                    ? "text-[var(--dcm-zone-green)]"
                     : tool.successRate >= 70
-                    ? "text-amber-500"
-                    : "text-red-500"
+                    ? "text-[var(--dcm-zone-yellow)]"
+                    : "text-[var(--dcm-zone-red)]"
                 }
               >
                 {tool.successRate.toFixed(1)}%
@@ -314,11 +314,11 @@ function ToolsTable({
             </TableCell>
             <TableCell className="text-right">
               {tool.successRate >= 90 ? (
-                <CheckCircle className="ml-auto h-4 w-4 text-green-500" />
+                <CheckCircle className="ml-auto h-4 w-4 text-[var(--dcm-zone-green)]" />
               ) : tool.successRate >= 70 ? (
-                <Activity className="ml-auto h-4 w-4 text-amber-500" />
+                <Activity className="ml-auto h-4 w-4 text-[var(--dcm-zone-yellow)]" />
               ) : (
-                <XCircle className="ml-auto h-4 w-4 text-red-500" />
+                <XCircle className="ml-auto h-4 w-4 text-[var(--dcm-zone-red)]" />
               )}
             </TableCell>
           </TableRow>
@@ -338,8 +338,8 @@ export default function ToolsPage() {
     error: actionsError,
     refetch: refetchActions,
   } = useQuery<ActionsResponse, Error>({
-    queryKey: ["actions", 2000, 0],
-    queryFn: () => apiClient.getActions(2000, 0),
+    queryKey: ["actions", 500, 0],
+    queryFn: () => apiClient.getActions(500, 0),
     refetchInterval: 60000,
   });
 
@@ -432,28 +432,28 @@ export default function ToolsPage() {
           title="Total Actions"
           value={kpiStats.totalActions.toLocaleString()}
           icon={<Activity className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-blue-500 to-indigo-600"
+          iconGradient="bg-[var(--md-sys-color-primary)]"
           description="Recorded tool executions"
         />
         <PremiumKPICard
           title="Unique Tools"
           value={kpiStats.uniqueTools}
           icon={<Wrench className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-orange-500 to-red-500"
+          iconGradient="bg-[var(--md-sys-color-error)]"
           description="Different tools used"
         />
         <PremiumKPICard
           title="Success Rate"
           value={`${kpiStats.overallSuccessRate.toFixed(1)}%`}
           icon={<TrendingUp className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-green-500 to-emerald-500"
+          iconGradient="bg-[var(--dcm-zone-green)]"
           description="Overall success rate"
         />
         <PremiumKPICard
           title="Avg Duration"
           value={kpiStats.avgDuration !== null ? formatDuration(kpiStats.avgDuration) : "N/A"}
           icon={<Clock className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-cyan-500 to-teal-500"
+          iconGradient="bg-[var(--md-sys-color-tertiary)]"
           description="Average execution time"
         />
       </div>
@@ -465,7 +465,7 @@ export default function ToolsPage() {
       </div>
 
       {/* Tools Table with Filters */}
-      <Card className="mt-6 glass-card animate-fade-in">
+      <Card className="mt-6 bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 animate-fade-in">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
@@ -494,7 +494,7 @@ export default function ToolsPage() {
 
       {/* Routing Stats Card */}
       {routingStats && (
-        <Card className="mt-6 glass-card animate-fade-in">
+        <Card className="mt-6 bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 animate-fade-in">
           <CardHeader>
             <CardTitle>Routing Intelligence</CardTitle>
           </CardHeader>

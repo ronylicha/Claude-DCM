@@ -50,7 +50,7 @@ export default function ProjectDetailPage() {
     queryKey: ["project-hierarchy", projectId],
     queryFn: () => apiClient.getHierarchy(projectId),
     enabled: !!projectId,
-    refetchInterval: 5000,
+    refetchInterval: 30000,
   });
 
   if (isLoading) {
@@ -202,7 +202,7 @@ export default function ProjectDetailPage() {
                         Tasks ({request.tasks.length}):
                       </p>
                       {request.tasks.map((task) => (
-                        <div key={task.id} className="ml-4 rounded border-l-2 border-blue-500 pl-3 py-1">
+                        <div key={task.id} className="ml-4 rounded border-l-2 border-[var(--md-sys-color-primary)] pl-3 py-1">
                           <div className="flex items-center gap-2">
                             <Badge variant="outline" className="text-xs">
                               Wave {task.wave_number}

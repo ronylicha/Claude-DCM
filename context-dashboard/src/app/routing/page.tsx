@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import apiClient from "@/lib/api-client";
+import { PremiumKPICard } from "@/components/dashboard/PremiumKPICard";
 import {
   Table,
   TableBody,
@@ -82,59 +83,28 @@ interface RoutingFeedbackRequest {
   accepted: boolean;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3847";
-
 // API functions
 async function fetchRoutingStats(): Promise<RoutingStats> {
   return apiClient.getRoutingStats();
 }
 
 async function fetchRoutingSuggestions(keywords: string): Promise<RoutingSuggestResponse> {
-  const res = await fetch(`${API_BASE_URL}/api/routing/suggest?keywords=${encodeURIComponent(keywords)}&exclude_types=builtin&min_score=0.3`);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch suggestions: ${res.statusText}`);
-  }
-  return res.json();
+  const keywordList = keywords.split(/\s+/).filter(Boolean);
+  const result = await apiClient.suggestRouting(keywordList);
+  return {
+    keywords: keywordList,
+    suggestions: result.suggestions as unknown as RoutingSuggestion[],
+    count: result.suggestions.length,
+  };
 }
 
 async function submitFeedback(feedback: RoutingFeedbackRequest): Promise<{ success: boolean }> {
-  const res = await fetch(`${API_BASE_URL}/api/routing/feedback`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(feedback),
+  return apiClient.submitRoutingFeedback({
+    keywords: feedback.keywords,
+    selected_tool: feedback.selected_tool,
+    tool_type: "agent",
+    was_helpful: feedback.accepted,
   });
-  if (!res.ok) {
-    throw new Error(`Failed to submit feedback: ${res.statusText}`);
-  }
-  return res.json();
-}
-
-// Premium KPI Card Component
-function PremiumKPICard({
-  title,
-  value,
-  icon,
-  iconGradient,
-  description,
-}: {
-  title: string;
-  value: string | number;
-  icon: React.ReactNode;
-  iconGradient: string;
-  description?: string;
-}) {
-  return (
-    <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
-      <div className="flex items-center gap-2.5">
-        <div className={`flex items-center justify-center h-8 w-8 rounded-lg ${iconGradient}`}>
-          {icon}
-        </div>
-        <span className="text-sm font-medium text-muted-foreground">{title}</span>
-      </div>
-      <div className="text-3xl font-bold tracking-tight">{value}</div>
-      {description && <span className="text-xs text-muted-foreground">{description}</span>}
-    </div>
-  );
 }
 
 // Type badge color helper
@@ -158,17 +128,17 @@ function getTypeBadgeVariant(type: string): "default" | "secondary" | "outline" 
 function getTypeColor(type: string): string {
   switch (type) {
     case "agent":
-      return "bg-blue-500";
+      return "bg-[var(--dcm-agent-orchestrator)]";
     case "skill":
-      return "bg-green-500";
+      return "bg-[var(--dcm-zone-green)]";
     case "command":
-      return "bg-purple-500";
+      return "bg-[var(--md-sys-color-secondary)]";
     case "workflow":
-      return "bg-orange-500";
+      return "bg-[var(--dcm-zone-yellow)]";
     case "plugin":
-      return "bg-pink-500";
+      return "bg-[var(--md-sys-color-tertiary)]";
     default:
-      return "bg-gray-500";
+      return "bg-[var(--md-sys-color-outline)]";
   }
 }
 
@@ -180,29 +150,29 @@ function StatsCards({ stats, isLoading }: { stats?: RoutingStats; isLoading: boo
         title="Total Keywords"
         value={stats?.totals?.unique_keywords ?? 0}
         icon={<Hash className="h-4 w-4 text-white" />}
-        iconGradient="bg-gradient-to-br from-indigo-500 to-purple-600"
-        description="Indexed for routing"
+        iconGradient="bg-[var(--md-sys-color-primary)]"
+        loading={isLoading}
       />
       <PremiumKPICard
         title="Total Tools"
         value={stats?.totals?.unique_tools ?? 0}
         icon={<Route className="h-4 w-4 text-white" />}
-        iconGradient="bg-gradient-to-br from-violet-500 to-pink-600"
-        description="Available for routing"
+        iconGradient="bg-[var(--md-sys-color-secondary)]"
+        loading={isLoading}
       />
       <PremiumKPICard
         title="Average Score"
         value={stats?.totals?.avg_score ? Number(stats.totals.avg_score).toFixed(2) : "N/A"}
         icon={<Target className="h-4 w-4 text-white" />}
-        iconGradient="bg-gradient-to-br from-blue-500 to-cyan-500"
-        description="Overall suggestion quality"
+        iconGradient="bg-[var(--md-sys-color-tertiary)]"
+        loading={isLoading}
       />
       <PremiumKPICard
         title="Total Records"
         value={stats?.totals?.total_records ?? 0}
         icon={<Zap className="h-4 w-4 text-white" />}
-        iconGradient="bg-gradient-to-br from-amber-500 to-orange-600"
-        description="Keyword-tool mappings"
+        iconGradient="bg-[var(--dcm-zone-yellow)]"
+        loading={isLoading}
       />
     </div>
   );
@@ -280,7 +250,7 @@ function TopKeywordsTable({ stats, isLoading }: { stats?: RoutingStats; isLoadin
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  <span className={(tool.avg_score ?? 0) >= 3 ? "text-green-600" : (tool.avg_score ?? 0) >= 2 ? "text-yellow-600" : "text-muted-foreground"}>
+                  <span className={(tool.avg_score ?? 0) >= 3 ? "text-[var(--dcm-zone-green)]" : (tool.avg_score ?? 0) >= 2 ? "text-[var(--dcm-zone-yellow)]" : "text-muted-foreground"}>
                     {Number(tool.avg_score ?? 0).toFixed(2)}/5
                   </span>
                 </TableCell>
@@ -367,7 +337,7 @@ function TopToolsTable({ stats, isLoading }: { stats?: RoutingStats; isLoading: 
                 </TableCell>
                 <TableCell className="text-right text-muted-foreground">{tool.total_usage ?? 0}</TableCell>
                 <TableCell className="text-right">
-                  <span className={(tool.avg_score ?? 0) >= 3 ? "text-green-600" : (tool.avg_score ?? 0) >= 2 ? "text-yellow-600" : "text-muted-foreground"}>
+                  <span className={(tool.avg_score ?? 0) >= 3 ? "text-[var(--dcm-zone-green)]" : (tool.avg_score ?? 0) >= 2 ? "text-[var(--dcm-zone-yellow)]" : "text-muted-foreground"}>
                     {Number(tool.avg_score ?? 0).toFixed(2)}/5
                   </span>
                 </TableCell>
@@ -499,7 +469,7 @@ function RoutingTester() {
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="text-right">
-                      <div className={`text-lg font-bold ${suggestion.score >= 3 ? "text-green-600" : suggestion.score >= 2 ? "text-yellow-600" : "text-muted-foreground"}`}>
+                      <div className={`text-lg font-bold ${suggestion.score >= 3 ? "text-[var(--dcm-zone-green)]" : suggestion.score >= 2 ? "text-[var(--dcm-zone-yellow)]" : "text-muted-foreground"}`}>
                         {Number(suggestion.score).toFixed(1)}/5
                       </div>
                       <div className="text-xs text-muted-foreground">score</div>
@@ -508,7 +478,7 @@ function RoutingTester() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-100"
+                        className="h-8 w-8 p-0 text-[var(--dcm-zone-green)] hover:bg-[color-mix(in_srgb,var(--dcm-zone-green)_12%,transparent)]"
                         onClick={() => handleFeedback(suggestion.tool_name, true)}
                         disabled={feedbackMutation.isPending}
                         title="This suggestion is helpful"
@@ -518,7 +488,7 @@ function RoutingTester() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-100"
+                        className="h-8 w-8 p-0 text-[var(--dcm-zone-red)] hover:bg-[color-mix(in_srgb,var(--dcm-zone-red)_12%,transparent)]"
                         onClick={() => handleFeedback(suggestion.tool_name, false)}
                         disabled={feedbackMutation.isPending}
                         title="This suggestion is not helpful"
@@ -531,6 +501,10 @@ function RoutingTester() {
               ))}
             </div>
           </div>
+        )}
+
+        {feedbackMutation.error && (
+          <p className="text-[var(--dcm-zone-red)] text-[12px]">{feedbackMutation.error.message}</p>
         )}
 
         {suggestions && suggestions.suggestions.length === 0 && (
@@ -574,10 +548,10 @@ function FeedbackStatsCard({ stats, isLoading }: { stats?: RoutingStats; isLoadi
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Recent Feedback</span>
-              <span className="font-bold text-lg">{0}</span>
+              <span className="font-bold text-lg text-muted-foreground">–</span>
             </div>
             <div className="flex items-center gap-4 text-sm">
-              <div className="flex items-center gap-1 text-green-600">
+              <div className="flex items-center gap-1 text-[var(--dcm-zone-green)]">
                 <CheckCircle className="h-4 w-4" />
                 <span>Helpful suggestions improve routing</span>
               </div>

@@ -55,34 +55,34 @@ const categoryConfig: Record<
   { color: string; bgColor: string; borderColor: string; iconClass: string }
 > = {
   task: {
-    color: "text-violet-400",
-    bgColor: "bg-violet-500/15",
-    borderColor: "border-violet-500/30",
-    iconClass: "text-violet-400",
+    color: "text-[var(--md-sys-color-tertiary)]",
+    bgColor: "bg-[var(--md-sys-color-tertiary-container)]",
+    borderColor: "border-[var(--md-sys-color-outline-variant)]",
+    iconClass: "text-[var(--md-sys-color-tertiary)]",
   },
   subtask: {
-    color: "text-blue-400",
-    bgColor: "bg-blue-500/15",
-    borderColor: "border-blue-500/30",
-    iconClass: "text-blue-400",
+    color: "text-[var(--md-sys-color-primary)]",
+    bgColor: "bg-[var(--md-sys-color-primary-container)]",
+    borderColor: "border-[var(--md-sys-color-outline-variant)]",
+    iconClass: "text-[var(--md-sys-color-primary)]",
   },
   message: {
-    color: "text-emerald-400",
-    bgColor: "bg-emerald-500/15",
-    borderColor: "border-emerald-500/30",
-    iconClass: "text-emerald-400",
+    color: "text-[var(--dcm-zone-green)]",
+    bgColor: "bg-[color-mix(in_srgb,var(--dcm-zone-green)_10%,transparent)]",
+    borderColor: "border-[color-mix(in_srgb,var(--dcm-zone-green)_25%,transparent)]",
+    iconClass: "text-[var(--dcm-zone-green)]",
   },
   agent: {
-    color: "text-amber-400",
-    bgColor: "bg-amber-500/15",
-    borderColor: "border-amber-500/30",
-    iconClass: "text-amber-400",
+    color: "text-[var(--dcm-zone-orange)]",
+    bgColor: "bg-[color-mix(in_srgb,var(--dcm-zone-orange)_10%,transparent)]",
+    borderColor: "border-[color-mix(in_srgb,var(--dcm-zone-orange)_25%,transparent)]",
+    iconClass: "text-[var(--dcm-zone-orange)]",
   },
   system: {
-    color: "text-gray-400",
-    bgColor: "bg-gray-500/15",
-    borderColor: "border-gray-500/30",
-    iconClass: "text-gray-400",
+    color: "text-[var(--md-sys-color-on-surface-variant)]",
+    bgColor: "bg-[var(--md-sys-color-surface-container)]",
+    borderColor: "border-[var(--md-sys-color-outline-variant)]",
+    iconClass: "text-[var(--md-sys-color-on-surface-variant)]",
   },
 };
 
@@ -198,7 +198,7 @@ function SemiCircleGauge({
   const dashOffset = circumference * (1 - percentage);
 
   return (
-    <div className="glass-card rounded-xl p-4 text-center">
+    <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl p-4 text-center">
       <svg
         width="120"
         height="72"
@@ -264,7 +264,7 @@ function ConnectionStatusBar({
       : "dot-warning animate-pulse";
 
   return (
-    <div className="glass-card rounded-xl px-4 py-2.5 flex items-center gap-3 animate-fade-in">
+    <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl px-4 py-2.5 flex items-center gap-3 animate-fade-in">
       <span
         className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${dotClass}`}
         aria-hidden="true"
@@ -282,7 +282,7 @@ function ConnectionStatusBar({
 
       <span className="text-xs text-muted-foreground font-mono truncate hidden sm:inline">
         {connected
-          ? "ws://127.0.0.1:3849"
+          ? (process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:3849")
           : error
             ? "Server unavailable"
             : "Attempting connection..."}
@@ -317,12 +317,12 @@ function ConnectionStatusBar({
 // ============================================
 
 const AGENT_CELL_COLORS = [
-  "bg-violet-500/20 text-violet-300 border-violet-500/40",
-  "bg-blue-500/20 text-blue-300 border-blue-500/40",
-  "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
-  "bg-amber-500/20 text-amber-300 border-amber-500/40",
-  "bg-rose-500/20 text-rose-300 border-rose-500/40",
-  "bg-cyan-500/20 text-cyan-300 border-cyan-500/40",
+  "bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)] border-[var(--md-sys-color-outline-variant)]",
+  "bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)] border-[var(--md-sys-color-outline-variant)]",
+  "bg-[color-mix(in_srgb,var(--dcm-zone-green)_15%,transparent)] text-[var(--dcm-zone-green)] border-[color-mix(in_srgb,var(--dcm-zone-green)_30%,transparent)]",
+  "bg-[color-mix(in_srgb,var(--dcm-zone-orange)_15%,transparent)] text-[var(--dcm-zone-orange)] border-[color-mix(in_srgb,var(--dcm-zone-orange)_30%,transparent)]",
+  "bg-[color-mix(in_srgb,var(--dcm-zone-red)_15%,transparent)] text-[var(--dcm-zone-red)] border-[color-mix(in_srgb,var(--dcm-zone-red)_30%,transparent)]",
+  "bg-[var(--md-sys-color-secondary-container)] text-[var(--md-sys-color-on-secondary-container)] border-[var(--md-sys-color-outline-variant)]",
 ];
 
 function hashString(str: string): number {
@@ -336,7 +336,7 @@ function hashString(str: string): number {
 
 function AgentTopologyGrid({ agents }: { agents: AgentInfo[] }) {
   return (
-    <div className="glass-card rounded-xl p-4 animate-fade-in">
+    <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl p-4 animate-fade-in">
       <div className="flex items-center gap-2 mb-3">
         <Users className="h-4 w-4 text-muted-foreground" />
         <span className="text-sm font-medium">Agent Topology</span>
@@ -529,7 +529,7 @@ function AnimatedEventStream({
   }, [events.length, paused]);
 
   return (
-    <div className="glass-card rounded-xl flex flex-col flex-1 min-h-0 animate-fade-in overflow-hidden">
+    <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl flex flex-col flex-1 min-h-0 animate-fade-in overflow-hidden">
       {/* Header row */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
         <div className="flex items-center gap-3">
@@ -762,7 +762,7 @@ export default function LivePage() {
   );
 
   const handleReconnect = useCallback(() => {
-    window.location.reload();
+    // WebSocket hook handles reconnection automatically
   }, []);
 
   // Use avg_task_duration_ms as a latency proxy when db_latency_ms is unavailable
@@ -784,8 +784,8 @@ export default function LivePage() {
 
         {/* Offline notice */}
         {connectionError && (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 animate-fade-in">
-            <p className="text-sm text-amber-200">
+          <div className="rounded-lg border border-[color-mix(in_srgb,var(--dcm-zone-orange)_30%,transparent)] bg-[color-mix(in_srgb,var(--dcm-zone-orange)_8%,transparent)] px-4 py-3 animate-fade-in">
+            <p className="text-sm text-[var(--dcm-zone-orange)]">
               <strong>WebSocket server offline.</strong> Start it with:{" "}
               <code className="rounded bg-amber-500/20 px-1.5 py-0.5 text-xs font-mono">
                 cd ~/.claude/services/context-manager &amp;&amp; bun run ws
@@ -799,28 +799,28 @@ export default function LivePage() {
           <SemiCircleGauge
             value={metrics?.active_sessions ?? 0}
             max={10}
-            color="#3b82f6"
+            color="var(--md-sys-color-primary)"
             label="Active Sessions"
             connected={isConnected}
           />
           <SemiCircleGauge
             value={metrics?.active_agents ?? 0}
             max={20}
-            color="#8b5cf6"
+            color="var(--md-sys-color-tertiary)"
             label="Active Agents"
             connected={isConnected}
           />
           <SemiCircleGauge
             value={metrics?.pending_tasks ?? 0}
             max={50}
-            color="#f59e0b"
+            color="var(--dcm-zone-orange)"
             label="Pending Tasks"
             connected={isConnected}
           />
           <SemiCircleGauge
             value={metrics?.actions_per_minute ?? 0}
             max={100}
-            color="#22c55e"
+            color="var(--dcm-zone-green)"
             label="Actions / min"
             connected={isConnected}
           />

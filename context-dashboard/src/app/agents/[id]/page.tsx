@@ -151,7 +151,7 @@ export default function AgentDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-green-500" />
+              <CheckCircle className="h-4 w-4 text-[var(--dcm-zone-green)]" />
               <span className="text-2xl font-bold">{stats.completed}</span>
             </div>
           </CardContent>
@@ -162,7 +162,7 @@ export default function AgentDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <XCircle className="h-4 w-4 text-red-500" />
+              <XCircle className="h-4 w-4 text-[var(--dcm-zone-red)]" />
               <span className="text-2xl font-bold">{stats.failed}</span>
             </div>
           </CardContent>
@@ -173,7 +173,7 @@ export default function AgentDetailPage() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-blue-500" />
+              <TrendingUp className="h-4 w-4 text-[var(--md-sys-color-primary)]" />
               <span className="text-2xl font-bold">{stats.successRate}%</span>
             </div>
           </CardContent>

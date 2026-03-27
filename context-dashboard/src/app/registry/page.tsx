@@ -49,33 +49,33 @@ type CategoryDef = {
 
 const AGENT_CATEGORIES: CategoryDef[] = [
   { value: "all", label: "All", icon: Layers },
-  { value: "orchestrator", label: "Orchestrators", icon: Brain, color: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" },
-  { value: "developer", label: "Developers", icon: Code, color: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" },
-  { value: "validator", label: "Validators", icon: Shield, color: "bg-teal-500/10 text-teal-400 border-teal-500/20" },
-  { value: "specialist", label: "Specialists", icon: Sparkles, color: "bg-violet-500/10 text-violet-400 border-violet-500/20" },
-  { value: "researcher", label: "Researchers", icon: BookOpen, color: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
-  { value: "writer", label: "Writers", icon: FileText, color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
+  { value: "orchestrator", label: "Orchestrators", icon: Brain, color: "bg-[color-mix(in_srgb,var(--dcm-agent-orchestrator)_12%,transparent)] text-[var(--dcm-agent-orchestrator)] border-[color-mix(in_srgb,var(--dcm-agent-orchestrator)_25%,transparent)]" },
+  { value: "developer", label: "Developers", icon: Code, color: "bg-[color-mix(in_srgb,var(--dcm-agent-frontend)_12%,transparent)] text-[var(--dcm-agent-frontend)] border-[color-mix(in_srgb,var(--dcm-agent-frontend)_25%,transparent)]" },
+  { value: "validator", label: "Validators", icon: Shield, color: "bg-[color-mix(in_srgb,var(--dcm-agent-testing)_12%,transparent)] text-[var(--dcm-agent-testing)] border-[color-mix(in_srgb,var(--dcm-agent-testing)_25%,transparent)]" },
+  { value: "specialist", label: "Specialists", icon: Sparkles, color: "bg-[color-mix(in_srgb,var(--md-sys-color-secondary)_12%,transparent)] text-[var(--md-sys-color-secondary)] border-[color-mix(in_srgb,var(--md-sys-color-secondary)_25%,transparent)]" },
+  { value: "researcher", label: "Researchers", icon: BookOpen, color: "bg-[color-mix(in_srgb,var(--dcm-zone-yellow)_12%,transparent)] text-[var(--dcm-zone-yellow)] border-[color-mix(in_srgb,var(--dcm-zone-yellow)_25%,transparent)]" },
+  { value: "writer", label: "Writers", icon: FileText, color: "bg-[color-mix(in_srgb,var(--dcm-zone-green)_12%,transparent)] text-[var(--dcm-zone-green)] border-[color-mix(in_srgb,var(--dcm-zone-green)_25%,transparent)]" },
 ];
 
 const SKILL_CATEGORIES: CategoryDef[] = [
   { value: "all", label: "All", icon: Layers },
-  { value: "workflow", label: "Workflow", icon: Workflow, color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-  { value: "git", label: "Git", icon: GitBranch, color: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
-  { value: "code-quality", label: "Code Quality", icon: Code, color: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" },
-  { value: "testing", label: "Testing", icon: TestTube, color: "bg-lime-500/10 text-lime-400 border-lime-500/20" },
-  { value: "security", label: "Security", icon: Shield, color: "bg-red-500/10 text-red-400 border-red-500/20" },
-  { value: "documentation", label: "Docs", icon: FileText, color: "bg-sky-500/10 text-sky-400 border-sky-500/20" },
-  { value: "engineering", label: "Engineering", icon: Wrench, color: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20" },
-  { value: "design", label: "Design", icon: Palette, color: "bg-pink-500/10 text-pink-400 border-pink-500/20" },
-  { value: "marketing", label: "Marketing", icon: Megaphone, color: "bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/20" },
-  { value: "business", label: "Business", icon: Briefcase, color: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
+  { value: "workflow", label: "Workflow", icon: Workflow, color: "bg-[color-mix(in_srgb,var(--md-sys-color-primary)_12%,transparent)] text-[var(--md-sys-color-primary)] border-[color-mix(in_srgb,var(--md-sys-color-primary)_25%,transparent)]" },
+  { value: "git", label: "Git", icon: GitBranch, color: "bg-[color-mix(in_srgb,var(--dcm-zone-orange)_12%,transparent)] text-[var(--dcm-zone-orange)] border-[color-mix(in_srgb,var(--dcm-zone-orange)_25%,transparent)]" },
+  { value: "code-quality", label: "Code Quality", icon: Code, color: "bg-[color-mix(in_srgb,var(--md-sys-color-tertiary)_12%,transparent)] text-[var(--md-sys-color-tertiary)] border-[color-mix(in_srgb,var(--md-sys-color-tertiary)_25%,transparent)]" },
+  { value: "testing", label: "Testing", icon: TestTube, color: "bg-[color-mix(in_srgb,var(--dcm-agent-testing)_12%,transparent)] text-[var(--dcm-agent-testing)] border-[color-mix(in_srgb,var(--dcm-agent-testing)_25%,transparent)]" },
+  { value: "security", label: "Security", icon: Shield, color: "bg-[color-mix(in_srgb,var(--dcm-agent-security)_12%,transparent)] text-[var(--dcm-agent-security)] border-[color-mix(in_srgb,var(--dcm-agent-security)_25%,transparent)]" },
+  { value: "documentation", label: "Docs", icon: FileText, color: "bg-[color-mix(in_srgb,var(--md-sys-color-secondary)_12%,transparent)] text-[var(--md-sys-color-secondary)] border-[color-mix(in_srgb,var(--md-sys-color-secondary)_25%,transparent)]" },
+  { value: "engineering", label: "Engineering", icon: Wrench, color: "bg-[color-mix(in_srgb,var(--md-sys-color-on-surface-variant)_12%,transparent)] text-[var(--md-sys-color-on-surface-variant)] border-[var(--md-sys-color-outline-variant)]" },
+  { value: "design", label: "Design", icon: Palette, color: "bg-[color-mix(in_srgb,var(--md-sys-color-tertiary)_12%,transparent)] text-[var(--md-sys-color-tertiary)] border-[color-mix(in_srgb,var(--md-sys-color-tertiary)_25%,transparent)]" },
+  { value: "marketing", label: "Marketing", icon: Megaphone, color: "bg-[color-mix(in_srgb,var(--dcm-agent-orchestrator)_12%,transparent)] text-[var(--dcm-agent-orchestrator)] border-[color-mix(in_srgb,var(--dcm-agent-orchestrator)_25%,transparent)]" },
+  { value: "business", label: "Business", icon: Briefcase, color: "bg-[color-mix(in_srgb,var(--dcm-zone-yellow)_12%,transparent)] text-[var(--dcm-zone-yellow)] border-[color-mix(in_srgb,var(--dcm-zone-yellow)_25%,transparent)]" },
 ];
 
 const COMMAND_CATEGORIES: CategoryDef[] = [
   { value: "all", label: "All", icon: Layers },
-  { value: "workflow", label: "Workflow", icon: Workflow, color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-  { value: "git", label: "Git", icon: GitBranch, color: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
-  { value: "utility", label: "Utility", icon: Wrench, color: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20" },
+  { value: "workflow", label: "Workflow", icon: Workflow, color: "bg-[color-mix(in_srgb,var(--md-sys-color-primary)_12%,transparent)] text-[var(--md-sys-color-primary)] border-[color-mix(in_srgb,var(--md-sys-color-primary)_25%,transparent)]" },
+  { value: "git", label: "Git", icon: GitBranch, color: "bg-[color-mix(in_srgb,var(--dcm-zone-orange)_12%,transparent)] text-[var(--dcm-zone-orange)] border-[color-mix(in_srgb,var(--dcm-zone-orange)_25%,transparent)]" },
+  { value: "utility", label: "Utility", icon: Wrench, color: "bg-[color-mix(in_srgb,var(--md-sys-color-on-surface-variant)_12%,transparent)] text-[var(--md-sys-color-on-surface-variant)] border-[var(--md-sys-color-outline-variant)]" },
 ];
 
 const TAB_CONFIG = {
@@ -93,7 +93,7 @@ type ActiveTab = keyof typeof TAB_CONFIG;
 function getCategoryColor(tab: ActiveTab, category: string): string {
   const cats = TAB_CONFIG[tab].categories;
   const found = cats.find((c) => c.value === category);
-  return found?.color || "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
+  return found?.color || "bg-[color-mix(in_srgb,var(--md-sys-color-on-surface-variant)_12%,transparent)] text-[var(--md-sys-color-on-surface-variant)] border-[var(--md-sys-color-outline-variant)]";
 }
 
 function getCategoryIconDef(tab: ActiveTab, category: string): LucideIcon {
@@ -143,7 +143,7 @@ function AgentCard({ agent, onClick, isSelected }: AgentCardProps) {
   return (
     <div
       onClick={onClick}
-      className={`glass-card rounded-xl p-5 cursor-pointer transition-all hover:scale-[1.02] hover:border-border ${
+      className={`bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl p-5 cursor-pointer transition-all hover:scale-[1.02] hover:border-border ${
         isSelected ? "border-primary ring-2 ring-primary/20" : ""
       }`}
     >
@@ -162,7 +162,7 @@ function AgentCard({ agent, onClick, isSelected }: AgentCardProps) {
       </div>
 
       <div className="mb-1.5">
-        <code className="text-sm font-semibold text-foreground bg-zinc-800/50 px-2 py-1 rounded">
+        <code className="text-sm font-semibold text-foreground bg-[var(--md-sys-color-surface-container-high)] px-2 py-1 rounded">
           {agent.id}
         </code>
       </div>
@@ -196,7 +196,7 @@ function SkillCard({ skill, onClick, isSelected }: SkillCardProps) {
   return (
     <div
       onClick={onClick}
-      className={`glass-card rounded-xl p-5 cursor-pointer transition-all hover:scale-[1.02] hover:border-border ${
+      className={`bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl p-5 cursor-pointer transition-all hover:scale-[1.02] hover:border-border ${
         isSelected ? "border-primary ring-2 ring-primary/20" : ""
       }`}
     >
@@ -215,7 +215,7 @@ function SkillCard({ skill, onClick, isSelected }: SkillCardProps) {
       </div>
 
       <div className="mb-1.5">
-        <code className="text-sm font-semibold text-foreground bg-zinc-800/50 px-2 py-1 rounded">
+        <code className="text-sm font-semibold text-foreground bg-[var(--md-sys-color-surface-container-high)] px-2 py-1 rounded">
           /{skill.id}
         </code>
       </div>
@@ -242,7 +242,7 @@ function CommandCard({ command, onClick, isSelected }: CommandCardProps) {
   return (
     <div
       onClick={onClick}
-      className={`glass-card rounded-xl p-5 cursor-pointer transition-all hover:scale-[1.02] hover:border-border ${
+      className={`bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl p-5 cursor-pointer transition-all hover:scale-[1.02] hover:border-border ${
         isSelected ? "border-primary ring-2 ring-primary/20" : ""
       }`}
     >
@@ -261,7 +261,7 @@ function CommandCard({ command, onClick, isSelected }: CommandCardProps) {
       </div>
 
       <div className="mb-1.5">
-        <code className="text-sm font-semibold text-foreground bg-zinc-800/50 px-2 py-1 rounded">
+        <code className="text-sm font-semibold text-foreground bg-[var(--md-sys-color-surface-container-high)] px-2 py-1 rounded">
           /{command.name}
         </code>
       </div>
@@ -279,7 +279,7 @@ function CommandCard({ command, onClick, isSelected }: CommandCardProps) {
 
 function AgentDetailPanel({ agent, onClose }: { agent: CatalogAgent; onClose: () => void }) {
   return (
-    <div className="glass-card rounded-xl p-6">
+    <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl p-6">
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div
@@ -288,7 +288,7 @@ function AgentDetailPanel({ agent, onClose }: { agent: CatalogAgent; onClose: ()
             {renderCatIcon("agents", agent.category, "h-6 w-6")}
           </div>
           <div>
-            <code className="text-base font-bold text-foreground bg-zinc-800/50 px-2 py-1 rounded">
+            <code className="text-base font-bold text-foreground bg-[var(--md-sys-color-surface-container-high)] px-2 py-1 rounded">
               {agent.id}
             </code>
             <p className="text-sm text-muted-foreground mt-1">{agent.name}</p>
@@ -296,7 +296,7 @@ function AgentDetailPanel({ agent, onClose }: { agent: CatalogAgent; onClose: ()
         </div>
         <button
           onClick={onClose}
-          className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+          className="p-2 hover:bg-[var(--md-sys-color-surface-container-high)] rounded-lg transition-colors"
         >
           <X className="h-4 w-4 text-muted-foreground" />
         </button>
@@ -343,7 +343,7 @@ function AgentDetailPanel({ agent, onClose }: { agent: CatalogAgent; onClose: ()
 
 function SkillDetailPanel({ skill, onClose }: { skill: CatalogSkill; onClose: () => void }) {
   return (
-    <div className="glass-card rounded-xl p-6">
+    <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl p-6">
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div
@@ -352,7 +352,7 @@ function SkillDetailPanel({ skill, onClose }: { skill: CatalogSkill; onClose: ()
             {renderCatIcon("skills", skill.category, "h-6 w-6")}
           </div>
           <div>
-            <code className="text-base font-bold text-foreground bg-zinc-800/50 px-2 py-1 rounded">
+            <code className="text-base font-bold text-foreground bg-[var(--md-sys-color-surface-container-high)] px-2 py-1 rounded">
               /{skill.id}
             </code>
             <p className="text-sm text-muted-foreground mt-1">{skill.name}</p>
@@ -360,7 +360,7 @@ function SkillDetailPanel({ skill, onClose }: { skill: CatalogSkill; onClose: ()
         </div>
         <button
           onClick={onClose}
-          className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+          className="p-2 hover:bg-[var(--md-sys-color-surface-container-high)] rounded-lg transition-colors"
         >
           <X className="h-4 w-4 text-muted-foreground" />
         </button>
@@ -382,7 +382,7 @@ function SkillDetailPanel({ skill, onClose }: { skill: CatalogSkill; onClose: ()
         </p>
       </div>
 
-      <div className="p-4 bg-zinc-900/50 rounded-lg border border-zinc-800">
+      <div className="p-4 bg-[var(--md-sys-color-surface-container)] rounded-lg border border-[var(--md-sys-color-outline-variant)]">
         <h4 className="text-xs font-semibold text-muted-foreground mb-2">Usage</h4>
         <code className="text-sm text-foreground">
           Skill tool -&gt; skill: &quot;{skill.id}&quot;
@@ -394,7 +394,7 @@ function SkillDetailPanel({ skill, onClose }: { skill: CatalogSkill; onClose: ()
 
 function CommandDetailPanel({ command, onClose }: { command: CatalogCommand; onClose: () => void }) {
   return (
-    <div className="glass-card rounded-xl p-6">
+    <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl p-6">
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div
@@ -403,14 +403,14 @@ function CommandDetailPanel({ command, onClose }: { command: CatalogCommand; onC
             {renderCatIcon("commands", command.category, "h-6 w-6")}
           </div>
           <div>
-            <code className="text-base font-bold text-foreground bg-zinc-800/50 px-2 py-1 rounded">
+            <code className="text-base font-bold text-foreground bg-[var(--md-sys-color-surface-container-high)] px-2 py-1 rounded">
               /{command.name}
             </code>
           </div>
         </div>
         <button
           onClick={onClose}
-          className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+          className="p-2 hover:bg-[var(--md-sys-color-surface-container-high)] rounded-lg transition-colors"
         >
           <X className="h-4 w-4 text-muted-foreground" />
         </button>
@@ -432,7 +432,7 @@ function CommandDetailPanel({ command, onClose }: { command: CatalogCommand; onC
         </p>
       </div>
 
-      <div className="p-4 bg-zinc-900/50 rounded-lg border border-zinc-800">
+      <div className="p-4 bg-[var(--md-sys-color-surface-container)] rounded-lg border border-[var(--md-sys-color-outline-variant)]">
         <h4 className="text-xs font-semibold text-muted-foreground mb-2">Usage</h4>
         <code className="text-sm text-foreground">/{command.name}</code>
       </div>
@@ -446,7 +446,7 @@ function CommandDetailPanel({ command, onClose }: { command: CatalogCommand; onC
 
 function CardSkeleton() {
   return (
-    <div className="glass-card rounded-xl p-5">
+    <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl p-5">
       <div className="flex items-start justify-between mb-3">
         <Skeleton className="h-10 w-10 rounded-lg" />
         <Skeleton className="h-5 w-20 rounded" />
@@ -486,7 +486,7 @@ function CategoryChips({
                 ? cat.color
                   ? `${cat.color} border-current`
                   : "bg-foreground/10 text-foreground border-foreground/20"
-                : "bg-transparent text-muted-foreground border-zinc-800 hover:border-zinc-700 hover:text-foreground"
+                : "bg-transparent text-muted-foreground border-[var(--md-sys-color-outline-variant)] hover:border-[var(--md-sys-color-outline)] hover:text-foreground"
             }`}
           >
             <Icon className="h-3.5 w-3.5" />
@@ -627,7 +627,7 @@ export default function RegistryPage() {
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-zinc-800 rounded transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-[var(--md-sys-color-surface-container-high)] rounded transition-colors"
                 >
                   <X className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
@@ -653,8 +653,8 @@ export default function RegistryPage() {
 
           {/* Error State */}
           {error && (
-            <Card className="glass-card p-8 text-center mt-4">
-              <Shield className="h-12 w-12 text-red-500 mx-auto mb-3" />
+            <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 p-8 text-center mt-4">
+              <Shield className="h-12 w-12 text-[var(--dcm-zone-red)] mx-auto mb-3" />
               <h3 className="text-lg font-semibold mb-2">Failed to Load Registry</h3>
               <p className="text-sm text-muted-foreground">
                 {error instanceof Error ? error.message : "Unknown error"}
@@ -666,7 +666,7 @@ export default function RegistryPage() {
           {!isLoading && !error && (
             <TabsContent value="agents" className="mt-4">
               {filteredAgents.length === 0 ? (
-                <Card className="glass-card p-8 text-center">
+                <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 p-8 text-center">
                   <Bot className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
                   <h3 className="text-lg font-semibold mb-2">No Agents Found</h3>
                   <p className="text-sm text-muted-foreground">
@@ -713,7 +713,7 @@ export default function RegistryPage() {
           {!isLoading && !error && (
             <TabsContent value="skills" className="mt-4">
               {filteredSkills.length === 0 ? (
-                <Card className="glass-card p-8 text-center">
+                <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 p-8 text-center">
                   <Zap className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
                   <h3 className="text-lg font-semibold mb-2">No Skills Found</h3>
                   <p className="text-sm text-muted-foreground">
@@ -760,7 +760,7 @@ export default function RegistryPage() {
           {!isLoading && !error && (
             <TabsContent value="commands" className="mt-4">
               {filteredCommands.length === 0 ? (
-                <Card className="glass-card p-8 text-center">
+                <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 p-8 text-center">
                   <Terminal className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
                   <h3 className="text-lg font-semibold mb-2">No Commands Found</h3>
                   <p className="text-sm text-muted-foreground">

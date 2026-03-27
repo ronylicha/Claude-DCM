@@ -39,7 +39,11 @@ export type EventType =
   | "proactive.compact"
   | "scope.injected"
   | "registry.updated"
-  | "registry.bulk_import";
+  | "registry.bulk_import"
+  | "capacity.update"
+  | "capacity.threshold"
+  | "summary.status"
+  | "cockpit.refresh";
 
 export interface WSEvent {
   channel: string;

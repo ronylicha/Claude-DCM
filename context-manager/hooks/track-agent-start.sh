@@ -33,6 +33,9 @@ max_turns=$(echo "$tool_input" | jq -r '.max_turns // empty' 2>/dev/null || echo
 
 [[ -z "$agent_type" ]] && exit 0
 
+# Detect background agent
+run_in_background=$(echo "$tool_input" | jq -r '.run_in_background // false' 2>/dev/null || echo "false")
+
 # Detect parent agent: CLAUDE_AGENT_ID is set when running inside a subagent
 parent_agent_id="${CLAUDE_AGENT_ID:-}"
 
@@ -113,6 +116,9 @@ fi
 [[ ${#description} -gt 500 ]] && description="${description:0:497}..."
 
 # Build subtask payload (with optional parent_agent_id for subagent detection)
+is_bg="false"
+[[ "$run_in_background" == "true" ]] && is_bg="true"
+
 subtask_payload=$(jq -n \
     --arg task_id "$task_id" \
     --arg agent_type "$agent_type" \
@@ -120,7 +126,8 @@ subtask_payload=$(jq -n \
     --arg description "$description" \
     --arg parent_agent_id "$parent_agent_id" \
     --arg max_turns "$max_turns" \
-    '{task_id: $task_id, agent_type: $agent_type, agent_id: $agent_id, description: $description, status: "running"}
+    --argjson is_background "$is_bg" \
+    '{task_id: $task_id, agent_type: $agent_type, agent_id: $agent_id, description: $description, status: "running", context_snapshot: {is_background: $is_background}}
     | if $parent_agent_id != "" then . + {parent_agent_id: $parent_agent_id} else . end
     | if $max_turns != "" then . + {max_turns: ($max_turns | tonumber)} else . end')
 
@@ -141,8 +148,8 @@ if [[ -n "$subtask_id" ]]; then
     (
         flock -x 200 || exit 1
         existing=$(cat "$agents_file" 2>/dev/null || echo "{}")
-        echo "$existing" | jq --arg key "$cache_key" --arg sid "$subtask_id" \
-            '. + {($key): $sid}' > "${agents_file}.tmp.$$" 2>/dev/null && \
+        echo "$existing" | jq --arg key "$cache_key" --arg sid "$subtask_id" --argjson bg "$is_bg" \
+            '. + {($key): {id: $sid, is_background: $bg}}' > "${agents_file}.tmp.$$" 2>/dev/null && \
             mv "${agents_file}.tmp.$$" "$agents_file" 2>/dev/null || \
             rm -f "${agents_file}.tmp.$$" 2>/dev/null
     ) 200>"$agents_lock"

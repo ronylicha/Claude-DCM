@@ -43,10 +43,10 @@ export function HealthGauge() {
   const healthPercent = isHealthy ? 100 : isDegraded ? 60 : 10;
   const statusLabel = isHealthy ? "Healthy" : isDegraded ? "Degraded" : "Down";
   const strokeColor = isHealthy
-    ? "#22c55e"
+    ? "var(--dcm-zone-green)"
     : isDegraded
-      ? "#f59e0b"
-      : "#ef4444";
+      ? "var(--dcm-zone-yellow)"
+      : "var(--dcm-zone-red)";
 
   const radius = 42;
   const circumference = 2 * Math.PI * radius;

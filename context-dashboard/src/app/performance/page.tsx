@@ -44,12 +44,12 @@ import {
 // ============================================
 
 const BAR_COLORS = [
-  "#3b82f6",
-  "#10b981",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#ec4899",
+  "var(--md-sys-color-primary)",
+  "var(--dcm-zone-green)",
+  "var(--dcm-zone-yellow)",
+  "var(--dcm-zone-red)",
+  "var(--md-sys-color-tertiary)",
+  "var(--md-sys-color-secondary)",
 ];
 
 // ============================================
@@ -81,10 +81,10 @@ function formatNumber(num: number): string {
 }
 
 function getLatencyColor(ms: number): string {
-  if (ms < 50) return "text-green-500";
-  if (ms < 150) return "text-yellow-500";
-  if (ms < 300) return "text-orange-500";
-  return "text-red-500";
+  if (ms < 50) return "text-[var(--dcm-zone-green)]";
+  if (ms < 150) return "text-[var(--dcm-zone-yellow)]";
+  if (ms < 300) return "text-[var(--dcm-zone-orange)]";
+  return "text-[var(--dcm-zone-red)]";
 }
 
 function getLatencyStatus(ms: number): string {
@@ -110,7 +110,7 @@ function GlassChartTooltip({
   if (!active || !payload?.length) return null;
 
   return (
-    <div className="glass-card rounded-lg px-3 py-2 shadow-lg">
+    <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-lg px-3 py-2 shadow-lg">
       <p className="text-xs font-medium text-muted-foreground mb-1">{label}</p>
       {payload.map((entry, i) => (
         <p
@@ -152,7 +152,7 @@ function PerformanceMetricCard({
   loading,
 }: PerformanceMetricProps) {
   return (
-    <div className="glass-card rounded-xl p-5 flex flex-col gap-3">
+    <div className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 rounded-xl p-5 flex flex-col gap-3">
       {/* Header: icon + title + status */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
@@ -193,18 +193,18 @@ function PerformanceMetricCard({
           {trend ? (
             <>
               {trend.value > 0 ? (
-                <TrendingUp className="h-3.5 w-3.5 text-green-500" />
+                <TrendingUp className="h-3.5 w-3.5 text-[var(--dcm-zone-green)]" />
               ) : trend.value < 0 ? (
-                <TrendingDown className="h-3.5 w-3.5 text-red-500" />
+                <TrendingDown className="h-3.5 w-3.5 text-[var(--dcm-zone-red)]" />
               ) : (
                 <Minus className="h-3.5 w-3.5 text-muted-foreground" />
               )}
               <span
                 className={`text-xs font-medium ${
                   trend.value > 0
-                    ? "text-green-500"
+                    ? "text-[var(--dcm-zone-green)]"
                     : trend.value < 0
-                      ? "text-red-500"
+                      ? "text-[var(--dcm-zone-red)]"
                       : "text-muted-foreground"
                 }`}
               >
@@ -229,7 +229,7 @@ function SystemHealthCard({ health, isLoading, error }: { health?: HealthRespons
 
   if (isLoading) {
     return (
-      <Card className="glass-card">
+      <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1">
         <div className="p-6">
           <h3 className="text-base font-semibold mb-4">System Health</h3>
           <div className="space-y-3">
@@ -244,7 +244,7 @@ function SystemHealthCard({ health, isLoading, error }: { health?: HealthRespons
 
   if (error) {
     return (
-      <Card className="glass-card border-destructive/30">
+      <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 border-destructive/30">
         <div className="p-6">
           <div className="flex items-center gap-2 mb-4">
             <AlertCircle className="h-5 w-5 text-destructive" />
@@ -261,16 +261,16 @@ function SystemHealthCard({ health, isLoading, error }: { health?: HealthRespons
   const isHealthy = health?.status === "healthy" && health?.database?.healthy;
 
   return (
-    <Card className="glass-card">
+    <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1">
       <div className="p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Gauge className="h-5 w-5 text-blue-500" />
+            <Gauge className="h-5 w-5 text-[var(--md-sys-color-primary)]" />
             <h3 className="text-base font-semibold">System Health</h3>
           </div>
           <Badge
             variant={isHealthy ? "default" : "destructive"}
-            className={isHealthy ? "bg-green-500 hover:bg-green-600" : ""}
+            className={isHealthy ? "bg-[var(--dcm-zone-green)] hover:opacity-90 text-white" : ""}
           >
             {isHealthy ? (
               <>
@@ -293,7 +293,7 @@ function SystemHealthCard({ health, isLoading, error }: { health?: HealthRespons
               <Server className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium">API Status</span>
             </div>
-            <span className={`text-sm font-semibold capitalize ${isHealthy ? "text-green-500" : "text-red-500"}`}>
+            <span className={`text-sm font-semibold capitalize ${isHealthy ? "text-[var(--dcm-zone-green)]" : "text-[var(--dcm-zone-red)]"}`}>
               {health?.status}
             </span>
           </div>
@@ -317,7 +317,7 @@ function SystemHealthCard({ health, isLoading, error }: { health?: HealthRespons
             </div>
             <div className="flex items-center gap-2">
               <span
-                className={`text-sm font-semibold ${health?.database?.healthy ? "text-green-500" : "text-red-500"}`}
+                className={`text-sm font-semibold ${health?.database?.healthy ? "text-[var(--dcm-zone-green)]" : "text-[var(--dcm-zone-red)]"}`}
               >
                 {health?.database?.healthy ? "Connected" : "Error"}
               </span>
@@ -339,8 +339,8 @@ function SystemHealthCard({ health, isLoading, error }: { health?: HealthRespons
               <span
                 className={`text-sm font-semibold ${
                   health.features.phase8 === "active"
-                    ? "text-green-500"
-                    : "text-yellow-500"
+                    ? "text-[var(--dcm-zone-green)]"
+                    : "text-[var(--dcm-zone-yellow)]"
                 }`}
               >
                 {health.features.phase8 === "active" ? "Active" : "Inactive"}
@@ -391,11 +391,11 @@ function RecentActionsDurationChart() {
     : 0;
 
   return (
-    <Card className="glass-card">
+    <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1">
       <div className="p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Activity className="h-5 w-5 text-purple-500" />
+            <Activity className="h-5 w-5 text-[var(--md-sys-color-secondary)]" />
             <h3 className="text-base font-semibold">Recent Actions Duration</h3>
           </div>
           {avgDuration > 0 && (
@@ -423,7 +423,7 @@ function RecentActionsDurationChart() {
               <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
               <XAxis
                 dataKey="name"
-                tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+                tick={{ fontSize: 9, fill: "var(--md-sys-color-on-surface-variant)" }}
                 tickLine={false}
                 axisLine={false}
                 angle={-45}
@@ -431,14 +431,14 @@ function RecentActionsDurationChart() {
                 height={60}
               />
               <YAxis
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                tick={{ fontSize: 11, fill: "var(--md-sys-color-on-surface-variant)" }}
                 tickLine={false}
                 axisLine={false}
                 label={{
                   value: "ms",
                   angle: -90,
                   position: "insideLeft",
-                  style: { fontSize: 11, fill: "hsl(var(--muted-foreground))" },
+                  style: { fontSize: 11, fill: "var(--md-sys-color-on-surface-variant)" },
                 }}
               />
               <RechartsTooltip content={<GlassChartTooltip />} />
@@ -446,7 +446,7 @@ function RecentActionsDurationChart() {
                 {chartData.map((entry, index) => (
                   <Cell
                     key={`cell-${index}`}
-                    fill={entry.duration < 100 ? "#10b981" : entry.duration < 500 ? "#f59e0b" : "#ef4444"}
+                    fill={entry.duration < 100 ? "var(--dcm-zone-green)" : entry.duration < 500 ? "var(--dcm-zone-yellow)" : "var(--dcm-zone-red)"}
                   />
                 ))}
               </Bar>
@@ -467,30 +467,30 @@ function DatabaseStats({ stats, isLoading }: { stats?: StatsResponse; isLoading:
     {
       name: "Projects",
       records: stats?.projectCount ?? 0,
-      color: "#3b82f6",
+      color: "var(--md-sys-color-primary)",
     },
     {
       name: "Actions",
       records: stats?.actionCount ?? 0,
-      color: "#10b981",
+      color: "var(--dcm-zone-green)",
     },
     {
       name: "Messages",
       records: stats?.messageCount ?? 0,
-      color: "#f59e0b",
+      color: "var(--dcm-zone-yellow)",
     },
     {
       name: "Requests",
       records: stats?.requestCount ?? 0,
-      color: "#8b5cf6",
+      color: "var(--md-sys-color-secondary)",
     },
   ];
 
   return (
-    <Card className="glass-card">
+    <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1">
       <div className="p-6">
         <div className="flex items-center gap-2 mb-4">
-          <Database className="h-5 w-5 text-cyan-500" />
+          <Database className="h-5 w-5 text-[var(--md-sys-color-tertiary)]" />
           <h3 className="text-base font-semibold">Database Statistics</h3>
         </div>
 
@@ -563,10 +563,10 @@ function CleanupStatsCard() {
   }, [cleanup?.messages.by_type]);
 
   return (
-    <Card className="glass-card">
+    <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1">
       <div className="p-6">
         <div className="flex items-center gap-2 mb-4">
-          <Trash2 className="h-5 w-5 text-amber-500" />
+          <Trash2 className="h-5 w-5 text-[var(--dcm-zone-yellow)]" />
           <h3 className="text-base font-semibold">Cleanup Statistics</h3>
         </div>
 
@@ -702,8 +702,8 @@ export default function PerformancePage() {
           variant={isHealthy ? "default" : "secondary"}
           className={
             isHealthy
-              ? "bg-green-500 hover:bg-green-600 gap-1"
-              : "bg-red-500 hover:bg-red-600 gap-1"
+              ? "bg-[var(--dcm-zone-green)] hover:opacity-90 gap-1 text-white"
+              : "bg-[var(--dcm-zone-red)] hover:opacity-90 gap-1 text-white"
           }
         >
           {isHealthy ? (
@@ -728,7 +728,7 @@ export default function PerformancePage() {
           title="Database Latency"
           value={`${health?.database?.latencyMs ?? 0}ms`}
           icon={<Database className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-cyan-500 to-blue-500"
+          iconGradient="bg-[var(--md-sys-color-tertiary)]"
           status={
             !health?.database?.latencyMs
               ? "error"
@@ -751,7 +751,7 @@ export default function PerformancePage() {
               (stats?.requestCount ?? 0)
           )}
           icon={<HardDrive className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-emerald-500 to-green-500"
+          iconGradient="bg-[var(--dcm-zone-green)]"
           status="healthy"
           subtitle="Across all tables"
           loading={statsLoading}
@@ -761,7 +761,7 @@ export default function PerformancePage() {
           title="Actions Tracked"
           value={formatNumber(stats?.actionCount ?? 0)}
           icon={<Activity className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-violet-500 to-purple-500"
+          iconGradient="bg-[var(--md-sys-color-secondary)]"
           loading={statsLoading}
         />
 
@@ -769,7 +769,7 @@ export default function PerformancePage() {
           title="WebSocket"
           value={wsActive ? "Active" : "Inactive"}
           icon={<Wifi className="h-4 w-4 text-white" />}
-          iconGradient="bg-gradient-to-br from-amber-500 to-orange-500"
+          iconGradient="bg-[var(--dcm-zone-yellow)]"
           status={wsActive ? "healthy" : "warning"}
           subtitle={wsActive ? "Real-time updates" : "Polling mode"}
           loading={healthLoading}
@@ -796,16 +796,16 @@ export default function PerformancePage() {
       {/* Performance Tips                            */}
       {/* =========================================== */}
       <div className="mt-6">
-        <Card className="glass-card">
+        <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1">
           <div className="p-6">
             <div className="flex items-center gap-2 mb-4">
-              <Zap className="h-5 w-5 text-yellow-500" />
+              <Zap className="h-5 w-5 text-[var(--dcm-zone-yellow)]" />
               <h3 className="text-base font-semibold">Performance Tips</h3>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <div className="p-3 rounded-lg border border-border/50 bg-card/50">
                 <div className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                  <CheckCircle2 className="h-4 w-4 text-[var(--dcm-zone-green)] mt-0.5 shrink-0" />
                   <div>
                     <div className="text-sm font-medium mb-1">
                       Database Optimization
@@ -818,7 +818,7 @@ export default function PerformancePage() {
               </div>
               <div className="p-3 rounded-lg border border-border/50 bg-card/50">
                 <div className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                  <CheckCircle2 className="h-4 w-4 text-[var(--dcm-zone-green)] mt-0.5 shrink-0" />
                   <div>
                     <div className="text-sm font-medium mb-1">
                       Real-time Updates
@@ -831,7 +831,7 @@ export default function PerformancePage() {
               </div>
               <div className="p-3 rounded-lg border border-border/50 bg-card/50">
                 <div className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                  <CheckCircle2 className="h-4 w-4 text-[var(--dcm-zone-green)] mt-0.5 shrink-0" />
                   <div>
                     <div className="text-sm font-medium mb-1">
                       Auto Cleanup
@@ -845,7 +845,7 @@ export default function PerformancePage() {
               </div>
               <div className="p-3 rounded-lg border border-border/50 bg-card/50">
                 <div className="flex items-start gap-2">
-                  <Activity className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+                  <Activity className="h-4 w-4 text-[var(--md-sys-color-primary)] mt-0.5 shrink-0" />
                   <div>
                     <div className="text-sm font-medium mb-1">
                       Monitoring

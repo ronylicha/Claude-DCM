@@ -217,9 +217,8 @@ export default function ProjectsPage() {
     try {
       await apiClient.deleteProject(project.id);
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to delete project";
-      window.alert(`Error deleting project: ${message}`);
+    } catch {
+      // error state handled by query invalidation failure
     } finally {
       setDeletingId(null);
     }
@@ -414,8 +413,8 @@ export default function ProjectsPage() {
                             className={cn(
                               "h-2 w-2 rounded-full",
                               new Date(project.updated_at) > oneWeekAgo
-                                ? "bg-green-500"
-                                : "bg-muted-foreground/50"
+                                ? "bg-[var(--dcm-zone-green)]"
+                                : "bg-[var(--md-sys-color-outline-variant)]"
                             )}
                           />
                           <span title={formatDate(project.updated_at)}>

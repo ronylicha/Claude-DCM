@@ -39,16 +39,35 @@ agents_file="${CACHE_DIR}/${session_id}_agents.json"
 [[ ! -f "$agents_file" ]] && exit 0
 
 cache_key="${agent_type}:${description}"
-subtask_id=$(jq -r --arg key "$cache_key" '.[$key] // empty' "$agents_file" 2>/dev/null || echo "")
+
+# Read cached entry (new format: {id, is_background} or legacy string)
+cache_entry=$(jq -r --arg key "$cache_key" '.[$key] // empty' "$agents_file" 2>/dev/null || echo "")
+[[ -z "$cache_entry" ]] && exit 0
+
+# Handle both new format (object) and legacy format (string)
+if echo "$cache_entry" | jq -e '.id' >/dev/null 2>&1; then
+    subtask_id=$(echo "$cache_entry" | jq -r '.id')
+    is_background=$(echo "$cache_entry" | jq -r '.is_background // false')
+else
+    subtask_id="$cache_entry"
+    is_background="false"
+fi
+
 [[ -z "$subtask_id" ]] && exit 0
 
-# Mark subtask as completed in DB
+# CRITICAL: For background agents, PostToolUse fires on dispatch, NOT completion.
+# Do NOT mark as completed here — SubagentStop (save-agent-result.sh) handles that.
+if [[ "$is_background" == "true" ]]; then
+    exit 0
+fi
+
+# Mark foreground subtask as completed in DB
 curl -s -X PATCH "${API_URL}/api/subtasks/${subtask_id}" \
     -H "Content-Type: application/json" \
     -d '{"status": "completed"}' \
     --connect-timeout 1 --max-time 2 >/dev/null 2>&1 || true
 
-# Remove from cache (atomic with flock)
+# Remove from cache (atomic with flock) — only for foreground agents
 agents_lock="${agents_file}.lock"
 (
     flock -x 200 || exit 1
