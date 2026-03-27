@@ -34,6 +34,15 @@ interface CockpitZoomProps {
 // Helpers
 // ============================================
 
+function formatModel(modelId: string | null | undefined): string {
+  if (!modelId || modelId === 'unknown') return 'Unknown';
+  const lower = modelId.toLowerCase();
+  if (lower.includes('opus')) return 'Opus';
+  if (lower.includes('sonnet')) return 'Sonnet';
+  if (lower.includes('haiku')) return 'Haiku';
+  return modelId;
+}
+
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
@@ -216,11 +225,9 @@ export function CockpitZoom({ sessionId, onBack }: CockpitZoomProps) {
           <p className="mt-2 text-[14px] text-[var(--md-sys-color-on-surface-variant)]">
             {formatTokens(ctx.current_usage)} / {formatTokens(ctx.context_window_size)}
           </p>
-          {ctx.model_id && (
-            <span className="mt-1 px-3 py-1 rounded-full text-[11px] font-medium bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)]">
-              {ctx.model_id}
-            </span>
-          )}
+          <span className="mt-1 px-3 py-1 rounded-full text-[11px] font-medium bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)]">
+            {formatModel(ctx.model_id)}
+          </span>
         </div>
 
         {/* Prediction */}

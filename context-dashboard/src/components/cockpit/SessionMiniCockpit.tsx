@@ -6,6 +6,15 @@ import type { MiniCockpitData } from '@/hooks/useSessionGrid';
 // Helpers
 // ============================================
 
+function formatModel(modelId: string | null | undefined): string {
+  if (!modelId || modelId === 'unknown') return 'Unknown';
+  const lower = modelId.toLowerCase();
+  if (lower.includes('opus')) return 'Opus';
+  if (lower.includes('sonnet')) return 'Sonnet';
+  if (lower.includes('haiku')) return 'Haiku';
+  return modelId;
+}
+
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
@@ -151,7 +160,7 @@ export function SessionMiniCockpit({ session, onZoom }: SessionMiniCockpitProps)
           {session.project_name}
         </span>
         <span className="flex-shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface-variant)]">
-          {(session.model_id || 'unknown').split('-')[0]}
+          {formatModel(session.model_id)}
         </span>
       </div>
 
