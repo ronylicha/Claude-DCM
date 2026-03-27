@@ -147,7 +147,7 @@ export async function postAction(c: Context): Promise<Response> {
       compressedOutput = compressData(body.output);
     }
 
-    // Insert action record
+    // Insert action record (session_id is a direct column since v4.1)
     const [action] = await sql`
       INSERT INTO actions (
         subtask_id,
@@ -158,6 +158,7 @@ export async function postAction(c: Context): Promise<Response> {
         file_paths,
         exit_code,
         duration_ms,
+        session_id,
         metadata
       ) VALUES (
         ${body.subtask_id || null},
@@ -168,14 +169,14 @@ export async function postAction(c: Context): Promise<Response> {
         ${body.file_paths || []},
         ${body.exit_code ?? 0},
         ${body.duration_ms || null},
+        ${body.session_id || null},
         ${sql.json({
-          session_id: body.session_id,
           project_path: body.project_path,
           compressed_input: !!compressedInput,
           compressed_output: !!compressedOutput,
         })}
       )
-      RETURNING id, tool_name, tool_type, exit_code, duration_ms, created_at
+      RETURNING id, tool_name, tool_type, exit_code, duration_ms, session_id, created_at
     `;
 
     // Extract keywords from input for routing intelligence

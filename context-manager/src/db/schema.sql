@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS actions (
     file_paths TEXT[],
     exit_code INTEGER DEFAULT 0,
     duration_ms INTEGER,
+    session_id TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     metadata JSONB DEFAULT '{}'
 );
@@ -297,6 +298,7 @@ CREATE INDEX IF NOT EXISTS idx_actions_tool ON actions(tool_name);
 CREATE INDEX IF NOT EXISTS idx_actions_created ON actions(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_actions_subtask ON actions(subtask_id);
 CREATE INDEX IF NOT EXISTS idx_actions_tool_type ON actions(tool_type);
+CREATE INDEX IF NOT EXISTS idx_actions_session_id ON actions(session_id, created_at DESC);
 
 -- Messages indexes
 CREATE INDEX IF NOT EXISTS idx_messages_project ON agent_messages(project_id);

@@ -51,6 +51,8 @@ export async function deleteExpiredMessages(): Promise<number> {
 export async function closeOrphanedSessions(maxAgeHours: number = config.cleanup.staleThresholdHours, inactiveMinutes: number = config.cleanup.inactiveMinutes): Promise<number> {
   const sql = getDb();
 
+  // v4.1: Use actions.session_id directly (no JOIN chain needed)
+  // This catches ALL actions including those without a subtask_id
   const result = await sql`
     UPDATE sessions s
     SET ended_at = NOW()
@@ -58,10 +60,7 @@ export async function closeOrphanedSessions(maxAgeHours: number = config.cleanup
       AND s.started_at < NOW() - INTERVAL '1 hour' * ${maxAgeHours}
       AND NOT EXISTS (
         SELECT 1 FROM actions a
-        JOIN subtasks st ON a.subtask_id = st.id
-        JOIN task_lists tl ON st.task_list_id = tl.id
-        JOIN requests r ON tl.request_id = r.id
-        WHERE r.session_id = s.id
+        WHERE a.session_id = s.id
           AND a.created_at > NOW() - INTERVAL '1 minute' * ${inactiveMinutes}
       )
     RETURNING id

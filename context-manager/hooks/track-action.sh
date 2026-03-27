@@ -1,6 +1,6 @@
 #!/bin/bash
 # track-action.sh - Record ALL tool actions to DCM PostgreSQL
-# v3.1: Fixed memory limit on TOOL_INPUT, variable init defaults, true fire-and-forget
+# v4.1: Actions are NEVER orphaned — always linked to session_id + resolved subtask_id
 #
 # Feeds keyword_tool_scores for routing intelligence
 # + token consumption for predictive capacity monitoring
@@ -12,6 +12,7 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HOOK_DIR/lib/circuit-breaker.sh" 2>/dev/null || true
 
 API_URL="${CONTEXT_MANAGER_URL:-http://127.0.0.1:3847}"
+CACHE_DIR="/tmp/.claude-context"
 EXIT_CODE="${1:-0}"
 
 # Read hook data from stdin (Claude Code passes JSON via stdin)
@@ -38,7 +39,7 @@ detect_type() {
     case "$1" in
         Bash|Read|Write|Edit|MultiEdit|Glob|Grep|NotebookEdit|WebFetch|WebSearch|EnterPlanMode|ExitPlanMode|AskUserQuestion|TaskCreate|TaskUpdate|TaskGet|TaskList|TaskOutput|TaskStop|ToolSearch)
             echo "builtin" ;;
-        Task)
+        Agent|Task)
             echo "agent" ;;
         Skill)
             echo "skill" ;;
@@ -51,12 +52,12 @@ detect_type() {
 
 TOOL_TYPE=$(detect_type "$TOOL_NAME")
 
-# For Skill/Task, use the effective name
+# For Skill/Agent/Task, use the effective name
 EFFECTIVE_NAME="$TOOL_NAME"
 if [[ "$TOOL_NAME" == "Skill" ]]; then
     EFFECTIVE_NAME=$(echo "$TOOL_INPUT" | jq -r '.skill // empty' 2>/dev/null || echo "")
     [[ -z "$EFFECTIVE_NAME" ]] && EFFECTIVE_NAME="$TOOL_NAME"
-elif [[ "$TOOL_NAME" == "Task" ]]; then
+elif [[ "$TOOL_NAME" == "Agent" || "$TOOL_NAME" == "Task" ]]; then
     EFFECTIVE_NAME=$(echo "$TOOL_INPUT" | jq -r '.subagent_type // empty' 2>/dev/null || echo "")
     [[ -z "$EFFECTIVE_NAME" ]] && EFFECTIVE_NAME="$TOOL_NAME"
 fi
@@ -68,7 +69,30 @@ INPUT_TEXT=$(echo "$TOOL_INPUT" | head -c 2048 2>/dev/null || echo "{}")
 INPUT_SIZE=${#TOOL_INPUT}
 OUTPUT_SIZE=${#TOOL_OUTPUT}
 
+# v4.1: Resolve subtask_id from the agents cache
+# The cache is written by track-agent-start.sh when an Agent tool is used
+SUBTASK_ID=""
+if [[ -n "$SESSION_ID" ]]; then
+    agents_file="${CACHE_DIR}/${SESSION_ID}_agents.json"
+    if [[ -f "$agents_file" ]]; then
+        # Get the most recently added subtask_id (last running agent for this session)
+        # New format: values are {id, is_background}, legacy: values are strings
+        SUBTASK_ID=$(jq -r '
+            [to_entries[] | .value] |
+            if length > 0 then
+                last |
+                if type == "object" then .id
+                elif type == "string" then .
+                else empty
+                end
+            else empty
+            end
+        ' "$agents_file" 2>/dev/null || echo "")
+    fi
+fi
+
 # Send to DCM API (true fire-and-forget - no wait)
+# session_id is now a direct column (not just in metadata)
 curl -s -X POST "${API_URL}/api/actions" \
     -H "Content-Type: application/json" \
     -d "$(jq -n \
@@ -78,7 +102,9 @@ curl -s -X POST "${API_URL}/api/actions" \
         --argjson exit_code "$EXIT_CODE" \
         --arg session_id "$SESSION_ID" \
         --arg project_path "$WORKING_DIR" \
-        '{tool_name: $tool_name, tool_type: $tool_type, input: $input, exit_code: $exit_code, session_id: $session_id, project_path: $project_path}'
+        --arg subtask_id "$SUBTASK_ID" \
+        '{tool_name: $tool_name, tool_type: $tool_type, input: $input, exit_code: $exit_code, session_id: $session_id, project_path: $project_path}
+        | if $subtask_id != "" then . + {subtask_id: $subtask_id} else . end'
     )" \
     --connect-timeout 1 \
     --max-time 2 \
