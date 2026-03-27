@@ -151,7 +151,7 @@ export function SessionMiniCockpit({ session, onZoom }: SessionMiniCockpitProps)
           {session.project_name}
         </span>
         <span className="flex-shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface-variant)]">
-          {session.model_id.split('-')[0]}
+          {(session.model_id || 'unknown').split('-')[0]}
         </span>
       </div>
 
