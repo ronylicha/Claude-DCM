@@ -19,7 +19,8 @@ export async function getCockpitGlobal(c: Context) {
           COUNT(*) FILTER (WHERE ac.model_id LIKE '%haiku%') as haiku_count
         FROM sessions s
         LEFT JOIN agent_capacity ac ON ac.session_id = s.id
-        WHERE s.ended_at IS NULL OR s.ended_at > NOW() - INTERVAL '30 minutes'
+        WHERE s.ended_at IS NULL
+          OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '15 minutes')
       `,
       // Agent summary
       db`
@@ -54,7 +55,8 @@ export async function getCockpitGlobal(c: Context) {
         FROM sessions s
         LEFT JOIN agent_capacity ac ON ac.session_id = s.id
         LEFT JOIN projects p ON s.project_id = p.id
-        WHERE s.ended_at IS NULL OR s.ended_at > NOW() - INTERVAL '30 minutes'
+        WHERE s.ended_at IS NULL
+          OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '15 minutes')
         ORDER BY s.started_at DESC
       `,
       // Summaries status
@@ -132,7 +134,8 @@ export async function getCockpitGrid(c: Context) {
       FROM sessions s
       LEFT JOIN projects p ON s.project_id = p.id
       LEFT JOIN agent_capacity ac ON ac.session_id = s.id
-      WHERE s.ended_at IS NULL OR s.ended_at > NOW() - INTERVAL '30 minutes'
+      WHERE s.ended_at IS NULL
+          OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '15 minutes')
       ORDER BY s.started_at DESC
     `;
 
