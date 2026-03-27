@@ -110,7 +110,18 @@ curl -s -X POST "${API_URL}/api/actions" \
     --max-time 2 \
     >/dev/null 2>&1 &
 
-# v3.0: Track token consumption (true fire-and-forget)
+# v4.1: Detect model from Claude Code environment
+MODEL_ID="${CLAUDE_MODEL_ID:-}"
+if [[ -z "$MODEL_ID" ]]; then
+    # Try to extract from hook input (some hooks include model info)
+    MODEL_ID=$(echo "$RAW_INPUT" | jq -r '.model // empty' 2>/dev/null || echo "")
+fi
+# Fallback: detect from CLAUDE_MODEL env or default based on context
+if [[ -z "$MODEL_ID" ]]; then
+    MODEL_ID="${CLAUDE_MODEL:-}"
+fi
+
+# Track token consumption (fire-and-forget) with model_id
 AGENT_ID="${AGENT_ID:-$SESSION_ID}"
 if [[ -n "$AGENT_ID" && -n "$SESSION_ID" ]]; then
     curl -s -X POST "${API_URL}/api/tokens/track" \
@@ -121,7 +132,9 @@ if [[ -n "$AGENT_ID" && -n "$SESSION_ID" ]]; then
             --arg tool_name "$EFFECTIVE_NAME" \
             --argjson input_size "$INPUT_SIZE" \
             --argjson output_size "$OUTPUT_SIZE" \
-            '{agent_id: $agent_id, session_id: $session_id, tool_name: $tool_name, input_size: $input_size, output_size: $output_size}'
+            --arg model_id "$MODEL_ID" \
+            '{agent_id: $agent_id, session_id: $session_id, tool_name: $tool_name, input_size: $input_size, output_size: $output_size}
+            | if $model_id != "" then . + {model_id: $model_id} else . end'
         )" \
         --connect-timeout 1 \
         --max-time 1 \

@@ -16,7 +16,18 @@ const trackTokensSchema = z.object({
   tool_name: z.string(),
   input_size: z.number().int().min(0).optional().default(0),
   output_size: z.number().int().min(0).optional().default(0),
+  model_id: z.string().optional(),
 });
+
+/** Map model ID to context window size */
+function getContextWindowForModel(modelId: string | undefined): number {
+  if (!modelId) return 200000;
+  const m = modelId.toLowerCase();
+  if (m.includes('opus')) return 1000000;
+  if (m.includes('sonnet')) return 200000;
+  if (m.includes('haiku')) return 200000;
+  return 200000;
+}
 
 // ==================== Helpers ====================
 
@@ -47,7 +58,7 @@ export async function trackTokens(c: Context) {
     return c.json({ error: "Invalid input", details: parsed.error.issues }, 400);
   }
 
-  const { agent_id, session_id, tool_name, input_size, output_size } = parsed.data;
+  const { agent_id, session_id, tool_name, input_size, output_size, model_id } = parsed.data;
   const sql = getDb();
 
   // Estimate tokens
@@ -61,15 +72,26 @@ export async function trackTokens(c: Context) {
       WHERE agent_id = ${agent_id}
     `;
 
-    // If no capacity entry exists, create one with defaults
+    // If no capacity entry exists, create one with model-aware defaults
+    const modelCapacity = getContextWindowForModel(model_id);
     if (!capacity) {
       const [created] = await sql`
-        INSERT INTO agent_capacity (agent_id, session_id, current_usage, max_capacity, consumption_rate, zone)
-        VALUES (${agent_id}, ${session_id}, 0, 200000, 0, 'green')
-        ON CONFLICT (agent_id) DO UPDATE SET session_id = ${session_id}
+        INSERT INTO agent_capacity (agent_id, session_id, current_usage, max_capacity, consumption_rate, zone, model_id)
+        VALUES (${agent_id}, ${session_id}, 0, ${modelCapacity}, 0, 'green', ${model_id || null})
+        ON CONFLICT (agent_id) DO UPDATE SET
+          session_id = ${session_id},
+          model_id = COALESCE(${model_id || null}, agent_capacity.model_id),
+          max_capacity = CASE WHEN ${model_id || null} IS NOT NULL THEN ${modelCapacity} ELSE agent_capacity.max_capacity END
         RETURNING current_usage, max_capacity, consumption_rate, last_compact_at, session_id
       `;
       capacity = created;
+    } else if (model_id && (!capacity['model_id'] || capacity['model_id'] === '')) {
+      // Update model_id and max_capacity if not set yet
+      await sql`
+        UPDATE agent_capacity SET model_id = ${model_id}, max_capacity = ${modelCapacity}
+        WHERE agent_id = ${agent_id}
+      `;
+      capacity['max_capacity'] = modelCapacity;
     }
 
     if (!capacity) {
