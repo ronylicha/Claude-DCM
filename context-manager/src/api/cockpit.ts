@@ -149,8 +149,8 @@ export async function getCockpitGrid(c: Context) {
         db`
           SELECT
             COUNT(*) as total,
-            COUNT(*) FILTER (WHERE status = 'running') as running,
-            COUNT(*) FILTER (WHERE status = 'blocked') as blocked
+            COUNT(*) FILTER (WHERE st.status = 'running') as running,
+            COUNT(*) FILTER (WHERE st.status = 'blocked') as blocked
           FROM subtasks st
           JOIN task_lists tl ON st.task_list_id = tl.id
           JOIN requests r ON tl.request_id = r.id
