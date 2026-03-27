@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Loader2 } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useContextProjection } from '@/hooks/useContextProjection';
 import { apiClient } from '@/lib/api-client';
 import type { CockpitDetail } from '@/lib/api-client';
@@ -269,14 +270,12 @@ export function CockpitZoom({ sessionId, onBack }: CockpitZoomProps) {
           )}
         </div>
 
-        {/* Chart placeholder */}
+        {/* Consumption chart */}
         <div className="col-span-12 xl:col-span-6 p-6 rounded-md-md bg-[var(--md-sys-color-surface-container-low)]">
           <h3 className="text-[14px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-3">
             Consommation
           </h3>
-          <div className="h-32 flex items-center justify-center text-[12px] text-[var(--md-sys-color-outline)] border border-dashed border-[var(--md-sys-color-outline-variant)] rounded-md-sm">
-            Area chart Recharts — a connecter
-          </div>
+          <ConsumptionChart sessionId={sessionId} />
         </div>
       </div>
 
@@ -341,5 +340,105 @@ export function CockpitZoom({ sessionId, onBack }: CockpitZoomProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+// ============================================
+// Consumption Chart — real actions/5min for this session
+// ============================================
+
+interface ChartPoint {
+  time: string;
+  actions: number;
+}
+
+function ConsumptionChart({ sessionId }: { sessionId: string }) {
+  const [points, setPoints] = useState<ChartPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3847'}/api/actions/hourly?session_id=${sessionId}`
+        );
+        if (!res.ok) throw new Error('Failed');
+        const json = await res.json();
+        const hourly = json.hourly || json.data || json;
+
+        if (Array.isArray(hourly)) {
+          setPoints(
+            hourly.map((h: { hour?: string; bucket?: string; count?: number; total?: number }) => ({
+              time: new Date(h.hour || h.bucket || '').toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+              actions: Number(h.count || h.total || 0),
+            }))
+          );
+        }
+      } catch {
+        setPoints([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, [sessionId]);
+
+  if (loading) {
+    return (
+      <div className="h-32 flex items-center justify-center">
+        <Loader2 className="w-5 h-5 animate-spin text-[var(--md-sys-color-outline)]" />
+      </div>
+    );
+  }
+
+  if (points.length === 0) {
+    return (
+      <div className="h-32 flex items-center justify-center text-[12px] text-[var(--md-sys-color-outline)]">
+        Pas de donnees de consommation
+      </div>
+    );
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={128}>
+      <AreaChart data={points} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+        <defs>
+          <linearGradient id="consumptionFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--md-sys-color-primary)" stopOpacity={0.3} />
+            <stop offset="100%" stopColor="var(--md-sys-color-primary)" stopOpacity={0.05} />
+          </linearGradient>
+        </defs>
+        <XAxis
+          dataKey="time"
+          tick={{ fontSize: 10, fill: 'var(--md-sys-color-outline)' }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <YAxis
+          tick={{ fontSize: 10, fill: 'var(--md-sys-color-outline)' }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <Tooltip
+          contentStyle={{
+            background: 'var(--md-sys-color-surface-container-high)',
+            border: '1px solid var(--md-sys-color-outline-variant)',
+            borderRadius: '8px',
+            fontSize: '12px',
+            color: 'var(--md-sys-color-on-surface)',
+          }}
+        />
+        <Area
+          type="monotone"
+          dataKey="actions"
+          stroke="var(--md-sys-color-primary)"
+          fill="url(#consumptionFill)"
+          strokeWidth={2}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
   );
 }
