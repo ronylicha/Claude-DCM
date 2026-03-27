@@ -264,24 +264,23 @@ export async function getCockpitSession(c: Context) {
       `.then(r => r[0]),
     ]);
 
-    if (!capacity) {
-      return c.json({ error: "Session not found or no capacity data" }, 404);
-    }
+    // Default capacity if no data yet
+    const cap = capacity || { current_usage: 0, max_capacity: 200000, zone: 'green', consumption_rate: 0, predicted_exhaustion_minutes: null, model_id: 'unknown', source: 'estimated' };
 
-    const usedPct = capacity.max_capacity > 0
-      ? (capacity.current_usage / capacity.max_capacity * 100)
+    const usedPct = cap.max_capacity > 0
+      ? (cap.current_usage / cap.max_capacity * 100)
       : 0;
 
     return c.json({
       context: {
-        current_usage: capacity.current_usage,
-        context_window_size: capacity.max_capacity,
+        current_usage: cap.current_usage,
+        context_window_size: cap.max_capacity,
         used_percentage: Math.round(usedPct * 10) / 10,
-        zone: capacity.zone,
-        consumption_rate: capacity.consumption_rate,
-        predicted_exhaustion_minutes: capacity.predicted_exhaustion_minutes,
-        model_id: capacity.model_id,
-        source: capacity.source,
+        zone: cap.zone,
+        consumption_rate: cap.consumption_rate,
+        predicted_exhaustion_minutes: cap.predicted_exhaustion_minutes,
+        model_id: cap.model_id,
+        source: cap.source,
         preemptive_summary: summaryStatus ? {
           status: summaryStatus.status,
           created_at: summaryStatus.created_at,
