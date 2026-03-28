@@ -213,8 +213,7 @@ function SessionNode({ position, node, isHovered, isFocused, onHover, onFocus }:
         anchorY="bottom"
         outlineWidth={0.015}
         outlineColor="black"
-        font="/fonts/inter-medium.woff"
-      >
+              >
         {node.project_name || 'Unknown'}
       </Text>
 
@@ -330,8 +329,7 @@ function DCMCore({ active, nodeCount }: { active: boolean; nodeCount: number }) 
           color={active ? '#7dd3fc' : '#94a3b8'}
           anchorX="center"
           letterSpacing={0.12}
-          font="/fonts/inter-medium.woff"
-        >
+                  >
           DCM
         </Text>
         <Text
@@ -339,8 +337,7 @@ function DCMCore({ active, nodeCount }: { active: boolean; nodeCount: number }) 
           fontSize={0.09}
           color={active ? '#7dd3fc' : '#64748b'}
           anchorX="center"
-          font="/fonts/inter-medium.woff"
-        >
+                  >
           {nodeCount} session{nodeCount !== 1 ? 's' : ''}
         </Text>
       </group>
