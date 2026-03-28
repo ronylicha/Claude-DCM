@@ -176,7 +176,112 @@ async function orchestratorCycle() {
       log.info(`COMPACT: ${session.project_name} at ${pct}%`);
     }
 
-    // 6. Publish heartbeat
+    // 6. Proactive info sharing — broadcast recent activity summary every 5 cycles (~2.5min)
+    if (cycleCount % 5 === 0 && sessions.length > 1) {
+      // Gather recent actions per session
+      const recentActivity = await db`
+        SELECT a.session_id,
+          COUNT(*) as action_count,
+          COUNT(DISTINCT unnest) as files_touched,
+          array_agg(DISTINCT a.tool_name ORDER BY a.tool_name) FILTER (WHERE a.tool_name NOT IN ('Read','Glob','Grep')) as write_tools
+        FROM actions a, unnest(COALESCE(a.file_paths, ARRAY[]::text[]))
+        WHERE a.session_id IS NOT NULL
+          AND a.created_at > NOW() - INTERVAL '3 minutes'
+        GROUP BY a.session_id
+      `;
+
+      for (const activity of recentActivity) {
+        const session = sessions.find(s => s.session_id === activity.session_id);
+        if (!session) continue;
+
+        const otherSessions = sessions.filter(s => s.session_id !== activity.session_id);
+        if (otherSessions.length === 0) continue;
+
+        // Only broadcast if meaningful activity (writes, not just reads)
+        const writeTools = activity.write_tools || [];
+        if (writeTools.length === 0) continue;
+
+        // Send to each other session
+        for (const target of otherSessions) {
+          await db`
+            INSERT INTO agent_messages (from_agent_id, to_agent_id, message_type, topic, payload, priority, expires_at)
+            VALUES (
+              'orchestrator-global', ${target.session_id}, 'notification', 'directive.info',
+              ${db.json({
+                action: 'info',
+                message: `${session.project_name}: ${activity.action_count} actions, ${activity.files_touched} fichiers (${writeTools.join(', ')})`,
+                source_session: activity.session_id,
+                source_project: session.project_name,
+              })},
+              3, NOW() + INTERVAL '5 minutes'
+            )
+          `;
+          totalDirectives++;
+        }
+      }
+
+      if (recentActivity.length > 0) {
+        log.info(`INFO: Broadcast activity from ${recentActivity.length} sessions`);
+      }
+    }
+
+    // 7. Share new architecture artifacts every 10 cycles (~5min)
+    if (cycleCount % 10 === 0 && sessions.length > 1) {
+      // Find recently created/modified key files
+      const keyFiles = await db`
+        SELECT DISTINCT a.session_id, unnest(a.file_paths) as file_path
+        FROM actions a
+        WHERE a.file_paths IS NOT NULL
+          AND a.tool_name IN ('Write', 'Edit', 'MultiEdit')
+          AND a.created_at > NOW() - INTERVAL '5 minutes'
+          AND a.session_id IS NOT NULL
+          AND (
+            unnest(a.file_paths) LIKE '%schema%'
+            OR unnest(a.file_paths) LIKE '%migration%'
+            OR unnest(a.file_paths) LIKE '%types.ts'
+            OR unnest(a.file_paths) LIKE '%api-client%'
+            OR unnest(a.file_paths) LIKE '%server.ts'
+            OR unnest(a.file_paths) LIKE '%package.json'
+            OR unnest(a.file_paths) LIKE '%docker%'
+            OR unnest(a.file_paths) LIKE '%CLAUDE.md'
+          )
+      `;
+
+      for (const file of keyFiles) {
+        const session = sessions.find(s => s.session_id === file.session_id);
+        if (!session) continue;
+
+        // Check not already broadcast
+        const [existing] = await db`
+          SELECT id FROM agent_messages
+          WHERE from_agent_id = 'orchestrator-global'
+            AND topic = 'directive.architecture'
+            AND payload->>'file' = ${file.file_path}
+            AND created_at > NOW() - INTERVAL '10 minutes'
+          LIMIT 1
+        `;
+        if (existing) continue;
+
+        await db`
+          INSERT INTO agent_messages (from_agent_id, to_agent_id, message_type, topic, payload, priority, expires_at)
+          VALUES (
+            'orchestrator-global', NULL, 'notification', 'directive.architecture',
+            ${db.json({
+              action: 'architecture',
+              message: `${session.project_name} a modifie ${file.file_path.split('/').pop()}`,
+              file: file.file_path,
+              source_session: file.session_id,
+              source_project: session.project_name,
+            })},
+            7, NOW() + INTERVAL '10 minutes'
+          )
+        `;
+        totalDirectives++;
+        log.info(`ARCH: ${session.project_name} modified ${file.file_path.split('/').pop()}`);
+      }
+    }
+
+    // 8. Publish heartbeat
     await db`
       INSERT INTO agent_messages (from_agent_id, to_agent_id, message_type, topic, payload, priority, expires_at)
       VALUES (
