@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { CockpitGrid } from '@/components/cockpit/CockpitGrid';
 import { CockpitZoom } from '@/components/cockpit/CockpitZoom';
 import { OrchestratorStatusBar } from '@/components/cockpit/OrchestratorStatusBar';
+import { CockpitLivePanel } from '@/components/cockpit/CockpitLivePanel';
 import { useSessionGrid } from '@/hooks/useSessionGrid';
 import { useGlobalCapacity } from '@/hooks/useGlobalCapacity';
 import { useOrchestratorTopology } from '@/hooks/useOrchestratorTopology';
@@ -121,6 +122,9 @@ export default function CockpitPage() {
           Aucune session active
         </div>
       )}
+
+      {/* Live activity panel */}
+      <CockpitLivePanel />
     </div>
   );
 }

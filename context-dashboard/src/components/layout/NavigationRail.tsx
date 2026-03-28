@@ -4,9 +4,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
-  Activity,
-  Layers,
-  GitBranch,
   FolderOpen,
   Clock,
   Bot,
@@ -37,9 +34,6 @@ const navigationGroups: NavGroup[] = [
     label: 'Overview',
     items: [
       { name: 'Cockpit', href: '/cockpit', icon: LayoutDashboard },
-      { name: 'Live', href: '/live', icon: Activity },
-      { name: 'Waves', href: '/waves', icon: Layers },
-      { name: 'Flows', href: '/flows', icon: GitBranch },
     ],
   },
   {

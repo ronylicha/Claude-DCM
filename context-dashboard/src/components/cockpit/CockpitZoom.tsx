@@ -6,6 +6,8 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { useContextProjection } from '@/hooks/useContextProjection';
 import { apiClient } from '@/lib/api-client';
 import type { CockpitDetail } from '@/lib/api-client';
+import { WaveTimeline } from './WaveTimeline';
+import { SessionEvents } from './SessionEvents';
 
 // ============================================
 // Types
@@ -17,13 +19,6 @@ interface AgentEntry {
   agent_type: string;
   parent_agent_id?: string | null;
   status: string;
-}
-
-interface WaveEntry {
-  wave_number: number;
-  status: string;
-  completed_tasks: number;
-  total_tasks: number;
 }
 
 interface CockpitZoomProps {
@@ -109,60 +104,6 @@ function AgentStatusDot({ status }: { status: string }) {
                              'bg-[var(--md-sys-color-outline)]';
 
   return <span className={`w-2 h-2 rounded-full flex-shrink-0 ${colorClass}`} aria-hidden="true" />;
-}
-
-// ============================================
-// WaveCard
-// ============================================
-
-function WaveCard({ wave }: { wave: WaveEntry }) {
-  const progress =
-    wave.total_tasks > 0 ? (wave.completed_tasks / wave.total_tasks) * 100 : 0;
-
-  const containerClass =
-    wave.status === 'running'
-      ? 'border-[var(--md-sys-color-primary)] bg-[var(--md-sys-color-surface)]'
-      : wave.status === 'completed'
-      ? 'border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-primary-container)]'
-      : 'border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container)]';
-
-  const badgeClass =
-    wave.status === 'completed'
-      ? 'bg-[var(--md-sys-color-primary-container)] text-[var(--md-sys-color-on-primary-container)]'
-      : wave.status === 'running'
-      ? 'bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]'
-      : wave.status === 'failed'
-      ? 'bg-[var(--md-sys-color-error-container)] text-[var(--md-sys-color-on-error-container)]'
-      : 'bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface-variant)]';
-
-  const progressColor =
-    wave.status === 'failed'
-      ? 'var(--dcm-zone-red)'
-      : 'var(--md-sys-color-primary)';
-
-  return (
-    <div className={`flex-shrink-0 w-[160px] p-4 rounded-md-md border transition-all ${containerClass}`}>
-      <p className="text-[14px] font-medium text-[var(--md-sys-color-on-surface)]">
-        Wave {wave.wave_number}
-      </p>
-      <p className="text-[12px] text-[var(--md-sys-color-outline)] mt-1">
-        {wave.completed_tasks}/{wave.total_tasks} taches
-      </p>
-      <div className="mt-2 h-1.5 rounded-full bg-[var(--md-sys-color-surface-container-high)] overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-300"
-          style={{ width: `${progress}%`, backgroundColor: progressColor }}
-          role="progressbar"
-          aria-valuenow={Math.round(progress)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-        />
-      </div>
-      <span className={`mt-2 inline-block text-[11px] px-2 py-0.5 rounded-full ${badgeClass}`}>
-        {wave.status}
-      </span>
-    </div>
-  );
 }
 
 // ============================================
@@ -324,21 +265,11 @@ export function CockpitZoom({ sessionId, onBack }: CockpitZoomProps) {
         </div>
       </div>
 
-      {/* ── Zone 3: Wave Pipeline ── */}
-      <div>
-        <h3 className="text-[14px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-3">
-          Pipeline Waves
-        </h3>
-        <div className="flex gap-3 overflow-x-auto pb-2">
-          {data.waves.pipeline && data.waves.pipeline.length > 0 ? (
-            data.waves.pipeline.map(wave => (
-              <WaveCard key={wave.wave_number} wave={wave} />
-            ))
-          ) : (
-            <p className="text-[14px] text-[var(--md-sys-color-outline)]">Aucune wave</p>
-          )}
-        </div>
-      </div>
+      {/* ── Zone 3: Wave Pipeline (enriched) ── */}
+      <WaveTimeline sessionId={sessionId} />
+
+      {/* ── Zone 4: Session Events ── */}
+      <SessionEvents sessionId={sessionId} />
     </div>
   );
 }
