@@ -46,7 +46,8 @@ const AGENT_TYPE_COLORS: Record<string, { badge: string; dot: string }> = {
 
 const DEFAULT_AGENT_COLOR = { badge: "bg-[color-mix(in_srgb,var(--md-sys-color-outline)_15%,transparent)] text-[var(--md-sys-color-on-surface-variant)] border-[var(--md-sys-color-outline-variant)]", dot: "bg-[var(--md-sys-color-outline)]" };
 
-function hashStringToColor(str: string): { badge: string; dot: string } {
+function hashStringToColor(str: string | null | undefined): { badge: string; dot: string } {
+  if (!str) return DEFAULT_AGENT_COLOR;
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
@@ -68,8 +69,8 @@ function hashStringToColor(str: string): { badge: string; dot: string } {
   return colors[Math.abs(hash) % colors.length];
 }
 
-function getAgentTypeColor(agentType: string) {
-  // First check known agent types, then fall back to deterministic hash color
+function getAgentTypeColor(agentType: string | null | undefined) {
+  if (!agentType) return DEFAULT_AGENT_COLOR;
   return AGENT_TYPE_COLORS[agentType] || hashStringToColor(agentType);
 }
 
