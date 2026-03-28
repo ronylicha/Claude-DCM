@@ -305,7 +305,9 @@ export async function getSessionsStats(c: Context) {
     const stats = await sql`
       SELECT
         COUNT(*) as total_sessions,
-        COUNT(CASE WHEN ended_at IS NULL OR ended_at > NOW() - INTERVAL '30 minutes' THEN 1 END) as active_sessions,
+        COUNT(CASE WHEN ended_at IS NULL
+          OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = sessions.id AND a.created_at > NOW() - INTERVAL '15 minutes')
+          THEN 1 END) as active_sessions,
         SUM(total_tools_used) as total_tools,
         SUM(total_success) as total_success,
         SUM(total_errors) as total_errors,

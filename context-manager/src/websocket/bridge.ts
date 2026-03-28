@@ -103,8 +103,9 @@ async function getMetricSnapshot(): Promise<MetricSnapshot> {
     messageStatsResult,
     actionsStatsResult,
   ] = await Promise.all([
-    // Active sessions (sessions without ended_at)
-    sql`SELECT COUNT(*) as count FROM sessions WHERE ended_at IS NULL`,
+    // Active sessions (with recent activity or not ended)
+    sql`SELECT COUNT(*) as count FROM sessions s WHERE s.ended_at IS NULL
+      OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '15 minutes')`,
 
     // Active agents (subtasks with status 'running')
     sql`SELECT COUNT(DISTINCT agent_id) as count FROM subtasks WHERE status = 'running' AND agent_id IS NOT NULL`,

@@ -38,7 +38,8 @@ export async function getDashboardKpis(c: Context): Promise<Response> {
       sql`
         SELECT
           COUNT(*) as total,
-          COUNT(*) FILTER (WHERE ended_at IS NULL AND started_at > NOW() - INTERVAL '24 hours') as active,
+          COUNT(*) FILTER (WHERE ended_at IS NULL
+            OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = sessions.id AND a.created_at > NOW() - INTERVAL '15 minutes')) as active,
           ROUND(COALESCE(AVG(total_tools_used), 0)::numeric, 1) as avg_tools
         FROM sessions
       `,
