@@ -420,29 +420,8 @@ function ConnectionBeam({ from, to, type, active }: {
 // Camera Controller — click-to-focus
 // ============================================
 
-function CameraController({ focusTarget }: { focusTarget: [number, number, number] | null }) {
-  const { camera } = useThree();
-  const targetRef = useRef(new THREE.Vector3(0, 0.3, 0));
-  const positionRef = useRef(new THREE.Vector3(0, 3.5, 6));
-
-  useFrame(() => {
-    if (focusTarget) {
-      const focusPos = new THREE.Vector3(...focusTarget);
-      const offset = focusPos.clone().normalize().multiplyScalar(2.5);
-      offset.y = 2;
-      targetRef.current.lerp(focusPos, 0.04);
-      positionRef.current.lerp(focusPos.clone().add(offset), 0.04);
-    } else {
-      targetRef.current.lerp(new THREE.Vector3(0, 0.3, 0), 0.03);
-      positionRef.current.lerp(new THREE.Vector3(0, 3.5, 6), 0.03);
-    }
-
-    camera.position.lerp(positionRef.current, 0.06);
-    camera.lookAt(targetRef.current);
-  });
-
-  return null;
-}
+// CameraController removed — OrbitControls handles all camera movement.
+// Focus is done by updating OrbitControls target directly via ref.
 
 // ============================================
 // WebGL Context Loss Handler
@@ -488,10 +467,25 @@ function TopologyScene({ data }: Props) {
     return positionMap.get(focusedNode) || null;
   }, [focusedNode, positionMap]);
 
+  const controlsRef = useRef<any>(null);
+
+  // Smooth focus: animate OrbitControls target when a node is clicked
+  useFrame(() => {
+    if (!controlsRef.current) return;
+    if (focusPosition) {
+      const target = controlsRef.current.target as THREE.Vector3;
+      target.lerp(new THREE.Vector3(...focusPosition), 0.05);
+      controlsRef.current.update();
+    } else {
+      const target = controlsRef.current.target as THREE.Vector3;
+      target.lerp(new THREE.Vector3(0, 0.3, 0), 0.03);
+      controlsRef.current.update();
+    }
+  });
+
   return (
     <>
       <ContextLossHandler />
-      <CameraController focusTarget={focusPosition} />
 
       {/* Lighting */}
       <ambientLight intensity={0.25} />
@@ -545,14 +539,17 @@ function TopologyScene({ data }: Props) {
       })}
 
       <OrbitControls
-        enablePan={false}
-        minDistance={3}
-        maxDistance={12}
-        maxPolarAngle={Math.PI / 2.1}
-        autoRotate={!focusedNode}
+        ref={controlsRef}
+        enablePan
+        minDistance={2}
+        maxDistance={14}
+        maxPolarAngle={Math.PI / 1.8}
+        autoRotate={!focusedNode && !hoveredNode}
         autoRotateSpeed={0.4}
         enableDamping
-        dampingFactor={0.05}
+        dampingFactor={0.08}
+        rotateSpeed={0.8}
+        zoomSpeed={1.2}
       />
     </>
   );

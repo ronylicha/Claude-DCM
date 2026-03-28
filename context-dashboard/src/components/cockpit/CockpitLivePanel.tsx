@@ -96,24 +96,32 @@ export function CockpitLivePanel() {
       try {
         const resp = await apiClient.getActiveSessions();
         if (cancelled) return;
-        setAgents(prev => {
-          const next = new Map(prev);
-          // Legacy format: individual agents
-          if (resp.active_agents && resp.active_agents.length > 0) {
-            for (const a of resp.active_agents) {
-              const id = a.agent_id || a.subtask_id || a.agent_type;
-              if (id && !next.has(id)) next.set(id, { id, type: a.agent_type, active: true });
+        setAgents(() => {
+          const next = new Map<string, AgentInfo>();
+          // The API may return session-level data under "active_agents" key
+          // (despite the name, entries may lack agent_id/agent_type)
+          const items = resp.active_agents || [];
+          const sessions = resp.active_sessions || [];
+
+          for (const entry of items) {
+            // Real agent entry (has agent_id or agent_type)
+            const agentId = (entry as any).agent_id || (entry as any).subtask_id || (entry as any).agent_type;
+            if (agentId) {
+              next.set(agentId, { id: agentId, type: (entry as any).agent_type || 'agent', active: true });
+            } else {
+              // Session-level entry (no agent fields) — show as session
+              const sid = (entry as any).session_id;
+              const name = (entry as any).project_name || 'Session';
+              if (sid) next.set(sid, { id: sid, type: name, active: Number((entry as any).active_subtasks_count) > 0 });
             }
           }
-          // New v4 format: session-level data
-          if (resp.active_sessions && resp.active_sessions.length > 0) {
-            for (const s of resp.active_sessions) {
-              const id = s.session_id;
-              if (id && !next.has(id)) {
-                next.set(id, { id, type: s.project_name || 'session', active: s.active_subtasks_count > 0 });
-              }
+
+          for (const s of sessions) {
+            if (s.session_id && !next.has(s.session_id)) {
+              next.set(s.session_id, { id: s.session_id, type: s.project_name || 'session', active: Number(s.active_subtasks_count) > 0 });
             }
           }
+
           return next;
         });
       } catch { /* non-blocking */ }
