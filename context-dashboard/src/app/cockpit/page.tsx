@@ -1,13 +1,18 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { CockpitGrid } from '@/components/cockpit/CockpitGrid';
 import { CockpitZoom } from '@/components/cockpit/CockpitZoom';
 import { OrchestratorStatusBar } from '@/components/cockpit/OrchestratorStatusBar';
-import { OrchestratorTopology3D } from '@/components/cockpit/OrchestratorTopology3D';
 import { useSessionGrid } from '@/hooks/useSessionGrid';
 import { useGlobalCapacity } from '@/hooks/useGlobalCapacity';
 import { useOrchestratorTopology } from '@/hooks/useOrchestratorTopology';
+
+const OrchestratorTopology3D = dynamic(
+  () => import('@/components/cockpit/OrchestratorTopology3D').then(m => ({ default: m.OrchestratorTopology3D })),
+  { ssr: false, loading: () => <div className="h-[300px] animate-pulse rounded-md-md bg-[var(--md-sys-color-surface-container)]" /> }
+);
 
 // ============================================
 // Helpers
