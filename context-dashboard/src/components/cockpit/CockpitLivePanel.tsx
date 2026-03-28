@@ -99,8 +99,8 @@ export function CockpitLivePanel() {
         setAgents(prev => {
           const next = new Map(prev);
           for (const a of resp.active_agents!) {
-            const id = a.agent_id || a.subtask_id;
-            if (!next.has(id)) next.set(id, { id, type: a.agent_type, active: true });
+            const id = a.agent_id || a.subtask_id || a.agent_type;
+            if (id && !next.has(id)) next.set(id, { id, type: a.agent_type, active: true });
           }
           return next;
         });
@@ -190,8 +190,9 @@ export function CockpitLivePanel() {
               ) : (
                 <div className="flex flex-wrap gap-1.5 max-h-[250px] overflow-auto">
                   {agentList.map(agent => {
-                    const initials = agent.id.replace(/[^a-zA-Z]/g, '').substring(0, 2).toUpperCase() || '??';
-                    const colorIdx = hashStr(agent.id) % AGENT_COLORS.length;
+                    const safeId = agent.id || 'unknown';
+                    const initials = safeId.replace(/[^a-zA-Z]/g, '').substring(0, 2).toUpperCase() || '??';
+                    const colorIdx = hashStr(safeId) % AGENT_COLORS.length;
                     return (
                       <div
                         key={agent.id}
