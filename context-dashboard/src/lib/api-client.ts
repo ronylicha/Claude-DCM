@@ -235,8 +235,23 @@ export interface ActiveAgent {
   actions_count?: number;
 }
 
+export interface ActiveSessionItem {
+  session_id: string;
+  started_at: string | null;
+  ended_at: string | null;
+  project_id: string | null;
+  project_name: string | null;
+  project_path: string | null;
+  recent_actions_count: number;
+  active_subtasks_count: number;
+  last_action_at: string | null;
+}
+
 export interface ActiveSessionsResponse {
-  active_agents: ActiveAgent[];
+  /** New format: session-level data with activity counts */
+  active_sessions?: ActiveSessionItem[];
+  /** Legacy format: individual running agents (removed in server v4) */
+  active_agents?: ActiveAgent[];
   count: number;
 }
 
@@ -275,16 +290,18 @@ export interface CompactStatus {
 
 export interface CleanupStats {
   last_cleanup: {
-    timestamp: string;
-    expired_deleted?: number;
-    read_deleted?: number;
-    deleted_count?: number;
+    deletedAt: string;
+    deletedMessages: number;
+    closedSessions: number;
+    deletedAgentContexts: number;
+    failedSubtasks: number;
+    durationMs: number;
   } | null;
   messages: {
     total: number;
     unread?: number;
     expired?: number;
-    by_type?: Record<string, number>;
+    byTopic?: Record<string, number>;
   };
   timestamp: string;
 }
@@ -1204,7 +1221,7 @@ export const apiClient = {
   // Compact Snapshots - /api/agent-contexts
   // ==========================================
   getCompactSnapshots: async (sessionId?: string): Promise<{ snapshots: CompactEvent[] }> => {
-    const searchParams = new URLSearchParams({ agent_type: "compact-snapshot" });
+    const searchParams = new URLSearchParams({ agent_type: "compact-snapshot", limit: "1000" });
     if (sessionId) searchParams.set("session_id", sessionId);
     const raw = await apiFetch<{ contexts: Array<{
       id: string;

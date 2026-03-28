@@ -73,9 +73,8 @@ const SKILL_CATEGORIES: CategoryDef[] = [
 
 const COMMAND_CATEGORIES: CategoryDef[] = [
   { value: "all", label: "All", icon: Layers },
-  { value: "workflow", label: "Workflow", icon: Workflow, color: "bg-[color-mix(in_srgb,var(--md-sys-color-primary)_12%,transparent)] text-[var(--md-sys-color-primary)] border-[color-mix(in_srgb,var(--md-sys-color-primary)_25%,transparent)]" },
-  { value: "git", label: "Git", icon: GitBranch, color: "bg-[color-mix(in_srgb,var(--dcm-zone-orange)_12%,transparent)] text-[var(--dcm-zone-orange)] border-[color-mix(in_srgb,var(--dcm-zone-orange)_25%,transparent)]" },
-  { value: "utility", label: "Utility", icon: Wrench, color: "bg-[color-mix(in_srgb,var(--md-sys-color-on-surface-variant)_12%,transparent)] text-[var(--md-sys-color-on-surface-variant)] border-[var(--md-sys-color-outline-variant)]" },
+  { value: "builtin", label: "Built-in", icon: Terminal, color: "bg-[color-mix(in_srgb,var(--md-sys-color-primary)_12%,transparent)] text-[var(--md-sys-color-primary)] border-[color-mix(in_srgb,var(--md-sys-color-primary)_25%,transparent)]" },
+  { value: "plugin", label: "Plugin", icon: Wrench, color: "bg-[color-mix(in_srgb,var(--md-sys-color-secondary)_12%,transparent)] text-[var(--md-sys-color-secondary)] border-[color-mix(in_srgb,var(--md-sys-color-secondary)_25%,transparent)]" },
 ];
 
 const TAB_CONFIG = {
@@ -262,7 +261,7 @@ function CommandCard({ command, onClick, isSelected }: CommandCardProps) {
 
       <div className="mb-1.5">
         <code className="text-sm font-semibold text-foreground bg-[var(--md-sys-color-surface-container-high)] px-2 py-1 rounded">
-          /{command.name}
+          {command.id}
         </code>
       </div>
 
@@ -404,7 +403,7 @@ function CommandDetailPanel({ command, onClose }: { command: CatalogCommand; onC
           </div>
           <div>
             <code className="text-base font-bold text-foreground bg-[var(--md-sys-color-surface-container-high)] px-2 py-1 rounded">
-              /{command.name}
+              {command.id}
             </code>
           </div>
         </div>
@@ -434,7 +433,7 @@ function CommandDetailPanel({ command, onClose }: { command: CatalogCommand; onC
 
       <div className="p-4 bg-[var(--md-sys-color-surface-container)] rounded-lg border border-[var(--md-sys-color-outline-variant)]">
         <h4 className="text-xs font-semibold text-muted-foreground mb-2">Usage</h4>
-        <code className="text-sm text-foreground">/{command.name}</code>
+        <code className="text-sm text-foreground">{command.id}</code>
       </div>
     </div>
   );

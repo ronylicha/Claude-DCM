@@ -39,7 +39,7 @@ interface RoutingStatsTotals {
   unique_keywords: number;
   unique_tools: number;
   avg_score: number;
-  avg_usage: number;
+  avg_usage?: number;
 }
 
 interface RoutingTopTool {
@@ -66,8 +66,8 @@ interface RoutingSuggestion {
   tool_type: "agent" | "skill" | "command" | "workflow" | "plugin";
   score: number;
   usage_count: number;
-  success_rate: number;
-  keyword_matches: string[];
+  last_used?: string | null;
+  keyword_matches?: string[];
 }
 
 interface RoutingSuggestResponse {
@@ -458,13 +458,15 @@ function RoutingTester() {
                           {suggestion.tool_type}
                         </Badge>
                       </div>
-                      <div className="flex gap-1 mt-1">
-                        {suggestion.keyword_matches.map((kw, i) => (
-                          <Badge key={i} variant="secondary" className="text-xs">
-                            {kw}
-                          </Badge>
-                        ))}
-                      </div>
+                      {(suggestion.keyword_matches?.length ?? 0) > 0 && (
+                        <div className="flex gap-1 mt-1">
+                          {suggestion.keyword_matches!.map((kw, i) => (
+                            <Badge key={i} variant="secondary" className="text-xs">
+                              {kw}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">

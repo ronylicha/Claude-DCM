@@ -555,12 +555,12 @@ function CleanupStatsCard() {
   });
 
   const cleanupData = useMemo(() => {
-    if (!cleanup?.messages.by_type) return [];
-    return Object.entries(cleanup.messages.by_type).map(([type, count]) => ({
+    if (!cleanup?.messages.byTopic) return [];
+    return Object.entries(cleanup.messages.byTopic).map(([type, count]) => ({
       name: type,
       value: count,
     }));
-  }, [cleanup?.messages.by_type]);
+  }, [cleanup?.messages.byTopic]);
 
   return (
     <Card className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1">
@@ -647,14 +647,20 @@ function CleanupStatsCard() {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-muted-foreground">Last Cleanup</span>
                   <span className="font-semibold">
-                    {new Date(cleanup.last_cleanup.timestamp).toLocaleString()}
+                    {new Date(cleanup.last_cleanup.deletedAt).toLocaleString()}
                   </span>
                 </div>
-                {cleanup.last_cleanup.deleted_count !== undefined && (
+                <div className="flex items-center justify-between text-xs mt-1">
+                  <span className="text-muted-foreground">Deleted</span>
+                  <span className="font-semibold">
+                    {cleanup.last_cleanup.deletedMessages} messages
+                  </span>
+                </div>
+                {cleanup.last_cleanup.durationMs > 0 && (
                   <div className="flex items-center justify-between text-xs mt-1">
-                    <span className="text-muted-foreground">Deleted</span>
+                    <span className="text-muted-foreground">Duration</span>
                     <span className="font-semibold">
-                      {cleanup.last_cleanup.deleted_count} items
+                      {cleanup.last_cleanup.durationMs}ms
                     </span>
                   </div>
                 )}

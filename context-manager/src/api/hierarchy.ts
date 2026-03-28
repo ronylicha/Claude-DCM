@@ -243,20 +243,43 @@ export async function getHierarchy(c: Context): Promise<Response> {
 }
 
 /**
- * GET /api/active-sessions - List active sessions using v_active_agents view
+ * GET /api/active-sessions - List active sessions (with running subtasks OR recent activity in last 15 minutes)
  */
 export async function getActiveSessions(c: Context): Promise<Response> {
   try {
     const sql = getDb();
 
-    const activeAgents = await sql`
-      SELECT * FROM v_active_agents
-      ORDER BY started_at DESC
+    const activeSessions = await sql`
+      SELECT
+        s.id AS session_id,
+        s.started_at,
+        s.ended_at,
+        s.project_id,
+        p.name AS project_name,
+        p.path AS project_path,
+        COUNT(DISTINCT a_recent.id) AS recent_actions_count,
+        COUNT(DISTINCT CASE WHEN st.status IN ('running', 'paused', 'blocked') THEN st.id END) AS active_subtasks_count,
+        MAX(a_recent.created_at) AS last_action_at
+      FROM sessions s
+      LEFT JOIN projects p ON s.project_id = p.id
+      LEFT JOIN actions a_recent ON a_recent.session_id = s.id
+        AND a_recent.created_at > NOW() - INTERVAL '15 minutes'
+      LEFT JOIN requests r ON r.session_id = s.id
+      LEFT JOIN task_lists tl ON tl.request_id = r.id
+      LEFT JOIN subtasks st ON st.task_list_id = tl.id
+      WHERE
+        (s.ended_at IS NULL OR s.ended_at > NOW() - INTERVAL '15 minutes')
+        AND (
+          EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '15 minutes')
+          OR EXISTS (SELECT 1 FROM subtasks sub JOIN task_lists tl2 ON sub.task_list_id = tl2.id JOIN requests r2 ON tl2.request_id = r2.id WHERE r2.session_id = s.id AND sub.status IN ('running', 'paused', 'blocked'))
+        )
+      GROUP BY s.id, s.started_at, s.ended_at, s.project_id, p.name, p.path
+      ORDER BY last_action_at DESC NULLS LAST
     `;
 
     return c.json({
-      active_agents: activeAgents,
-      count: activeAgents.length,
+      active_agents: activeSessions,
+      count: activeSessions.length,
     });
   } catch (error) {
     log.error("GET /api/active-sessions error:", error);

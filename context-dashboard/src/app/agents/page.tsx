@@ -11,6 +11,7 @@ import { PremiumKPICard } from "@/components/dashboard/PremiumKPICard";
 import apiClient, {
   type SubtasksResponse,
   type ActiveSessionsResponse,
+  type ActiveSessionItem,
   type ActionsResponse,
   type Session,
   type PaginatedResponse,
@@ -86,42 +87,35 @@ function formatDuration(startStr: string | null | undefined): string {
 }
 
 // ============================================
-// Active Agent Card with animated gradient border
+// Active Session Card with animated gradient border
 // ============================================
-function ActiveAgentCard({
-  agent,
+function ActiveSessionCard({
+  session,
   index,
 }: {
-  agent: ActiveSessionsResponse["active_agents"][0];
+  session: ActiveSessionItem;
   index: number;
 }) {
-  const category = getAgentCategory(agent.agent_type || "");
-  const timeRef = agent.started_at || agent.created_at;
+  const projectLabel = session.project_name || session.project_path?.split("/").pop() || "Unknown Project";
 
   return (
     <div className="relative group">
       {/* Animated gradient border */}
-      <div className={cn(
-        "absolute -inset-[1px] rounded-xl bg-gradient-to-r opacity-60 blur-[2px] group-hover:opacity-100 transition-opacity duration-300",
-        category.gradient
-      )} />
+      <div className="absolute -inset-[1px] rounded-xl bg-gradient-to-r from-[var(--md-sys-color-primary)] to-[var(--md-sys-color-tertiary)] opacity-60 blur-[2px] group-hover:opacity-100 transition-opacity duration-300" />
       <Card className="relative glass-card border-0 overflow-hidden">
         <CardContent className="pt-4 pb-4">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2.5">
-              <div className={cn(
-                "flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br",
-                category.gradient
-              )}>
-                <Bot className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />
+              <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-gradient-to-br from-[var(--md-sys-color-primary)] to-[var(--md-sys-color-tertiary)]">
+                <FolderOpen className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />
               </div>
               <div>
-                <span className={cn("font-semibold text-sm", category.color)}>
-                  {agent.agent_type || "unknown"}
+                <span className="font-semibold text-sm text-[var(--md-sys-color-primary)] truncate block max-w-[180px]" title={projectLabel}>
+                  {projectLabel}
                 </span>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Running</span>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Active</span>
                 </div>
               </div>
             </div>
@@ -129,37 +123,22 @@ function ActiveAgentCard({
               #{index}
             </span>
           </div>
-          {agent.project_name && (
-            <div className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground bg-muted/50 rounded px-2 py-0.5 w-fit">
-              <FolderOpen className="h-3 w-3" />
-              <span className="truncate max-w-[180px]">{agent.project_name}</span>
-            </div>
-          )}
-          {agent.parent_agent_id && (
-            <div className="mt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground bg-muted/50 rounded px-2 py-0.5 w-fit">
-              <Network className="h-3 w-3" />
-              <span>Subagent of <span className="font-mono">{agent.parent_agent_id.slice(0, 8)}</span></span>
-            </div>
-          )}
-          <p className="mt-2 text-sm text-muted-foreground line-clamp-2 leading-relaxed">
-            {agent.description || "No description"}
-          </p>
           <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <Timer className="h-3 w-3" />
-              {formatDuration(timeRef)}
+              {formatDuration(session.started_at)}
             </span>
-            {agent.session_id && (
-              <span className="truncate max-w-[120px] font-mono text-[10px]" title={agent.session_id}>
-                {agent.session_id.slice(0, 8)}
-              </span>
-            )}
-            {agent.actions_count !== undefined && agent.actions_count > 0 && (
-              <span className="flex items-center gap-1">
-                <Zap className="h-3 w-3" />
-                {agent.actions_count} actions
-              </span>
-            )}
+            <span className="flex items-center gap-1">
+              <Activity className="h-3 w-3" />
+              {session.active_subtasks_count} agents
+            </span>
+            <span className="flex items-center gap-1">
+              <Zap className="h-3 w-3" />
+              {session.recent_actions_count} actions
+            </span>
+            <span className="truncate max-w-[80px] font-mono text-[10px]" title={session.session_id}>
+              {session.session_id.slice(0, 8)}
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -586,18 +565,8 @@ export default function AgentsPage() {
   }, [agentStats]);
 
   const uniqueAgentTypes = Object.keys(agentStats.byType).filter((t) => t !== "unassigned").length;
-  const activeAgentsCount = activeSessions?.count || 0;
+  const activeSessionsCount = activeSessions?.count || 0;
   const blockedCount = blockedActions?.actions?.length ?? 0;
-
-  const activeAgentTypes = useMemo(() => {
-    const types = new Set<string>();
-    if (activeSessions?.active_agents) {
-      for (const agent of activeSessions.active_agents) {
-        if (agent.agent_type) types.add(agent.agent_type);
-      }
-    }
-    return types;
-  }, [activeSessions]);
 
   // Build project name map
   const projectMap = useMemo(() => {
@@ -650,8 +619,8 @@ export default function AgentsPage() {
       {/* KPI Cards - Using shared PremiumKPICard component */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <PremiumKPICard
-          title="Active Agents"
-          value={activeAgentsCount}
+          title="Active Sessions"
+          value={activeSessionsCount}
           icon={<Activity className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />}
           iconGradient="bg-[var(--dcm-zone-green)]"
           loading={activeLoading}
@@ -755,89 +724,43 @@ export default function AgentsPage() {
         )}
       </div>
 
-      {/* Active Agents Section — Split into Main Agents and Subagents */}
-      {(() => {
-        const mainAgents = activeSessions?.active_agents?.filter(a => !a.parent_agent_id) ?? [];
-        const subAgents = activeSessions?.active_agents?.filter(a => !!a.parent_agent_id) ?? [];
-
-        return (
-          <>
-            {/* Main Agents */}
-            <div className="mt-6">
-              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-[var(--dcm-zone-green)]">
-                  <Activity className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />
-                </div>
-                Main Agents
-                {mainAgents.length > 0 && (
-                  <Badge variant="default" className="bg-[var(--dcm-zone-green)] text-[var(--md-sys-color-on-primary)] text-[10px]">
-                    {mainAgents.length} running
-                  </Badge>
-                )}
-              </h3>
-              {activeLoading ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {[1, 2, 3].map((i) => <AgentCardSkeleton key={i} />)}
-                </div>
-              ) : mainAgents.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {mainAgents.map((agent, idx) => (
-                    <ActiveAgentCard key={agent.subtask_id || idx} agent={agent} index={idx + 1} />
-                  ))}
-                </div>
-              ) : (
-                <Card className="glass-card">
-                  <CardContent className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-                    <div className="h-16 w-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
-                      <Users className="h-8 w-8 opacity-30" />
-                    </div>
-                    <p className="font-medium">No main agents currently active</p>
-                    <p className="text-xs mt-1 text-muted-foreground/70">
-                      Main agents appear here when top-level tasks are running
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-
-            {/* Subagents */}
-            <div className="mt-6">
-              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-[var(--md-sys-color-secondary)]">
-                  <Network className="h-4 w-4 text-[var(--md-sys-color-on-secondary)]" />
-                </div>
-                Subagents
-                {subAgents.length > 0 && (
-                  <Badge variant="default" className="bg-[var(--md-sys-color-secondary)] text-[var(--md-sys-color-on-secondary)] text-[10px]">
-                    {subAgents.length} running
-                  </Badge>
-                )}
-              </h3>
-              {activeLoading ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {[1, 2].map((i) => <AgentCardSkeleton key={i} />)}
-                </div>
-              ) : subAgents.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {subAgents.map((agent, idx) => (
-                    <ActiveAgentCard key={agent.subtask_id || idx} agent={agent} index={idx + 1} />
-                  ))}
-                </div>
-              ) : (
-                <Card className="glass-card">
-                  <CardContent className="flex flex-col items-center justify-center py-6 text-muted-foreground">
-                    <Network className="h-10 w-10 mb-3 opacity-20" />
-                    <p className="text-sm">No subagents currently active</p>
-                    <p className="text-[10px] mt-1 text-muted-foreground/70">
-                      Subagents are spawned by main agents for delegated tasks
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </>
-        );
-      })()}
+      {/* Recently Active Sessions — sessions with activity in last 15 min or running subtasks */}
+      <div className="mt-6">
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-[var(--dcm-zone-green)]">
+            <Activity className="h-4 w-4 text-[var(--md-sys-color-on-primary)]" />
+          </div>
+          Recently Active
+          {(activeSessions?.active_sessions?.length ?? 0) > 0 && (
+            <Badge variant="default" className="bg-[var(--dcm-zone-green)] text-[var(--md-sys-color-on-primary)] text-[10px]">
+              {activeSessions?.active_sessions?.length ?? 0} active
+            </Badge>
+          )}
+        </h3>
+        {activeLoading ? (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3].map((i) => <AgentCardSkeleton key={i} />)}
+          </div>
+        ) : (activeSessions?.active_sessions?.length ?? 0) > 0 ? (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {(activeSessions?.active_sessions ?? []).map((session, idx) => (
+              <ActiveSessionCard key={session.session_id} session={session} index={idx + 1} />
+            ))}
+          </div>
+        ) : (
+          <Card className="glass-card">
+            <CardContent className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+              <div className="h-16 w-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
+                <Users className="h-8 w-8 opacity-30" />
+              </div>
+              <p className="font-medium">No recently active sessions</p>
+              <p className="text-xs mt-1 text-muted-foreground/70">
+                Sessions with activity in the last 15 minutes appear here
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {/* Charts + Agent Grid + Safety Gate */}
       <div className="mt-6 grid gap-4 lg:grid-cols-2">

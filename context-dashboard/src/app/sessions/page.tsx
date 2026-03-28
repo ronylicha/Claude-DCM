@@ -45,8 +45,8 @@ interface SessionData extends Session {
   status: "active" | "completed" | "failed";
 }
 
-function getSessionStatus(session: Session): "active" | "completed" | "failed" {
-  if (session.ended_at === null) return "active";
+function getSessionStatus(session: Session, activeSessionIds?: Set<string>): "active" | "completed" | "failed" {
+  if (session.ended_at === null || activeSessionIds?.has(session.id)) return "active";
   if (session.total_errors > 0) return "failed";
   return "completed";
 }
@@ -193,23 +193,25 @@ export default function SessionsPage() {
     return map;
   }, [projectsData]);
 
-  // Create a map of session_id to agent count and agent details
-  const agentsBySession = useMemo(() => {
-    const map = new Map<string, { count: number; types: string[] }>();
+  // Build agent data per session in a single pass
+  const { agentsBySession, activeSessionIds } = useMemo(() => {
+    const bySession = new Map<string, { count: number; types: string[] }>();
+    const ids = new Set<string>();
     if (activeSessionsData?.active_agents) {
       for (const agent of activeSessionsData.active_agents) {
-        const existing = map.get(agent.session_id);
+        if (agent.session_id) ids.add(agent.session_id);
+        const existing = bySession.get(agent.session_id);
         if (existing) {
           existing.count++;
           if (!existing.types.includes(agent.agent_type)) {
             existing.types.push(agent.agent_type);
           }
         } else {
-          map.set(agent.session_id, { count: 1, types: [agent.agent_type] });
+          bySession.set(agent.session_id, { count: 1, types: [agent.agent_type] });
         }
       }
     }
-    return map;
+    return { agentsBySession: bySession, activeSessionIds: ids };
   }, [activeSessionsData]);
 
   // Enrich sessions with project names
@@ -217,10 +219,10 @@ export default function SessionsPage() {
     if (!sessionsResponse?.sessions) return [];
     return sessionsResponse.sessions.map((session) => ({
       ...session,
-      status: getSessionStatus(session),
+      status: getSessionStatus(session, activeSessionIds),
       projectName: projectMap.get(session.project_id || "") || "Unknown Project",
     }));
-  }, [sessionsResponse?.sessions, projectMap]);
+  }, [sessionsResponse?.sessions, projectMap, activeSessionIds]);
 
   // Filter and sort sessions
   const filteredSessions = useMemo(() => {
@@ -294,11 +296,11 @@ export default function SessionsPage() {
   const stats = useMemo(() => {
     return {
       total: filteredSessions.length,
-      active: filteredSessions.filter((s) => s.status === "active").length,
+      active: activeSessionsData?.count ?? filteredSessions.filter((s) => s.status === "active").length,
       completed: filteredSessions.filter((s) => s.status === "completed").length,
       failed: filteredSessions.filter((s) => s.status === "failed").length,
     };
-  }, [filteredSessions]);
+  }, [filteredSessions, activeSessionsData?.count]);
 
   const uniqueProjects = useMemo((): Project[] => {
     if (!projectsData?.projects) return [];

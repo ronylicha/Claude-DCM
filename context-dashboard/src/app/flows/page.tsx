@@ -392,7 +392,7 @@ export default function FlowsPage() {
 
   // --- KPI values ---
 
-  const activeSessCount = metrics?.active_sessions ?? sessionsStats?.overview?.active_sessions ?? 0;
+  const activeSessCount = metrics?.active_sessions ?? Number(sessionsStats?.overview?.active_sessions ?? 0);
   const activeAgentsCount = metrics?.active_agents ?? activeSessions?.count ?? 0;
   const actionsPerMin = metrics?.actions_per_minute ?? 0;
   const craftPromptCalls = recentActions?.actions?.filter(

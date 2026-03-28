@@ -176,8 +176,7 @@ interface TimelineEventProps {
 function TimelineEvent({ event, isLast }: TimelineEventProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const snapshotSize = event.snapshot_size_bytes ||
-    (event.snapshot ? JSON.stringify(event.snapshot).length : 0);
+  const snapshotSize = event.snapshot_size_bytes ?? 0;
 
   return (
     <div className="relative flex gap-4">
@@ -189,7 +188,7 @@ function TimelineEvent({ event, isLast }: TimelineEventProps) {
       {/* Timeline Dot */}
       <div className="relative z-10 flex flex-col items-center">
         <div className={cn(
-          "flex items-center justify-center h-8 w-8 rounded-full border-2 border-[var(--md-sys-color-outline-variant)]",
+          "flex items-center justify-center h-8 w-8 rounded-full border-2",
           getTriggerBadgeColor(event.trigger)
         )}>
           {getTriggerIcon(event.trigger)}
@@ -249,7 +248,7 @@ function TimelineEvent({ event, isLast }: TimelineEventProps) {
             <div className="flex flex-col gap-1">
               <span className="text-muted-foreground">Session</span>
               <span className="font-mono text-xs text-foreground truncate">
-                {event.session_id.substring(0, 8)}...
+                {event.session_id ? `${event.session_id.substring(0, 8)}...` : "—"}
               </span>
             </div>
           </div>
@@ -263,7 +262,7 @@ function TimelineEvent({ event, isLast }: TimelineEventProps) {
               </h4>
               <pre className="text-xs bg-[var(--md-sys-color-surface-container-highest)] rounded-lg p-3 overflow-x-auto max-h-96 overflow-y-auto">
                 <code className="text-[var(--md-sys-color-on-surface)]">
-                  {JSON.stringify(event.snapshot, null, 2)}
+                  {event.snapshot ? JSON.stringify(event.snapshot, null, 2) : "No snapshot data"}
                 </code>
               </pre>
             </div>
@@ -296,7 +295,7 @@ export default function CompactHistoryPage() {
     return snapshotsData.snapshots
       .map((snapshot) => ({
         ...snapshot,
-        snapshot_size_bytes: JSON.stringify(snapshot.snapshot).length,
+        snapshot_size_bytes: snapshot.snapshot ? JSON.stringify(snapshot.snapshot).length : 0,
       }))
       .sort((a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -320,7 +319,9 @@ export default function CompactHistoryPage() {
     // Find most active session
     const sessionCounts = new Map<string, number>();
     compactEvents.forEach((e) => {
-      sessionCounts.set(e.session_id, (sessionCounts.get(e.session_id) || 0) + 1);
+      if (e.session_id) {
+        sessionCounts.set(e.session_id, (sessionCounts.get(e.session_id) || 0) + 1);
+      }
     });
     const mostActive = Array.from(sessionCounts.entries())
       .sort((a, b) => b[1] - a[1])[0];
