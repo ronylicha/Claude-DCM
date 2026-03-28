@@ -95,12 +95,24 @@ export function CockpitLivePanel() {
     async function fetchAgents() {
       try {
         const resp = await apiClient.getActiveSessions();
-        if (cancelled || !resp.active_agents) return;
+        if (cancelled) return;
         setAgents(prev => {
           const next = new Map(prev);
-          for (const a of resp.active_agents!) {
-            const id = a.agent_id || a.subtask_id || a.agent_type;
-            if (id && !next.has(id)) next.set(id, { id, type: a.agent_type, active: true });
+          // Legacy format: individual agents
+          if (resp.active_agents && resp.active_agents.length > 0) {
+            for (const a of resp.active_agents) {
+              const id = a.agent_id || a.subtask_id || a.agent_type;
+              if (id && !next.has(id)) next.set(id, { id, type: a.agent_type, active: true });
+            }
+          }
+          // New v4 format: session-level data
+          if (resp.active_sessions && resp.active_sessions.length > 0) {
+            for (const s of resp.active_sessions) {
+              const id = s.session_id;
+              if (id && !next.has(id)) {
+                next.set(id, { id, type: s.project_name || 'session', active: s.active_subtasks_count > 0 });
+              }
+            }
           }
           return next;
         });
