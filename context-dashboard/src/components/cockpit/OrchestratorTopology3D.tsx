@@ -346,7 +346,10 @@ export function OrchestratorTopology3D({ data }: Props) {
     >
       <Canvas
         camera={{ position: [0, 3, 5], fov: 50 }}
-        gl={{ antialias: true, alpha: true }}
+        gl={{ antialias: true, alpha: true, powerPreference: 'low-power', failIfMajorPerformanceCaveat: false }}
+        dpr={[1, 1.5]}
+        frameloop="always"
+        fallback={<div className="h-full flex items-center justify-center text-[var(--md-sys-color-outline)]">WebGL non disponible</div>}
       >
         <TopologyScene data={data} />
       </Canvas>

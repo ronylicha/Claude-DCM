@@ -64,6 +64,7 @@ import { postTokensRealtime, getTokenProjection, getTokenCalibration } from "./a
 import { getCockpitGlobal, getCockpitGrid, getCockpitSession } from "./api/cockpit";
 import { postPreemptiveSummary, getPreemptiveSummary, getRawContext } from "./api/compact-preemptive";
 import { getOrchestratorTopology, getOrchestratorStatus } from "./api/orchestrator";
+import { startOrchestrator, stopOrchestrator, getOrchestratorStats } from "./orchestrator";
 
 // Version from package.json (single source of truth)
 import pkg from "../package.json";
@@ -526,6 +527,7 @@ app.get("/api/compact/preemptive/:session_id", getPreemptiveSummary);
 
 app.get("/api/orchestrator/topology", getOrchestratorTopology);
 app.get("/api/orchestrator/status", getOrchestratorStatus);
+app.get("/api/orchestrator/stats", (c) => c.json(getOrchestratorStats()));
 
 // ============================================
 // Server Startup
@@ -546,6 +548,9 @@ async function startServer() {
   // Start message cleanup interval (every 60 seconds)
   startCleanupInterval(60000);
   log.info("Message cleanup started");
+
+  // Start global orchestrator (inter-project coordination)
+  startOrchestrator();
 
   // Start HTTP server with Bun
   const server = Bun.serve({
@@ -571,6 +576,7 @@ async function startServer() {
   // Setup graceful shutdown
   const shutdown = async (signal: string) => {
     log.info(`Received ${signal}, shutting down gracefully...`);
+    stopOrchestrator();
     server.stop();
     await closeDb();
     log.info("Shutdown complete");
