@@ -178,16 +178,17 @@ async function orchestratorCycle() {
 
     // 6. Proactive info sharing — broadcast recent activity summary every 5 cycles (~2.5min)
     if (cycleCount % 5 === 0 && sessions.length > 1) {
-      // Gather recent actions per session
+      // Gather recent write actions per session
       const recentActivity = await db`
         SELECT a.session_id,
           COUNT(*) as action_count,
-          COUNT(DISTINCT unnest) as files_touched,
-          array_agg(DISTINCT a.tool_name ORDER BY a.tool_name) FILTER (WHERE a.tool_name NOT IN ('Read','Glob','Grep')) as write_tools
-        FROM actions a, unnest(COALESCE(a.file_paths, ARRAY[]::text[]))
+          array_agg(DISTINCT a.tool_name) as tools
+        FROM actions a
         WHERE a.session_id IS NOT NULL
           AND a.created_at > NOW() - INTERVAL '3 minutes'
+          AND a.tool_name IN ('Write', 'Edit', 'MultiEdit', 'Bash', 'Agent')
         GROUP BY a.session_id
+        HAVING COUNT(*) > 0
       `;
 
       for (const activity of recentActivity) {
@@ -197,9 +198,7 @@ async function orchestratorCycle() {
         const otherSessions = sessions.filter(s => s.session_id !== activity.session_id);
         if (otherSessions.length === 0) continue;
 
-        // Only broadcast if meaningful activity (writes, not just reads)
-        const writeTools = activity.write_tools || [];
-        if (writeTools.length === 0) continue;
+        const tools = activity.tools || [];
 
         // Send to each other session
         for (const target of otherSessions) {
@@ -209,7 +208,7 @@ async function orchestratorCycle() {
               'orchestrator-global', ${target.session_id}, 'notification', 'directive.info',
               ${db.json({
                 action: 'info',
-                message: `${session.project_name}: ${activity.action_count} actions, ${activity.files_touched} fichiers (${writeTools.join(', ')})`,
+                message: `${session.project_name}: ${activity.action_count} actions (${tools.join(', ')})`,
                 source_session: activity.session_id,
                 source_project: session.project_name,
               })},
@@ -229,22 +228,23 @@ async function orchestratorCycle() {
     if (cycleCount % 10 === 0 && sessions.length > 1) {
       // Find recently created/modified key files
       const keyFiles = await db`
-        SELECT DISTINCT a.session_id, unnest(a.file_paths) as file_path
-        FROM actions a
-        WHERE a.file_paths IS NOT NULL
-          AND a.tool_name IN ('Write', 'Edit', 'MultiEdit')
-          AND a.created_at > NOW() - INTERVAL '5 minutes'
-          AND a.session_id IS NOT NULL
-          AND (
-            unnest(a.file_paths) LIKE '%schema%'
-            OR unnest(a.file_paths) LIKE '%migration%'
-            OR unnest(a.file_paths) LIKE '%types.ts'
-            OR unnest(a.file_paths) LIKE '%api-client%'
-            OR unnest(a.file_paths) LIKE '%server.ts'
-            OR unnest(a.file_paths) LIKE '%package.json'
-            OR unnest(a.file_paths) LIKE '%docker%'
-            OR unnest(a.file_paths) LIKE '%CLAUDE.md'
-          )
+        SELECT DISTINCT sub.session_id, sub.file_path
+        FROM (
+          SELECT a.session_id, unnest(a.file_paths) as file_path
+          FROM actions a
+          WHERE a.file_paths IS NOT NULL
+            AND a.tool_name IN ('Write', 'Edit', 'MultiEdit')
+            AND a.created_at > NOW() - INTERVAL '5 minutes'
+            AND a.session_id IS NOT NULL
+        ) sub
+        WHERE sub.file_path LIKE '%schema%'
+          OR sub.file_path LIKE '%migration%'
+          OR sub.file_path LIKE '%types.ts'
+          OR sub.file_path LIKE '%api-client%'
+          OR sub.file_path LIKE '%server.ts'
+          OR sub.file_path LIKE '%package.json'
+          OR sub.file_path LIKE '%docker%'
+          OR sub.file_path LIKE '%CLAUDE.md'
       `;
 
       for (const file of keyFiles) {
