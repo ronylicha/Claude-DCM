@@ -50,6 +50,7 @@ function CockpitSkeleton() {
 
 export default function CockpitPage() {
   const [zoomedSession, setZoomedSession] = useState<string | null>(null);
+  const [show3D, setShow3D] = useState(false);
   const { sessions, loading } = useSessionGrid();
   const { data: globalData } = useGlobalCapacity();
   const { data: topologyData } = useOrchestratorTopology();
@@ -93,7 +94,19 @@ export default function CockpitPage() {
       {topologyData !== null && (
         <div className="space-y-3">
           <OrchestratorStatusBar data={topologyData} />
-          <OrchestratorTopology3D data={topologyData} />
+          {show3D ? (
+            <OrchestratorTopology3D data={topologyData} />
+          ) : (
+            <button
+              onClick={() => setShow3D(true)}
+              className="w-full h-[80px] rounded-md-md border border-dashed border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-lowest)] flex items-center justify-center gap-2 text-[var(--md-sys-color-primary)] text-[14px] hover:bg-[var(--md-sys-color-surface-container)] transition-colors"
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M10 2L18 7V13L10 18L2 13V7L10 2Z" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+              </svg>
+              Afficher la topologie 3D
+            </button>
+          )}
         </div>
       )}
 
