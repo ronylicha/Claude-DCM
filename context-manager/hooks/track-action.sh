@@ -144,5 +144,28 @@ if [[ -n "$AGENT_ID" && -n "$SESSION_ID" ]]; then
         >/dev/null 2>&1 &
 fi
 
+# v4.1: Delegate — check orchestrator directives every 10 actions
+COUNTER_FILE="${CACHE_DIR}/${SESSION_ID}_action_count"
+ACTION_COUNT=$(cat "$COUNTER_FILE" 2>/dev/null || echo "0")
+ACTION_COUNT=$((ACTION_COUNT + 1))
+echo "$ACTION_COUNT" > "$COUNTER_FILE" 2>/dev/null || true
+
+if (( ACTION_COUNT % 10 == 0 )); then
+    DIRECTIVES=$(curl -s --connect-timeout 1 --max-time 1 \
+        "${API_URL}/api/messages?to_agent_id=${SESSION_ID}&topic=directive&limit=5" \
+        2>/dev/null || echo "")
+
+    if [[ -n "$DIRECTIVES" ]] && echo "$DIRECTIVES" | jq -e '.messages | length > 0' >/dev/null 2>&1; then
+        CONTEXT=$(echo "$DIRECTIVES" | jq -r '
+            .messages[] |
+            "DIRECTIVE ORCHESTRATEUR [" + .topic + "]: " +
+            (if .payload | type == "object" then .payload.message // (.payload | tostring) else .payload | tostring end)
+        ' 2>/dev/null | head -c 1500)
+
+        INJECT_FILE="${CACHE_DIR}/${SESSION_ID}_directives.md"
+        echo "$CONTEXT" > "$INJECT_FILE" 2>/dev/null || true
+    fi
+fi
+
 # NO wait - true fire-and-forget
 exit 0

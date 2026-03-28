@@ -1,10 +1,27 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { CockpitGrid } from '@/components/cockpit/CockpitGrid';
 import { CockpitZoom } from '@/components/cockpit/CockpitZoom';
+import { OrchestratorStatusBar } from '@/components/cockpit/OrchestratorStatusBar';
 import { useSessionGrid } from '@/hooks/useSessionGrid';
 import { useGlobalCapacity } from '@/hooks/useGlobalCapacity';
+import { useOrchestratorTopology } from '@/hooks/useOrchestratorTopology';
+
+// Dynamic import — Three.js is incompatible with SSR
+const OrchestratorTopology3D = dynamic(
+  () =>
+    import('@/components/cockpit/OrchestratorTopology3D').then(
+      (m) => ({ default: m.OrchestratorTopology3D })
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[300px] animate-pulse rounded-md-md bg-[var(--md-sys-color-surface-container)]" />
+    ),
+  }
+);
 
 // ============================================
 // Helpers
@@ -44,6 +61,7 @@ export default function CockpitPage() {
   const [zoomedSession, setZoomedSession] = useState<string | null>(null);
   const { sessions, loading } = useSessionGrid();
   const { data: globalData } = useGlobalCapacity();
+  const { data: topologyData } = useOrchestratorTopology();
 
   if (loading) {
     return <CockpitSkeleton />;
@@ -77,6 +95,14 @@ export default function CockpitPage() {
               {globalData.summaries.generating} resume(s) en cours
             </span>
           )}
+        </div>
+      )}
+
+      {/* Orchestrator topology */}
+      {topologyData !== null && (
+        <div className="space-y-3">
+          <OrchestratorStatusBar data={topologyData} />
+          <OrchestratorTopology3D data={topologyData} />
         </div>
       )}
 

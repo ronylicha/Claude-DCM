@@ -159,4 +159,11 @@ if [[ -n "$task_id" ]]; then
     chmod 600 "$cache_file" 2>/dev/null || true
 fi
 
+# v4.1: Launch global orchestrator if not already running
+ORCH_PID_FILE="/tmp/.claude-context/orchestrator-global.pid"
+if [[ ! -f "$ORCH_PID_FILE" ]] || ! kill -0 "$(cat "$ORCH_PID_FILE" 2>/dev/null)" 2>/dev/null; then
+    # Launch orchestrator in background
+    nohup bash "${HOOK_DIR}/../scripts/orchestrator-global.sh" >/dev/null 2>&1 &
+fi
+
 exit 0

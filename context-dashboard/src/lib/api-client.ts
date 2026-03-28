@@ -700,6 +700,44 @@ export interface TokenProjection {
 }
 
 // ============================================
+// Orchestrator topology types (v4)
+// ============================================
+
+export interface OrchestratorTopologyNode {
+  session_id: string;
+  project_name: string;
+  used_percentage: number;
+  zone: string;
+  model_id: string;
+  active_agents: number;
+  last_action_at: string | null;
+}
+
+export interface OrchestratorTopologyData {
+  orchestrator: {
+    status: 'active' | 'inactive';
+    last_heartbeat: string | null;
+    total_directives: number;
+    total_conflicts: number;
+  };
+  nodes: OrchestratorTopologyNode[];
+  edges: Array<{
+    from_session: string;
+    to_session: string;
+    type: 'info' | 'directive' | 'conflict';
+    topic: string;
+    message_preview: string;
+    created_at: string;
+  }>;
+  conflicts: Array<{
+    file_path: string;
+    sessions: string[];
+    detected_at: string;
+    resolved: boolean;
+  }>;
+}
+
+// ============================================
 // API Error
 // ============================================
 
@@ -1216,6 +1254,14 @@ export const apiClient = {
   // Active Sessions (v4) - /api/sessions/active
   // ==========================================
   getActiveSessionsV4: () => apiFetch<ActiveSessionsResponse>('/api/sessions/active'),
+
+  // ==========================================
+  // Orchestrator - /api/orchestrator
+  // ==========================================
+  getOrchestratorTopology: () =>
+    apiFetch<OrchestratorTopologyData>('/api/orchestrator/topology'),
+  getOrchestratorStatus: () =>
+    apiFetch<OrchestratorTopologyData['orchestrator']>('/api/orchestrator/status'),
 
   // ==========================================
   // Compact Snapshots - /api/agent-contexts

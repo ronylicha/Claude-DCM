@@ -543,7 +543,7 @@ export default function WavesPage() {
 
   const sessionAgents = useMemo(() => {
     if (!selectedSessionId || !activeData) return [];
-    return activeData.active_agents.filter(a => a.session_id === selectedSessionId);
+    return (activeData.active_agents || []).filter(a => a.session_id === selectedSessionId);
   }, [activeData, selectedSessionId]);
 
   const agentIds = useMemo(() => {

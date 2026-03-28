@@ -63,6 +63,7 @@ import { trackAgentTurn, getAgentStatus, relaunchAgent } from "./api/agents";
 import { postTokensRealtime, getTokenProjection, getTokenCalibration } from "./api/tokens-realtime";
 import { getCockpitGlobal, getCockpitGrid, getCockpitSession } from "./api/cockpit";
 import { postPreemptiveSummary, getPreemptiveSummary, getRawContext } from "./api/compact-preemptive";
+import { getOrchestratorTopology, getOrchestratorStatus } from "./api/orchestrator";
 
 // Version from package.json (single source of truth)
 import pkg from "../package.json";
@@ -518,6 +519,13 @@ app.get("/api/cockpit/:session_id", getCockpitSession);
 app.get("/api/compact/raw-context/:session_id", getRawContext);
 app.post("/api/compact/preemptive-summary", postPreemptiveSummary);
 app.get("/api/compact/preemptive/:session_id", getPreemptiveSummary);
+
+// ============================================
+// Orchestrator API - Phase 11 (DCM v4.1)
+// ============================================
+
+app.get("/api/orchestrator/topology", getOrchestratorTopology);
+app.get("/api/orchestrator/status", getOrchestratorStatus);
 
 // ============================================
 // Server Startup

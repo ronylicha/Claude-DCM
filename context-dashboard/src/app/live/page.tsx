@@ -680,7 +680,7 @@ export default function LivePage() {
         if (resp.active_agents && resp.active_agents.length > 0) {
           setAgents((prev) => {
             const next = new Map(prev);
-            for (const agent of resp.active_agents) {
+            for (const agent of resp.active_agents!) {
               const agentId = agent.agent_id || agent.subtask_id;
               if (!next.has(agentId)) {
                 next.set(agentId, {
