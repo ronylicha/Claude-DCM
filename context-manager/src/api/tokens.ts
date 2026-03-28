@@ -67,7 +67,7 @@ export async function trackTokens(c: Context) {
   try {
     // Get current capacity data
     let [capacity] = await sql`
-      SELECT current_usage, max_capacity, consumption_rate, last_compact_at, session_id
+      SELECT current_usage, max_capacity, consumption_rate, last_compact_at, session_id, model_id
       FROM agent_capacity
       WHERE agent_id = ${agent_id}
     `;
@@ -77,11 +77,11 @@ export async function trackTokens(c: Context) {
     if (!capacity) {
       const [created] = await sql`
         INSERT INTO agent_capacity (agent_id, session_id, current_usage, max_capacity, consumption_rate, zone, model_id)
-        VALUES (${agent_id}, ${session_id}, 0, ${modelCapacity}, 0, 'green', ${model_id || null})
+        VALUES (${agent_id}, ${session_id}, 0, ${modelCapacity}, 0, 'green', ${model_id || ''}::text)
         ON CONFLICT (agent_id) DO UPDATE SET
           session_id = ${session_id},
-          model_id = COALESCE(${model_id || null}, agent_capacity.model_id),
-          max_capacity = CASE WHEN ${model_id || null} IS NOT NULL THEN ${modelCapacity} ELSE agent_capacity.max_capacity END
+          model_id = COALESCE(NULLIF(${model_id || ''}, ''), agent_capacity.model_id),
+          max_capacity = CASE WHEN ${model_id || ''} != '' THEN ${modelCapacity} ELSE agent_capacity.max_capacity END
         RETURNING current_usage, max_capacity, consumption_rate, last_compact_at, session_id
       `;
       capacity = created;
@@ -114,7 +114,10 @@ export async function trackTokens(c: Context) {
     const remainingTokens = maxCapacity - currentUsage;
     const predictedMinutes = newRate > 0 ? remainingTokens / newRate : Infinity;
 
-    // Upsert agent_capacity
+    // Upsert agent_capacity (always update model_id and max_capacity if known)
+    const effectiveModelId: string = model_id || capacity?.['model_id'] || '';
+    const effectiveMaxCapacity = model_id ? modelCapacity : maxCapacity;
+
     await sql`
       INSERT INTO agent_capacity (
         agent_id,
@@ -124,23 +127,27 @@ export async function trackTokens(c: Context) {
         consumption_rate,
         zone,
         predicted_exhaustion_minutes,
+        model_id,
         last_updated_at
       ) VALUES (
         ${agent_id},
         ${session_id},
         ${currentUsage},
-        ${maxCapacity},
+        ${effectiveMaxCapacity},
         ${newRate},
         ${zone},
         ${isFinite(predictedMinutes) ? predictedMinutes : null},
+        ${effectiveModelId || null}::text,
         NOW()
       )
       ON CONFLICT (agent_id) DO UPDATE SET
         session_id = ${session_id},
         current_usage = ${currentUsage},
+        max_capacity = ${effectiveMaxCapacity},
         consumption_rate = ${newRate},
         zone = ${zone},
         predicted_exhaustion_minutes = ${isFinite(predictedMinutes) ? predictedMinutes : null},
+        model_id = COALESCE(NULLIF(${effectiveModelId}, ''), agent_capacity.model_id),
         last_updated_at = NOW()
     `;
 
