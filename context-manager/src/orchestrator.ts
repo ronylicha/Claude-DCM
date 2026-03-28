@@ -51,7 +51,7 @@ async function orchestratorCycle() {
       LEFT JOIN projects p ON s.project_id = p.id
       LEFT JOIN agent_capacity ac ON ac.session_id = s.id
       WHERE s.ended_at IS NULL
-        OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '${INACTIVITY_THRESHOLD_MIN} minutes')
+        OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '1 minute' * ${INACTIVITY_THRESHOLD_MIN})
     `;
 
     if (sessions.length === 0) {
@@ -87,12 +87,12 @@ async function orchestratorCycle() {
         INSERT INTO agent_messages (from_agent_id, to_agent_id, message_type, topic, payload, priority, expires_at)
         VALUES (
           'orchestrator-global', NULL, 'notification', 'directive.conflict',
-          ${JSON.stringify({
+          ${db.json({
             action: 'conflict',
             message: `Conflit fichier: ${conflict.file_path} modifie par ${sessionNames.join(' et ')}`,
             file: conflict.file_path,
             sessions: conflict.sessions,
-          })}::jsonb,
+          })},
           9, NOW() + INTERVAL '5 minutes'
         )
       `;
@@ -132,12 +132,12 @@ async function orchestratorCycle() {
         INSERT INTO agent_messages (from_agent_id, to_agent_id, message_type, topic, payload, priority, expires_at)
         VALUES (
           'orchestrator-global', NULL, 'notification', 'directive.architecture',
-          ${JSON.stringify({
+          ${db.json({
             action: 'architecture',
             message: `${sourceName} a modifie ${change.file_path}`,
             file: change.file_path,
             source_session: change.session_id,
-          })}::jsonb,
+          })},
           7, NOW() + INTERVAL '10 minutes'
         )
       `;
@@ -164,11 +164,11 @@ async function orchestratorCycle() {
         INSERT INTO agent_messages (from_agent_id, to_agent_id, message_type, topic, payload, priority, expires_at)
         VALUES (
           'orchestrator-global', ${session.session_id}, 'notification', 'directive.compact',
-          ${JSON.stringify({
+          ${db.json({
             action: 'compact',
             message: `Session ${session.project_name} a ${pct}% de contexte — compaction recommandee`,
             used_percentage: pct,
-          })}::jsonb,
+          })},
           8, NOW() + INTERVAL '5 minutes'
         )
       `;
@@ -181,14 +181,14 @@ async function orchestratorCycle() {
       INSERT INTO agent_messages (from_agent_id, to_agent_id, message_type, topic, payload, priority, expires_at)
       VALUES (
         'orchestrator-global', NULL, 'notification', 'orchestrator.heartbeat',
-        ${JSON.stringify({
+        ${db.json({
           timestamp: new Date().toISOString(),
           active_sessions: sessions.length,
           directives_sent: totalDirectives,
           conflicts_detected: totalConflicts,
           cycle: cycleCount,
           uptime_seconds: startedAt ? Math.floor((Date.now() - startedAt.getTime()) / 1000) : 0,
-        })}::jsonb,
+        })},
         0, NOW() + INTERVAL '1 minute'
       )
     `;
