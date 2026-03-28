@@ -371,22 +371,40 @@ function RecentActionsDurationChart() {
     refetchInterval: 30000,
   });
 
-  const chartData = useMemo(() => {
-    if (!actionsData?.actions) return [];
-    return actionsData.actions
-      .filter((a) => a.duration_ms !== null && a.duration_ms > 0)
-      .slice(0, 20)
-      .reverse()
-      .map((action) => ({
-        name: action.tool_name.length > 12
-          ? action.tool_name.slice(0, 11) + "…"
-          : action.tool_name,
-        duration: action.duration_ms ?? 0,
-        fullName: action.tool_name,
-      }));
+  const hasDurations = useMemo(() => {
+    if (!actionsData?.actions) return false;
+    return actionsData.actions.some((a) => a.duration_ms !== null && a.duration_ms > 0);
   }, [actionsData]);
 
-  const avgDuration = chartData.length > 0
+  const chartData = useMemo(() => {
+    if (!actionsData?.actions) return [];
+    if (hasDurations) {
+      // Show duration chart when data available
+      return actionsData.actions
+        .filter((a) => a.duration_ms !== null && a.duration_ms > 0)
+        .slice(0, 20)
+        .reverse()
+        .map((action) => ({
+          name: action.tool_name.length > 12
+            ? action.tool_name.slice(0, 11) + "…"
+            : action.tool_name,
+          duration: action.duration_ms ?? 0,
+          fullName: action.tool_name,
+        }));
+    }
+    // Fallback: show action count by tool type
+    const counts: Record<string, number> = {};
+    for (const a of actionsData.actions) {
+      const name = a.tool_name.length > 12 ? a.tool_name.slice(0, 11) + "…" : a.tool_name;
+      counts[name] = (counts[name] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 15)
+      .map(([name, count]) => ({ name, duration: count, fullName: name }));
+  }, [actionsData, hasDurations]);
+
+  const avgDuration = hasDurations && chartData.length > 0
     ? Math.round(chartData.reduce((sum, d) => sum + d.duration, 0) / chartData.length)
     : 0;
 
@@ -396,7 +414,7 @@ function RecentActionsDurationChart() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Activity className="h-5 w-5 text-[var(--md-sys-color-secondary)]" />
-            <h3 className="text-base font-semibold">Recent Actions Duration</h3>
+            <h3 className="text-base font-semibold">{hasDurations ? 'Recent Actions Duration' : 'Recent Actions by Tool'}</h3>
           </div>
           {avgDuration > 0 && (
             <Badge
