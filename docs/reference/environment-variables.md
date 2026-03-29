@@ -1,5 +1,7 @@
 # Environment Variables Reference
 
+![Environment Variables](../images/environment-variables.png)
+
 Complete list of environment variables used by DCM. All configuration is done through the `context-manager/.env` file. Bun loads it automatically at startup.
 
 Create the file from the template:

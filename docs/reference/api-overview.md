@@ -1,5 +1,7 @@
 # API Reference Overview
 
+![API Reference](../images/api-reference.png)
+
 Complete list of all REST endpoints exposed by the DCM API server on port 3847.
 
 **Base URL:** `http://127.0.0.1:3847`

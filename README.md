@@ -1,6 +1,10 @@
 # DCM -- Distributed Context Manager
 
 <p align="center">
+  <img src="docs/images/hero-banner.png" alt="DCM Hero Banner" width="800"/>
+</p>
+
+<p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/></a>
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-f9f1e1.svg" alt="Bun"/></a>
   <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/database-PostgreSQL%2014+-336791.svg" alt="PostgreSQL 14+"/></a>
@@ -98,6 +102,10 @@ Agents coordinate through a built-in pub/sub messaging system with topics, subsc
 ### Wave Orchestration
 
 Complex work is decomposed into **waves** -- sequential execution phases where subtasks within each wave run in parallel. The API supports task decomposition, batch submission, conflict detection, and result synthesis.
+
+<p align="center">
+  <img src="docs/images/cockpit-preview.png" alt="DCM Cockpit" width="700"/>
+</p>
 
 ### Real-Time Dashboard
 
@@ -320,6 +328,10 @@ cd context-manager
 ```
 
 ---
+
+<p align="center">
+  <img src="docs/images/architecture-overview.png" alt="Architecture" width="600"/>
+</p>
 
 ## Architecture Overview
 
@@ -889,6 +901,21 @@ Reload after config changes:
 ```bash
 ./dcm supervisor reload
 ```
+
+---
+
+## Documentation
+
+Complete documentation follows the [Diataxis](https://diataxis.fr/) framework:
+
+| | Document | Description |
+|---|----------|-------------|
+| ![](docs/images/getting-started.png) | **[Getting Started](docs/tutorials/getting-started.md)** | 10-minute developer onboarding with PostgreSQL setup |
+| ![](docs/images/deployment.png) | **[Deployment](docs/howto/deployment.md)** | 4 methods: CLI, Docker, Systemd, Manual |
+| ![](docs/images/troubleshooting.png) | **[Troubleshooting](docs/howto/troubleshooting.md)** | 12 common errors with solutions |
+| ![](docs/images/api-reference.png) | **[API Reference](docs/reference/api-overview.md)** | 102 endpoints across 26 categories |
+| ![](docs/images/database-schema.png) | **[Database Schema](docs/reference/database-schema.md)** | 19 tables, 4 views, 36 indexes |
+| ![](docs/images/environment-variables.png) | **[Environment Variables](docs/reference/environment-variables.md)** | All config variables with defaults |
 
 ---
 

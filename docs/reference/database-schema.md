@@ -1,5 +1,7 @@
 # Database Schema Reference
 
+![Database Schema](../images/database-schema.png)
+
 Complete schema for the DCM PostgreSQL database (`claude_context`).
 
 **PostgreSQL version:** 16+

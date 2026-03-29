@@ -1,5 +1,7 @@
 # Getting Started with DCM
 
+![Getting Started](../images/getting-started.png)
+
 Set up the Distributed Context Manager from scratch in about 10 minutes. By the end of this tutorial, you will have DCM running alongside Claude Code with persistent memory, compact recovery, and a real-time monitoring dashboard.
 
 ---

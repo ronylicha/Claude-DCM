@@ -1,5 +1,7 @@
 # How to Deploy DCM
 
+![Deployment](../images/deployment.png)
+
 Four methods for deploying the Distributed Context Manager, from simplest to most robust.
 
 ---

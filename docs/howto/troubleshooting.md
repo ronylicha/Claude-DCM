@@ -1,5 +1,7 @@
 # Troubleshooting DCM
 
+![Troubleshooting](../images/troubleshooting.png)
+
 Solutions to the most common problems encountered when running the Distributed Context Manager.
 
 ---
