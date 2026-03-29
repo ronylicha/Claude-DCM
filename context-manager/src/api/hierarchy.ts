@@ -249,6 +249,7 @@ export async function getActiveSessions(c: Context): Promise<Response> {
   try {
     const sql = getDb();
 
+    // Session-level summary
     const activeSessions = await sql`
       SELECT
         s.id AS session_id,
@@ -277,9 +278,17 @@ export async function getActiveSessions(c: Context): Promise<Response> {
       ORDER BY last_action_at DESC NULLS LAST
     `;
 
+    // Individual active agents from v_active_agents view
+    const activeAgents = await sql`
+      SELECT * FROM v_active_agents
+      ORDER BY started_at DESC NULLS LAST
+    `;
+
     return c.json({
-      active_agents: activeSessions,
+      active_agents: activeAgents.length > 0 ? activeAgents : activeSessions,
+      active_sessions: activeSessions,
       count: activeSessions.length,
+      agents_count: activeAgents.length,
     });
   } catch (error) {
     log.error("GET /api/active-sessions error:", error);
