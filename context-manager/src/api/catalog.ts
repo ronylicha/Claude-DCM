@@ -1,73 +1,54 @@
 /**
- * Catalog API - Static registry of all known agents, skills, and commands
- * Provides searchable, filterable access to the Claude Code ecosystem catalog.
+ * Catalog API — dynamic registry scanning ~/.claude/skills/ and plugins
  * @module api/catalog
  */
 
 import type { Context } from "hono";
-import { agents, skills, commands } from "../data/catalog";
+import { scanCatalog, type CatalogSkill, type CatalogAgent, type CatalogCommand } from "../data/catalog";
 import { createLogger } from "../lib/logger";
 
 const log = createLogger("API");
 
 /**
- * GET /api/registry/catalog - Browse the full agent/skill/command catalog
+ * GET /api/registry/catalog — browse discovered skills, agents, commands
  * Query params:
- *   - type: "agents" | "skills" | "commands" (omit for all)
+ *   - type: "skills" | "agents" | "commands" (omit for all)
  *   - search: free-text search across id, name, description
  *   - category: filter by category
- * @param c - Hono context
+ *   - source: "user" | "plugin"
  */
 export async function getCatalog(c: Context): Promise<Response> {
   try {
     const type = c.req.query("type");
     const search = c.req.query("search")?.toLowerCase();
     const category = c.req.query("category");
+    const source = c.req.query("source");
 
-    let result: {
-      agents?: typeof agents;
-      skills?: typeof skills;
-      commands?: typeof commands;
+    const catalog = await scanCatalog();
+
+    const filterItems = <T extends { id: string; name: string; description: string; category: string; source: string }>(
+      items: T[]
+    ): T[] => {
+      let filtered = items;
+      if (category) filtered = filtered.filter(i => i.category === category);
+      if (source) filtered = filtered.filter(i => i.source === source);
+      if (search) filtered = filtered.filter(i =>
+        i.id.toLowerCase().includes(search) ||
+        i.name.toLowerCase().includes(search) ||
+        i.description.toLowerCase().includes(search)
+      );
+      return filtered;
+    };
+
+    const result: {
+      agents?: CatalogAgent[];
+      skills?: CatalogSkill[];
+      commands?: CatalogCommand[];
     } = {};
 
-    if (!type || type === "agents") {
-      let filtered = agents;
-      if (category) filtered = filtered.filter((a) => a.category === category);
-      if (search)
-        filtered = filtered.filter(
-          (a) =>
-            a.id.toLowerCase().includes(search) ||
-            a.name.toLowerCase().includes(search) ||
-            a.description.toLowerCase().includes(search)
-        );
-      result.agents = filtered;
-    }
-
-    if (!type || type === "skills") {
-      let filtered = skills;
-      if (category) filtered = filtered.filter((s) => s.category === category);
-      if (search)
-        filtered = filtered.filter(
-          (s) =>
-            s.id.toLowerCase().includes(search) ||
-            s.name.toLowerCase().includes(search) ||
-            s.description.toLowerCase().includes(search)
-        );
-      result.skills = filtered;
-    }
-
-    if (!type || type === "commands") {
-      let filtered = commands;
-      if (category) filtered = filtered.filter((cmd) => cmd.category === category);
-      if (search)
-        filtered = filtered.filter(
-          (cmd) =>
-            cmd.id.toLowerCase().includes(search) ||
-            cmd.name.toLowerCase().includes(search) ||
-            cmd.description.toLowerCase().includes(search)
-        );
-      result.commands = filtered;
-    }
+    if (!type || type === "agents") result.agents = filterItems(catalog.agents);
+    if (!type || type === "skills") result.skills = filterItems(catalog.skills);
+    if (!type || type === "commands") result.commands = filterItems(catalog.commands);
 
     return c.json({
       ...result,
@@ -75,6 +56,7 @@ export async function getCatalog(c: Context): Promise<Response> {
         agents: result.agents?.length ?? 0,
         skills: result.skills?.length ?? 0,
         commands: result.commands?.length ?? 0,
+        total: (result.agents?.length ?? 0) + (result.skills?.length ?? 0) + (result.commands?.length ?? 0),
       },
     });
   } catch (error) {
