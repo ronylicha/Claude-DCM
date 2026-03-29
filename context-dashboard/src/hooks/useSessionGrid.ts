@@ -88,10 +88,10 @@ export function useSessionGrid() {
     subscribe('global');
   }, [connected, subscribe]);
 
-  // Polling fallback every 15s when WebSocket is not available
+  // Poll regularly to catch new/removed sessions
+  // WS events only update existing sessions, they don't add new ones
   useEffect(() => {
-    if (connected) return;
-    const interval = setInterval(fetchGrid, 15000);
+    const interval = setInterval(fetchGrid, connected ? 8000 : 15000);
     return () => clearInterval(interval);
   }, [connected, fetchGrid]);
 
