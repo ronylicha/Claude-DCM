@@ -52,6 +52,8 @@ export async function postTokensRealtime(c: Context) {
   const total_tokens = total_input_tokens + total_output_tokens;
   const zone = calculateZone(used_percentage);
 
+  log.info(`Realtime: session=${session_id.slice(0,8)} model=${model_id} tokens=${total_tokens} window=${context_window_size} pct=${used_percentage}%`);
+
   const db = getDb();
 
   try {
