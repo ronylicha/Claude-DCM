@@ -83,6 +83,16 @@ export async function getCockpitGlobal(c: Context) {
     const a = agents[0];
     const sm = summaries[0];
 
+    // Deduplicate capacities by session_id — keep statusline over estimated
+    const capMap = new Map<string, typeof capacities[0]>();
+    for (const cap of capacities) {
+      const existing = capMap.get(cap.session_id);
+      if (!existing || (cap.source === 'statusline' && existing.source !== 'statusline')) {
+        capMap.set(cap.session_id, cap);
+      }
+    }
+    const dedupedCapacities = Array.from(capMap.values());
+
     return c.json({
       sessions: {
         total_active: Number(s?.total_active || 0),
@@ -99,9 +109,9 @@ export async function getCockpitGlobal(c: Context) {
         completed: Number(a?.completed || 0),
       },
       tokens: {
-        total_consumed: capacities.reduce((sum, cap) => sum + Number(cap.current_usage || 0), 0),
-        total_rate: capacities.reduce((sum, cap) => sum + Number(cap.consumption_rate || 0), 0),
-        by_session: capacities.map(cap => ({
+        total_consumed: dedupedCapacities.reduce((sum, cap) => sum + Number(cap.current_usage || 0), 0),
+        total_rate: dedupedCapacities.reduce((sum, cap) => sum + Number(cap.consumption_rate || 0), 0),
+        by_session: dedupedCapacities.map(cap => ({
           session_id: cap.session_id,
           project_name: cap.project_name,
           model_id: cap.model_id,
