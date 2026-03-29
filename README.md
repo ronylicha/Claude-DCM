@@ -1,13 +1,9 @@
-# DCM - Distributed Context Manager
-
-<p align="center">
-  <img src="docs/images/hero-banner.png" alt="DCM - Distributed Context Manager" width="900"/>
-</p>
+# DCM -- Distributed Context Manager
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/></a>
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-f9f1e1.svg" alt="Bun"/></a>
-  <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/database-PostgreSQL%2016-336791.svg" alt="PostgreSQL 16"/></a>
+  <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/database-PostgreSQL%2014+-336791.svg" alt="PostgreSQL 14+"/></a>
   <a href="https://hono.dev"><img src="https://img.shields.io/badge/framework-Hono-ff6633.svg" alt="Hono"/></a>
   <img src="https://img.shields.io/badge/version-3.1.0-green.svg" alt="v3.1.0"/>
 </p>
@@ -15,6 +11,27 @@
 <p align="center">
   <strong>Persistent memory, compact recovery, multi-agent orchestration, agent hierarchy, and safety enforcement for Claude Code sessions.</strong>
 </p>
+
+---
+
+DCM is a persistent memory and orchestration layer for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). It hooks into Claude's lifecycle events -- every tool call, every agent launch, every compaction -- and maintains a complete picture of what is happening across multi-agent sessions. When context compaction occurs, DCM saves the session state beforehand and restores it afterward, so Claude picks up exactly where it left off.
+
+The system consists of three services: a **REST API** (86+ endpoints across 11 development phases) backed by PostgreSQL, a **WebSocket server** for real-time event streaming, and a **Next.js dashboard** for live monitoring and debugging.
+
+## Table of Contents
+
+- [The Problem](#the-problem)
+- [Key Features](#key-features)
+- [Tech Stack](#tech-stack)
+- [Prerequisites](#prerequisites)
+- [Getting Started](#getting-started)
+- [Architecture Overview](#architecture-overview)
+- [Environment Variables](#environment-variables)
+- [Available Scripts](#available-scripts)
+- [Testing](#testing)
+- [Deployment](#deployment)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
 
 ---
 
@@ -26,294 +43,255 @@ Claude Code sessions hit a hard limit: the **context window**. When a conversati
 - **Agents work in silos.** A backend agent finishes an API endpoint, but the frontend agent has no idea it exists.
 - **No visibility.** There is no way to see what is happening across a multi-agent session -- which agents are running, what tools they are calling, or whether things are going well.
 - **Manual recovery.** After each compact, users must re-explain the entire project state from memory.
-- **No safety net.** Subagents can execute destructive operations (rm -rf, DROP DATABASE, .env access) without any preventive gate.
+- **No safety net.** Subagents can execute destructive operations (`rm -rf`, `DROP DATABASE`, `.env` access) without any preventive gate.
 
-## The Solution
-
-<p align="center">
-  <img src="docs/images/architecture-overview.png" alt="DCM Architecture Overview" width="700"/>
-</p>
-
-DCM sits alongside Claude Code as a persistent memory layer. It hooks into Claude's lifecycle events -- every tool call, every agent launch, every compaction -- and maintains a complete picture of what is happening. When compaction occurs, DCM automatically saves the session state beforehand and restores it afterward, so Claude picks up exactly where it left off.
-
-The system consists of four components working together: a REST API that tracks and stores everything in PostgreSQL, a WebSocket server that streams events in real time, a Next.js dashboard that puts it all on screen, and a safety gate that blocks dangerous operations before they execute.
+DCM solves all of these by sitting alongside Claude Code as a **persistent memory layer** with real-time monitoring, automatic context recovery, inter-agent communication, and safety enforcement.
 
 ## Key Features
 
 ### Safety Gate -- Preventive Blocking
 
-DCM includes a safety gate that intercepts dangerous operations **before** they execute. The gate runs as a `PreToolUse` hook on `Bash` and `Write` tools:
+A `PreToolUse` hook intercepts dangerous operations **before** they execute:
 
 | Pattern | What It Blocks | Example |
 |---------|----------------|---------|
-| **Filesystem destruction** | `rm -rf /`, `rm -rf ~`, `rm -rf /home` | Prevents recursive deletion of system directories |
-| **Database destruction** | `DROP DATABASE`, `DROP TABLE`, `TRUNCATE TABLE` | Prevents data loss from destructive SQL |
-| **Secret exposure** | `cat .env`, `head .env`, direct `.env` writes | Prevents accidental secret leakage |
-| **Resource exhaustion** | Fork bombs, `dd if=/dev/zero of=/dev/` | Prevents system-level denial of service |
+| Filesystem destruction | `rm -rf /`, `rm -rf ~`, `rm -rf /home` | Recursive deletion of system directories |
+| Database destruction | `DROP DATABASE`, `DROP TABLE`, `TRUNCATE TABLE` | Destructive SQL statements |
+| Secret exposure | `cat .env`, `head .env`, direct `.env` writes | Accidental secret leakage |
+| Resource exhaustion | Fork bombs, `dd if=/dev/zero of=/dev/` | System-level denial of service |
 
-When a blocked operation is detected:
-1. The hook returns `{"decision": "block", "reason": "..."}` to Claude Code, preventing execution
-2. The blocked operation is logged to the DCM API (`tool_type: "blocked"`) for centralized tracking
-3. The dashboard displays blocked operations in the Safety Gate section of the Agents page
-
-```bash
-# Customize blocking rules in:
-context-manager/hooks/safety-gate.sh
-```
+Blocked operations are logged to the API and displayed in the dashboard Safety Gate section.
 
 ### Context Guardian -- 4-Layer Defense
 
-<p align="center">
-  <img src="docs/images/guardian-layers.png" alt="Context Guardian 4-Layer Defense" width="700"/>
-</p>
-
-DCM protects against context loss with four layers of defense, each catching what the previous one might miss:
-
 | Layer | Mechanism | Frequency | Latency | What It Does |
 |-------|-----------|-----------|---------|--------------|
-| **1. Local Monitor** | `context-guardian.sh` | Every tool call | <10ms | Checks transcript file size locally. Green (<500KB), Yellow (500-750KB), Orange (750KB-1MB, alerts Claude), Red (>1MB, alerts + saves snapshot). |
-| **2. API Health Check** | `monitor-context.sh` | Every 5th call | 25-100ms | Queries the API for capacity metrics. Triggers a proactive snapshot if usage exceeds 80%. Cooldown prevents snapshot spam. |
-| **3. Stop Guard** | `context-stop-guard.sh` | On Stop event | <100ms | Blocks session termination if running tasks exist, preventing accidental context loss. |
-| **4. Compact Save/Restore** | `pre-compact-save.sh` + `post-compact-restore.sh` | Each compaction | 500ms-2s | Saves a comprehensive snapshot before compact. Restores context using **snapshot-first** strategy via `additionalContext` injection. |
+| 1. Local Monitor | `context-guardian.sh` | Every tool call | <10ms | Checks transcript file size locally. Color-coded zones (green/yellow/orange/red). |
+| 2. API Health Check | `monitor-context.sh` | Every 5th call | 25-100ms | Queries the API for capacity metrics. Triggers proactive snapshot if usage >80%. |
+| 3. Stop Guard | `context-stop-guard.sh` | On Stop event | <100ms | Blocks session termination if running tasks exist. |
+| 4. Compact Save/Restore | `pre-compact-save.sh` + `post-compact-restore.sh` | Each compaction | 500ms-2s | Saves full snapshot before compact, restores via `additionalContext` injection after. |
 
-### Compact Save/Restore Lifecycle (v3.1.0 — Snapshot-First)
-
-<p align="center">
-  <img src="docs/images/compact-flow.png" alt="Compact Save/Restore Flow" width="700"/>
-</p>
+### Compact Save/Restore Lifecycle
 
 When Claude's context window fills up:
 
-1. **PreCompact** -- DCM collects active tasks (running + pending + blocked), modified files, agent states, **key decisions** (pattern-extracted from transcript), **wave state**, and a **3000-character summary** (last 15 assistant messages), then saves them as a snapshot in PostgreSQL.
+1. **PreCompact** -- DCM collects active tasks, modified files, agent states, key decisions, wave state, and a 3000-character summary, then saves them as a snapshot in PostgreSQL.
 2. **Compaction** -- Claude compresses the conversation. Without DCM, everything before this point is gone.
-3. **SessionStart (compact)** -- DCM uses a **snapshot-first** restore strategy:
-   - First, looks for the saved snapshot in the database
-   - If found, generates a structured Markdown brief directly from the snapshot data (tasks by status, decisions, wave progress, modified files, agent states)
-   - Enriches with any live subtasks created after the snapshot
-   - If no snapshot exists, falls back to `generateContextBrief()` with a **session-scoped fallback** (queries by session_id when agent_id returns no results)
-   - The brief is injected via `additionalContext`, so Claude resumes with full awareness of prior work.
+3. **SessionStart (compact)** -- DCM uses a **snapshot-first** restore strategy: loads the saved snapshot, generates a structured Markdown brief (tasks by status, decisions, wave progress, modified files, agent states), and injects it via `additionalContext` so Claude resumes with full awareness of prior work.
 
-### Subagent Monitoring & Agent Hierarchy (v3.1.0)
+### Subagent Monitoring and Agent Hierarchy
 
-DCM tracks the full lifecycle of every subagent through centralized database tracking, with **parent/child hierarchy**:
+DCM tracks the full lifecycle of every subagent with parent/child hierarchy:
 
-| Event | Hook | Scope | What Is Tracked |
-|-------|------|-------|-----------------|
-| **Agent spawned** | `track-agent-start.sh` | PreToolUse (Task) | agent_id, type, description, session, task chain, **parent_agent_id** |
-| **Tool call (any)** | `track-action.sh` | PostToolUse (*) | tool_name, type, input, exit_code, token consumption |
-| **Agent completed** | `track-agent-end.sh` | PostToolUse (Task) | status update, cache cleanup |
-| **Agent result** | `save-agent-result.sh` | SubagentStop | result summary broadcast, batch completion check |
-| **Operation blocked** | `safety-gate.sh` | PreToolUse (Bash, Write) | blocked command, reason, session context |
-
-**Agent hierarchy**: When a subagent spawns another subagent, the `CLAUDE_AGENT_ID` environment variable is detected by `track-agent-start.sh` and stored as `parent_agent_id`. This enables:
-- Filtering by `?is_subagent=true|false` on the subtasks API
-- Dashboard split into **Main Agents** and **Subagents** sections with parent link indicators
-- Per-level success rate statistics
-
-All tracking data flows to PostgreSQL via the DCM API, providing a single centralized source of truth accessible from both the web dashboard and the CLI dashboard.
-
-#### Monitored Agent Template
-
-To create subagents with built-in DCM tracking, use the provided template:
-
-```bash
-cp context-manager/agents/monitored-agent-template.md my-agent.md
-```
-
-The template includes frontmatter hooks for `PreToolUse` (safety gate) and `PostToolUse` (action tracking), ensuring every tool call inside the subagent is tracked and dangerous operations are blocked.
+| Event | Hook | What Is Tracked |
+|-------|------|-----------------|
+| Agent spawned | `track-agent-start.sh` | agent_id, type, description, session, parent_agent_id |
+| Tool call | `track-action.sh` | tool_name, type, input, exit_code, token consumption |
+| Agent completed | `track-agent-end.sh` | status update, cache cleanup |
+| Agent result | `save-agent-result.sh` | result summary broadcast, batch completion check |
+| Operation blocked | `safety-gate.sh` | blocked command, reason, session context |
 
 ### Inter-Agent Communication
 
-<p align="center">
-  <img src="docs/images/inter-agent-comm.png" alt="Inter-Agent Communication" width="700"/>
-</p>
-
-Agents coordinate through a built-in pub/sub messaging system:
-
-- **Messages** -- Agents publish to topics (e.g., `api_endpoint_created`, `schema_updated`). Other agents receive these through the context API or WebSocket subscriptions.
-- **Subscriptions** -- Agents subscribe to topics they care about and receive targeted notifications.
-- **Blocking** -- An agent can declare a dependency on another, preventing premature execution until the upstream work is done.
-- **Broadcast** -- When a subagent finishes, `save-agent-result.sh` automatically broadcasts its result so other agents can consume it.
-
-```bash
-# Agent publishes a message
-curl -X POST http://127.0.0.1:3847/api/messages \
-  -H "Content-Type: application/json" \
-  -d '{
-    "from_agent_id": "backend-laravel",
-    "topic": "api_endpoint_created",
-    "payload": {"endpoint": "/api/users", "methods": ["GET", "POST"]}
-  }'
-
-# Another agent checks messages
-curl "http://127.0.0.1:3847/api/messages/frontend-react?session_id=abc123"
-```
+Agents coordinate through a built-in pub/sub messaging system with topics, subscriptions, blocking dependencies, and automatic result broadcasting when subagents finish.
 
 ### Wave Orchestration
 
-<p align="center">
-  <img src="docs/images/wave-orchestration.png" alt="Wave Orchestration System" width="700"/>
-</p>
-
-Complex work is decomposed into **waves** -- sequential execution phases where subtasks within each wave run in parallel:
-
-```
-Wave 0: Exploration     -->  Wave 1: Implementation  -->  Wave 2: Validation  -->  Wave 3: Documentation
- [analyze codebase]          [backend] [frontend]         [tests] [review]        [docs] [changelog]
- [read requirements]         [database] [api]             [security audit]        [api spec update]
-```
-
-The orchestration API supports:
-- **Task decomposition** -- Break a high-level request into typed subtasks (`POST /api/orchestration/decompose`)
-- **Batch submission** -- Submit a wave of subtasks at once (`POST /api/orchestration/batch-submit`)
-- **Conflict detection** -- Identify agents modifying the same files (`GET /api/orchestration/conflicts/:id`)
-- **Result synthesis** -- Aggregate results from a completed batch (`POST /api/orchestration/batch/:id/complete`)
-
-### Hook Lifecycle
-
-<p align="center">
-  <img src="docs/images/hook-lifecycle.png" alt="Hook Lifecycle Timeline" width="700"/>
-</p>
-
-DCM integrates through Claude Code's hooks system. Lightweight bash scripts fire on lifecycle events, each calling the DCM API with relevant data:
-
-| Event | Hook Script | Timeout | Purpose |
-|-------|-------------|---------|---------|
-| `PreToolUse (Bash)` | `safety-gate.sh` | 2s | **Safety gate** -- blocks destructive operations |
-| `PreToolUse (Write)` | `safety-gate.sh` | 2s | **Safety gate** -- blocks .env writes |
-| `PreToolUse (Task)` | `track-agent-start.sh` | 3s | Records agent spawn, creates subtask chain |
-| `SessionStart` | `ensure-services.sh` | 10s | Auto-starts DCM services if not running |
-| `SessionStart` | `track-session.sh` | 5s | Records session start |
-| `SessionStart (compact)` | `post-compact-restore.sh` | 8s | Restores context brief after compaction |
-| `PostToolUse (*)` | `track-action.sh` | 2s | Records every tool invocation for routing intelligence |
-| `PostToolUse (Task)` | `track-agent.sh` | 3s | Injects agent scope from registry |
-| `PostToolUse (Task)` | `track-agent-end.sh` | 3s | Marks subtask completed |
-| `PostToolUse (*)` | `context-guardian.sh` | 1s | Layer 1 local context monitoring |
-| `PostToolUse (*)` | `monitor-context.sh` | 2s | Layer 2 proactive API health check |
-| `PreCompact` | `pre-compact-save.sh` | 5s | Saves full context snapshot before compact |
-| `SubagentStop` | `save-agent-result.sh` | 3s | Broadcasts subagent result to other agents |
-| `Stop` | `context-stop-guard.sh` | 3s | Blocks stop if critical tasks are running |
-| `SessionEnd` | `track-session-end.sh` | 3s | Records session completion |
-
-All hooks are fire-and-forget -- they never block Claude Code execution.
+Complex work is decomposed into **waves** -- sequential execution phases where subtasks within each wave run in parallel. The API supports task decomposition, batch submission, conflict detection, and result synthesis.
 
 ### Real-Time Dashboard
 
-The monitoring dashboard runs at `http://localhost:3848` and provides live visibility into multi-agent sessions:
+The monitoring dashboard at `http://localhost:3848` provides 14 pages of live visibility:
 
 | Page | What It Shows |
 |------|---------------|
-| **Dashboard** | Health gauge, KPI cards (success rate, actions/hour, active agents), agent distribution, activity feed |
-| **Sessions** | Session browser with filters, tool counters, timeline view |
-| **Agents** | **Main Agents / Subagents** split sections, parent link indicators, animated gradient cards, agent topology grid, Safety Gate blocked operations, Main/Sub KPI, type statistics with success rates |
+| **Dashboard** | Health gauge, KPI cards, agent distribution, activity feed |
+| **Sessions** | Session browser with filters, tool counters, timeline |
+| **Agents** | Main/Subagent split, parent links, animated cards, Safety Gate |
 | **Messages** | Inter-agent message history with expandable payloads |
-| **Waves** | Wave execution tracking, batch progress, agent capacity gauges |
-| **Flows** | Real-time data flow topology with animated connections |
-| **Routing** | Keyword-to-tool mappings, routing tester with live feedback |
-| **Registry** | Agent catalog browser (66+ agents, 226+ skills) |
-| **Live** | Real-time WebSocket event stream with category filtering |
+| **Cockpit** | Real-time session cockpit with 3D topology |
 | **Compact** | Compact operations and snapshot history |
 | **Performance** | API response times, success rates, system health |
 | **Tools** | Tool usage statistics and distribution |
 | **Context** | Context brief viewer and generation |
 | **Projects** | Project hierarchy browser with drill-down |
+| **Routing** | Keyword-to-tool mappings, routing tester |
+| **Registry** | Agent catalog browser (66+ agents, 226+ skills) |
 
-Built with Next.js 16, React 19, shadcn/ui, Recharts, TanStack Query, and Tailwind CSS. Full light/dark mode support with glassmorphism cards.
-
-### Terminal Dashboard
-
-For quick terminal-based monitoring without opening a browser:
-
-```bash
-# Snapshot view
-bash context-manager/hooks/dashboard.sh
-
-# Auto-refresh every 2 seconds
-bash context-manager/hooks/dashboard.sh --watch
-
-# Raw JSON output (for scripting)
-bash context-manager/hooks/dashboard.sh --json
-
-# Clean old data (>7 days)
-bash context-manager/hooks/dashboard.sh --clean
-```
-
-The terminal dashboard queries the DCM API and displays:
-- Service health status (API + Database)
-- KPI summary (sessions, agents, actions, success rate)
-- Currently active agents with type, status, and description
-- Recent tool actions (last 10)
-- Blocked operations from Safety Gate (highlighted in red)
+Built with Next.js 16, React 19, shadcn/ui, Recharts, TanStack Query, Three.js, and Tailwind CSS 4. Full light/dark mode with glassmorphism cards.
 
 ### Intelligent Routing
 
-DCM learns which tools work best for which tasks through a feedback-driven keyword scoring system:
-
-```bash
-# Get tool suggestions for a keyword
-curl "http://127.0.0.1:3847/api/routing/suggest?keyword=database&limit=5"
-
-# Provide feedback after a successful tool use
-curl -X POST http://127.0.0.1:3847/api/routing/feedback \
-  -H "Content-Type: application/json" \
-  -d '{"keyword": "database", "tool_name": "Bash", "successful": true}'
-```
-
-Scores adjust dynamically based on success rates, guiding future tool selection.
+DCM learns which tools work best for which tasks through a feedback-driven keyword scoring system. Scores adjust dynamically based on success rates.
 
 ---
 
-## Quick Start
+## Tech Stack
 
-### Prerequisites
+### Backend (API + WebSocket)
 
-- [Bun](https://bun.sh) >= 1.x
-- [PostgreSQL](https://www.postgresql.org/) >= 16
-- [Node.js](https://nodejs.org/) >= 22 (dashboard only)
-- `jq` and `curl` (standard on most Linux/macOS systems)
+| Technology | Version | Role |
+|------------|---------|------|
+| [Bun](https://bun.sh) | 1.x | Runtime, package manager, test runner |
+| [Hono](https://hono.dev) | 4.x | HTTP framework (API server) |
+| [PostgreSQL](https://www.postgresql.org/) | 14+ | Persistent storage (19 tables, 4 views) |
+| [Zod](https://zod.dev) | 4.x | Input validation on all endpoints |
+| TypeScript | 5.x | Type safety |
 
-### Installation
+### Dashboard
+
+| Technology | Version | Role |
+|------------|---------|------|
+| [Next.js](https://nextjs.org/) | 16.x | React framework, SSR |
+| [React](https://react.dev/) | 19.x | UI library |
+| [TanStack Query](https://tanstack.com/query) | 5.x | Server state management |
+| [Recharts](https://recharts.org/) | 3.x | Charts and gauges |
+| [Three.js](https://threejs.org/) | 0.183.x | 3D topology visualization |
+| [Tailwind CSS](https://tailwindcss.com/) | 4.x | Styling |
+| [shadcn/ui](https://ui.shadcn.com/) | -- | Component library (Radix primitives) |
+| [Lucide](https://lucide.dev/) | -- | Icons |
+
+### Infrastructure
+
+| Technology | Role |
+|------------|------|
+| WebSocket (Bun native) | Real-time event streaming with HMAC auth |
+| PostgreSQL LISTEN/NOTIFY | Event bridge to WebSocket |
+| systemd user services | Process supervision, auto-restart, boot start |
+| Docker Compose | Containerized deployment |
+| Bash hooks | Claude Code lifecycle integration |
+
+---
+
+## Prerequisites
+
+Before installing DCM, make sure the following are available on your system.
+
+| Dependency | Minimum Version | Purpose | Install |
+|------------|----------------|---------|---------|
+| **PostgreSQL** | 14+ | Database | `sudo apt install postgresql postgresql-client` |
+| **Bun** | 1.x | API + WS runtime, package manager | `curl -fsSL https://bun.sh/install \| bash` |
+| **Node.js** | 22+ | Dashboard (Next.js) | `curl -fsSL https://deb.nodesource.com/setup_22.x \| sudo -E bash - && sudo apt install -y nodejs` |
+| **Git** | 2.x | Cloning the repo | `sudo apt install git` |
+| **jq** | 1.6+ | JSON parsing in hooks | `sudo apt install jq` |
+| **curl** | 7.x | HTTP calls from hooks | `sudo apt install curl` |
+
+Verify everything is installed:
+
+```bash
+bun --version        # Expected: 1.x.x
+psql --version       # Expected: 14+
+node --version       # Expected: v22.x.x
+git --version        # Expected: 2.x.x
+jq --version         # Expected: jq-1.6+
+curl --version       # Expected: 7.x.x+
+```
+
+Make sure PostgreSQL is running and accessible:
+
+```bash
+sudo systemctl enable postgresql
+sudo systemctl start postgresql
+sudo systemctl status postgresql
+```
+
+---
+
+## Getting Started
+
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/ronylicha/Claude-DCM.git
-cd Claude-DCM/context-manager
-bun install
-./dcm install
+cd Claude-DCM
 ```
 
-The `dcm install` command runs a 5-step setup:
+### 2. Install backend dependencies
 
-1. Checks prerequisites (bun, psql, jq, curl)
-2. Installs dependencies
-3. Creates `.env` from template
-4. Sets up the PostgreSQL database (10 tables, 4 views, indexes)
-5. Injects hooks into Claude Code's `settings.json`
+```bash
+cd context-manager
+bun install
+```
 
-### Start Services
+### 3. Install dashboard dependencies
+
+```bash
+cd ../context-dashboard
+npm install
+cd ../context-manager
+```
+
+### 4. Create the PostgreSQL database and user
+
+```bash
+# Connect as the postgres superuser
+sudo -u postgres psql
+
+# Inside the psql shell:
+CREATE USER dcm WITH PASSWORD 'your_secure_password_here';
+CREATE DATABASE claude_context OWNER dcm;
+GRANT ALL PRIVILEGES ON DATABASE claude_context TO dcm;
+\q
+```
+
+### 5. Configure environment variables
+
+```bash
+# From the context-manager directory
+cp .env.example .env
+```
+
+Edit `.env` with your database credentials:
+
+```bash
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_NAME=claude_context
+DB_USER=dcm
+DB_PASSWORD=your_secure_password_here
+PORT=3847
+WS_PORT=3849
+DASHBOARD_PORT=3848
+```
+
+### 6. Run database migrations
+
+```bash
+# Apply the schema (19 tables, 4 views, 25+ indexes)
+bash scripts/setup-db.sh
+```
+
+### 7. Install Claude Code hooks
+
+```bash
+bash scripts/setup-hooks.sh
+```
+
+This merges DCM hook entries into `~/.claude/settings.json`, enabling lifecycle tracking across all Claude Code sessions.
+
+### 8. Start all services
 
 ```bash
 ./dcm start
 ```
 
 This launches three processes:
-- **API Server** on port `3847`
-- **WebSocket Server** on port `3849`
-- **Dashboard** on port `3848`
+- **API Server** on port `3847` (Bun + Hono)
+- **WebSocket Server** on port `3849` (Bun native WS)
+- **Dashboard** on port `3848` (Next.js 16)
 
-### Verify
+### 9. Verify everything is running
 
 ```bash
-# Check all components
 ./dcm status
-
-# Direct health check
-curl http://127.0.0.1:3847/health | jq .
 ```
 
-Expected output from `dcm status`:
+Expected output:
 
 ```
 DCM Status
+
+  Supervisor:          not installed (nohup mode)
   API (port 3847):       healthy (v3.1.0)
   WebSocket (port 3849):  running
   Dashboard (port 3848):  running
@@ -321,268 +299,301 @@ DCM Status
   Claude Code hooks:      installed
 ```
 
-### Auto-Start via Plugin
-
-DCM can also run as a Claude Code plugin that auto-starts when a session begins:
-
-```bash
-ln -s /path/to/Claude-DCM/context-manager ~/.claude/plugins/dcm
-```
-
-The `ensure-services.sh` hook detects when DCM is not running, starts services, and waits for health confirmation -- all within the SessionStart hook timeout.
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           CLAUDE CODE SESSION                               │
-│                                                                             │
-│  PreToolUse ─── safety-gate.sh ──── BLOCK dangerous ops ──► DCM API        │
-│  PreToolUse ─── track-agent-start.sh ─── Log agent spawn ──► DCM API       │
-│  PostToolUse ── track-action.sh ──────── Log all tools ────► DCM API        │
-│  PostToolUse ── track-agent-end.sh ───── Mark completed ───► DCM API        │
-│  PostToolUse ── context-guardian.sh ──── Monitor context ─── (local)        │
-│  PreCompact ─── pre-compact-save.sh ──── Save snapshot ────► DCM API        │
-│  SubagentStop ─ save-agent-result.sh ─── Broadcast result ─► DCM API        │
-│  SessionStart ─ post-compact-restore.sh ─ Restore context ◄─ DCM API       │
-│                                                                             │
-└──────────────────────────────┬──────────────────────────────────────────────┘
-                               │ HTTP / curl (fire-and-forget)
-                               ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                            DCM API (Bun + Hono)                              │
-│                              Port 3847                                       │
-│                                                                              │
-│  50+ REST endpoints: actions, subtasks, messages, compact, routing,          │
-│  orchestration, waves, registry, tokens, dashboard KPIs                      │
-│                                                                              │
-│  PostgreSQL 16: 10 tables, 4 views, JSONB metadata, GIN indexes             │
-└──────────────┬────────────────────────────────┬──────────────────────────────┘
-               │ LISTEN/NOTIFY                  │ HTTP
-               ▼                                ▼
-┌──────────────────────────┐     ┌──────────────────────────────────────────────┐
-│   WebSocket Server       │     │   Next.js Dashboard                          │
-│   Port 3849              │     │   Port 3848                                  │
-│                          │     │                                              │
-│   Real-time events       │     │   14 pages: Dashboard, Agents, Sessions,     │
-│   HMAC auth              │────►│   Live, Waves, Flows, Messages, Routing,     │
-│   Channel subscriptions  │     │   Registry, Compact, Performance, Tools,     │
-│                          │     │   Context, Projects                          │
-└──────────────────────────┘     └──────────────────────────────────────────────┘
-```
-
-| Component | Stack | Port | Role |
-|-----------|-------|------|------|
-| **DCM API** | Bun + Hono + Zod | 3847 | REST API, compact save/restore, routing, orchestration, safety tracking |
-| **WebSocket** | Bun native WS + LISTEN/NOTIFY | 3849 | Real-time event streaming, HMAC auth, channel subscriptions |
-| **Dashboard** | Next.js 16 + React 19 + Recharts | 3848 | 14-page monitoring UI with live activity feed |
-| **PostgreSQL** | PostgreSQL 16 | 5432 | 10 tables, 4 views, JSONB metadata, GIN indexes |
-
-### Database Schema
-
-The schema tracks the full hierarchy: **Projects** contain **Requests**, which spawn **Waves** (task lists) of **Subtasks** assigned to agents. Every tool invocation is recorded as an **Action** (including blocked operations with `tool_type: "blocked"`). Inter-agent coordination uses **Messages**, **Subscriptions**, and **Blocking** relations. **Agent Contexts** store recovery snapshots for compact operations.
-
-### WebSocket Channels
-
-Real-time events flow through PostgreSQL LISTEN/NOTIFY, bridged to WebSocket clients:
-
-```
-agents/{agent_id}       -- Agent-specific events
-sessions/{session_id}   -- Session-specific events
-global                  -- Broadcast to all clients
-metrics                 -- System metrics snapshots
-topics/{topic_name}     -- Topic-based routing
-```
-
----
-
-## API Reference
-
-DCM exposes 50+ REST endpoints organized into functional groups. Full interactive documentation is available through the [Swagger UI](docs/api/swagger.html) and [OpenAPI spec](docs/api/openapi.yaml).
-
-### Endpoint Groups
-
-| Group | Endpoints | Description |
-|-------|-----------|-------------|
-| Health & Stats | 2 | Service health, database statistics |
-| Projects | 5 | Project CRUD by working directory |
-| Sessions | 6 | Session lifecycle and statistics |
-| Requests | 5 | User prompt tracking |
-| Tasks (Waves) | 5 | Wave management |
-| Subtasks | 6 | Agent task assignment and tracking |
-| Actions | 5 | Tool invocation recording (including blocked ops) |
-| Messages | 3 | Inter-agent pub/sub messaging |
-| Subscriptions | 5 | Topic subscription management |
-| Blocking | 5 | Agent dependency management |
-| Compact | 4 | Context save/restore operations |
-| Context | 2 | Context brief generation |
-| Routing | 3 | Intelligent tool suggestion |
-| Orchestration | 7 | Batch submission, synthesis, decomposition |
-| Waves | 5 | Wave create, start, transition, history |
-| Registry | 6 | Agent catalog and context enrichment |
-| Tokens | 4 | Token tracking and capacity monitoring |
-| Dashboard | 1 | Aggregated KPI metrics |
-| Auth | 1 | WebSocket HMAC token generation |
-
-### Key API Examples
-
-**Check service health:**
+Direct health check:
 
 ```bash
 curl http://127.0.0.1:3847/health | jq .
 ```
 
-```json
-{
-  "status": "healthy",
-  "version": "3.1.0",
-  "timestamp": "2026-02-28T10:30:00.000Z",
-  "database": "connected",
-  "features": ["compact", "messaging", "orchestration", "registry", "safety-gate"]
-}
-```
+Open the dashboard in your browser: [http://localhost:3848](http://localhost:3848)
 
-**Save a context snapshot:**
+### One-Command Install (Alternative)
+
+If you prefer a guided setup that handles all of the above (dependencies, database, hooks, and optional systemd supervisor):
 
 ```bash
-curl -X POST http://127.0.0.1:3847/api/compact/save \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "session-abc123",
-    "trigger": "manual",
-    "context_summary": "Working on authentication feature",
-    "active_tasks": [{"description": "Create User model", "status": "running"}]
-  }'
-```
-
-**Restore context after compact:**
-
-```bash
-curl -X POST http://127.0.0.1:3847/api/compact/restore \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "session-abc123",
-    "agent_id": "orchestrator",
-    "agent_type": "orchestrator",
-    "max_tokens": 2000
-  }'
-```
-
-**Submit a batch of subtasks:**
-
-```bash
-curl -X POST http://127.0.0.1:3847/api/orchestration/batch-submit \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "session-abc123",
-    "tasks": [
-      {"agent_type": "backend-laravel", "description": "Create User model and migration"},
-      {"agent_type": "frontend-react", "description": "Build login form component"}
-    ]
-  }'
-```
-
-**Query blocked operations:**
-
-```bash
-curl "http://127.0.0.1:3847/api/actions?tool_type=blocked&limit=10" | jq .
+cd context-manager
+./dcm install
 ```
 
 ---
 
-## Hooks System
+## Architecture Overview
 
-Hooks are the integration layer between Claude Code and DCM. Each hook is a bash script that receives JSON on stdin, processes the event, and optionally returns JSON output.
-
-### Hook Data Flow
+### System Architecture
 
 ```
-Claude Code Event  -->  Bash Hook Script  -->  curl POST to DCM API  -->  PostgreSQL
-                                           <--  JSON response (if needed)
++-----------------------------------------------------------------------------+
+|                           CLAUDE CODE SESSION                                |
+|                                                                              |
+|  PreToolUse --- safety-gate.sh -------- BLOCK dangerous ops --> DCM API      |
+|  PreToolUse --- track-agent-start.sh -- Log agent spawn ------> DCM API      |
+|  PostToolUse -- track-action.sh ------- Log all tools --------> DCM API      |
+|  PostToolUse -- track-agent-end.sh ---- Mark completed -------> DCM API      |
+|  PostToolUse -- context-guardian.sh --- Monitor context -------- (local)      |
+|  PreCompact --- pre-compact-save.sh --- Save snapshot --------> DCM API      |
+|  SubagentStop - save-agent-result.sh -- Broadcast result -----> DCM API      |
+|  SessionStart - post-compact-restore.sh  Restore context <----- DCM API      |
+|                                                                              |
++--------------------------------------+---------------------------------------+
+                                       | HTTP / curl (fire-and-forget)
+                                       v
++------------------------------------------------------------------------------+
+|                        DCM API Server (Bun + Hono)                           |
+|                              Port 3847                                       |
+|                                                                              |
+|  86+ REST endpoints across 11 phases: actions, subtasks, messages,           |
+|  compact, routing, orchestration, waves, registry, tokens, cockpit,          |
+|  dashboard KPIs, agent turns, preemptive summaries                           |
+|                                                                              |
+|  PostgreSQL 14+: 19 tables, 4 views, JSONB metadata, 25+ indexes            |
++--------------+-------------------------------+-------------------------------+
+               | LISTEN/NOTIFY                 | HTTP
+               v                               v
++--------------------------+     +---------------------------------------------+
+|   WebSocket Server       |     |   Next.js Dashboard                         |
+|   Port 3849              |     |   Port 3848                                 |
+|                          |     |                                             |
+|   Real-time events       |     |   14 pages: Dashboard, Agents, Sessions,    |
+|   HMAC auth              |---->|   Cockpit, Compact, Performance, Tools,     |
+|   Channel subscriptions  |     |   Context, Projects, Messages, Routing,     |
+|                          |     |   Registry                                  |
++--------------------------+     +---------------------------------------------+
 ```
 
-### Hook Input Format
+### Service Architecture
 
-Every hook receives JSON on stdin:
+| Service | Stack | Port | Role |
+|---------|-------|------|------|
+| **DCM API** | Bun + Hono + Zod | 3847 | REST API, compact save/restore, routing, orchestration, safety tracking |
+| **WebSocket** | Bun native WS + LISTEN/NOTIFY | 3849 | Real-time event streaming, HMAC auth, channel subscriptions |
+| **Dashboard** | Next.js 16 + React 19 + Recharts + Three.js | 3848 | 14-page monitoring UI with live activity feed |
+| **PostgreSQL** | PostgreSQL 14+ | 5432 | 19 tables, 4 views, JSONB metadata, GIN indexes |
 
-```json
-{
-  "tool_name": "Read",
-  "tool_input": {"file_path": "/src/server.ts"},
-  "tool_output": {"content": "..."},
-  "session_id": "session-abc123",
-  "cwd": "/home/user/project",
-  "timestamp": "2026-02-09T10:30:00.000Z",
-  "exit_code": 0
-}
+### Data Flow
+
+```
+Claude Code hooks (bash scripts)
+        |
+        | curl POST (fire-and-forget, <5ms)
+        v
+    DCM API (Hono)
+        |
+        | Parameterized SQL queries
+        v
+    PostgreSQL
+        |
+        | LISTEN/NOTIFY
+        v
+    WebSocket Server
+        |
+        | ws:// push
+        v
+    Next.js Dashboard (browser)
 ```
 
-### Safety Gate Response
+### Directory Structure
 
-When the safety gate blocks an operation, it returns:
-
-```json
-{
-  "decision": "block",
-  "reason": "SAFETY GATE: DROP DATABASE detected. This operation has been blocked to prevent data loss."
-}
+```
+Claude-DCM/
+|-- context-manager/           # Backend: API + WebSocket + hooks
+|   |-- src/
+|   |   |-- api/               # 27 API route modules (one per resource)
+|   |   |-- db/                # Database client, schema.sql, migrations/
+|   |   |-- lib/               # Logger, utilities
+|   |   |-- middleware/         # Rate limiting, CORS
+|   |   |-- templates/         # Context brief templates
+|   |   |-- tests/             # Bun test suites
+|   |   |-- waves/             # Wave state machine
+|   |   |-- websocket/         # WS server, auth, bridge
+|   |   |-- server.ts          # API entry point
+|   |   |-- websocket-server.ts # WS entry point
+|   |   +-- config.ts          # Centralized configuration
+|   |-- hooks/                 # 20+ bash hook scripts
+|   |-- scripts/               # setup-db, setup-hooks, setup-supervisor
+|   |-- systemd/               # Service unit files (dcm.target, *.service)
+|   |-- agents/                # Monitored agent templates
+|   |-- dcm                    # CLI entry point (bash)
+|   +-- package.json
+|-- context-dashboard/         # Frontend: Next.js 16 dashboard
+|   |-- src/
+|   |   |-- app/               # 14 page routes (App Router)
+|   |   +-- components/        # React components (shadcn/ui)
+|   +-- package.json
+|-- docker-compose.yml         # Containerized deployment
+|-- docs/                      # Wiki, API docs, analysis
++-- README.md
 ```
 
-### Context Injection
+### Database Schema (19 Tables, 4 Views)
 
-SessionStart hooks can inject context into Claude by outputting:
+**Core hierarchy:**
 
-```json
-{
-  "hookSpecificOutput": {
-    "additionalContext": "# Restored Context\n\nYou were working on..."
-  }
-}
-```
+| Table | Purpose |
+|-------|---------|
+| `projects` | Projects identified by working directory |
+| `requests` | User prompts linked to a project |
+| `task_lists` | Waves of objectives for a request |
+| `subtasks` | Agent tasks within a wave (with parent/child hierarchy) |
+| `actions` | Tool invocations with compressed input/output |
+| `sessions` | Claude Code session tracking |
 
-This is how DCM restores context after compaction -- the brief appears as if Claude always knew the information.
+**Communication:**
+
+| Table | Purpose |
+|-------|---------|
+| `agent_messages` | Pub/sub inter-agent messages |
+| `agent_contexts` | Agent recovery snapshots for compact operations |
+
+**Orchestration:**
+
+| Table | Purpose |
+|-------|---------|
+| `orchestration_batches` | Batch submission and progress tracking |
+| `wave_states` | Wave execution state machine |
+
+**Intelligence:**
+
+| Table | Purpose |
+|-------|---------|
+| `keyword_tool_scores` | Routing intelligence (keyword-to-tool scoring) |
+| `agent_registry` | Agent type catalog (scope, tools, constraints) |
+| `agent_capacity` | Real-time context capacity tracking per agent |
+| `token_consumption` | Token usage per agent per session |
+| `calibration_ratios` | Real vs estimated token calibration |
+| `preemptive_summaries` | Pre-generated summaries before compaction |
+
+**Infrastructure:**
+
+| Table | Purpose |
+|-------|---------|
+| `schema_version` | Migration tracking |
+
+**Views:**
+
+| View | Purpose |
+|------|---------|
+| `v_actions_full` | Actions with full project hierarchy (JOIN across 5 tables) |
+| `v_active_agents` | Currently running/paused/blocked agents |
+| `v_unread_messages` | Unexpired unread messages |
+| `v_project_stats` | Aggregated statistics per project |
 
 ---
 
-## CLI Reference
+## Environment Variables
 
-The `dcm` command is the single entry point for all operations.
+Configure in `context-manager/.env`. Bun loads the file automatically.
 
-### Service Management
+### Required
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `DB_USER` | PostgreSQL username | `dcm` |
+| `DB_PASSWORD` | PostgreSQL password | `your_secure_password` |
+
+### Optional (with defaults)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_HOST` | `127.0.0.1` | PostgreSQL host |
+| `DB_PORT` | `5432` | PostgreSQL port |
+| `DB_NAME` | `claude_context` | Database name |
+| `DB_MAX_CONNECTIONS` | `10` | Connection pool size |
+| `HOST` | `127.0.0.1` | API server bind address |
+| `PORT` | `3847` | API server port |
+| `WS_PORT` | `3849` | WebSocket server port |
+| `DASHBOARD_PORT` | `3848` | Dashboard dev server port |
+| `WS_AUTH_SECRET` | -- | HMAC secret for WebSocket auth (required in production, min 32 chars) |
+| `NODE_ENV` | `development` | Environment (`production` enforces WS auth) |
+| `ALLOWED_ORIGINS` | `http://localhost:3848,http://127.0.0.1:3848` | CORS allowed origins (comma-separated) |
+| `MESSAGE_TTL_MS` | `3600000` | Message time-to-live (1 hour) |
+| `HEALTHCHECK_INTERVAL_MS` | `30000` | Internal healthcheck interval (30s) |
+| `MAX_DB_RETRIES` | `3` | Database connection retries on startup |
+| `CLEANUP_STALE_HOURS` | `0.5` | Stale session threshold |
+| `CLEANUP_INACTIVE_MINUTES` | `10` | Inactive session threshold |
+| `CLEANUP_SNAPSHOT_MAX_HOURS` | `24` | Snapshot retention period |
+| `CLEANUP_INTERVAL_MS` | `60000` | Cleanup job interval |
+| `CLEANUP_READ_MSG_MAX_HOURS` | `24` | Read message retention period |
+| `LOG_LEVEL` | `info` | Logging verbosity (`debug`, `info`, `warn`, `error`) |
+
+---
+
+## Available Scripts
+
+### dcm CLI (primary interface)
+
+Run from the `context-manager/` directory:
 
 ```bash
-dcm install          # Full setup: dependencies, database, hooks
-dcm start            # Start API + WebSocket + Dashboard
-dcm stop             # Stop all services
-dcm restart          # Stop then start
-dcm status           # Health check for all components
-dcm health           # Quick API health check (JSON)
-dcm logs api         # Tail API logs
-dcm logs ws          # Tail WebSocket logs
-dcm logs dashboard   # Tail Dashboard logs
+# Full setup: prerequisites check, deps, database, hooks, supervisor
+./dcm install
+
+# Service management
+./dcm start              # Start API + WebSocket + Dashboard
+./dcm stop               # Stop all services
+./dcm restart            # Stop then start
+./dcm status             # Health check for all components
+./dcm health             # Quick API health check (JSON output)
+
+# Log viewing
+./dcm logs api           # Tail API server logs
+./dcm logs ws            # Tail WebSocket server logs
+./dcm logs dashboard     # Tail Dashboard logs
+
+# Hook management
+./dcm hooks              # Install/update Claude Code hooks in settings.json
+./dcm unhook             # Remove all DCM hooks (with backup)
+
+# Database management
+./dcm db:setup           # Initialize database schema
+./dcm db:reset           # Drop and recreate database (destructive, requires confirmation)
+
+# Context operations
+./dcm snapshot <session_id>              # Trigger a manual context snapshot
+./dcm context <agent_id> [session_id]    # Get context brief for an agent
+
+# Systemd supervisor
+./dcm supervisor status     # Show supervisor and service status
+./dcm supervisor logs       # Follow all service logs (journalctl)
+./dcm supervisor restart    # Restart all via systemd
+./dcm supervisor enable     # Enable auto-start on boot
+./dcm supervisor disable    # Disable auto-start
+./dcm supervisor reload     # Re-template and restart after update
+./dcm supervisor uninstall  # Remove supervisor completely
+
+# Meta
+./dcm version            # Show version
+./dcm help               # Show all commands
 ```
 
-### Hook Management
+### bun scripts (backend)
+
+Run from the `context-manager/` directory:
 
 ```bash
-dcm hooks            # Install/update Claude Code hooks
-dcm unhook           # Remove all DCM hooks (with backup)
+bun run dev              # Start API server with --watch (auto-reload)
+bun run start            # Start API + WebSocket servers
+bun run start:api        # Start API server only
+bun run start:ws         # Start WebSocket server only
+bun test                 # Run test suite
+bun test --watch         # Run tests in watch mode
+bun run setup:db         # Initialize database schema
+bun run setup:hooks      # Install Claude Code hooks
+bun run install:full     # Install deps + setup DB + install hooks
+bun run backup           # Backup database
+bun run health           # Run health check script
+bun run typecheck        # TypeScript type checking (tsc --noEmit)
 ```
 
-### Database Management
+### npm scripts (dashboard)
+
+Run from the `context-dashboard/` directory:
 
 ```bash
-dcm db:setup         # Initialize database schema
-dcm db:reset         # Drop and recreate database (destructive, requires confirmation)
-```
-
-### Context Operations
-
-```bash
-dcm snapshot <session_id>              # Trigger a manual context snapshot
-dcm context <agent_id> [session_id]    # Get context brief for an agent
+npm run dev              # Start dev server on port 3848
+npm run build            # Production build
+npm run start            # Start production server
+npm run lint             # ESLint
 ```
 
 ### Terminal Dashboard
@@ -590,101 +601,350 @@ dcm context <agent_id> [session_id]    # Get context brief for an agent
 ```bash
 bash hooks/dashboard.sh              # Snapshot view with KPIs and active agents
 bash hooks/dashboard.sh --watch      # Auto-refresh every 2 seconds
-bash hooks/dashboard.sh --json       # Raw JSON output for scripting
+bash hooks/dashboard.sh --json       # Raw JSON output (for scripting)
 bash hooks/dashboard.sh --clean      # Clean data older than 7 days
 ```
 
-### Meta
+---
+
+## Testing
+
+DCM uses Bun's built-in test runner. All tests are in `context-manager/src/tests/`.
+
+### Run the full test suite
 
 ```bash
-dcm version          # Show version (3.1.0)
-dcm help             # Show usage information
+cd context-manager
+bun test
+```
+
+### Run tests in watch mode
+
+```bash
+bun test --watch
+```
+
+### Run a specific test file
+
+```bash
+bun test src/tests/api.test.ts
+bun test src/tests/messages.test.ts
+bun test src/tests/cleanup.test.ts
+bun test src/tests/orchestration-planner.test.ts
+bun test src/tests/ws.test.ts
+```
+
+### Test suites
+
+| File | Coverage |
+|------|----------|
+| `api.test.ts` | API endpoint integration tests |
+| `messages.test.ts` | Inter-agent messaging |
+| `cleanup.test.ts` | Cleanup and retention logic |
+| `orchestration-planner.test.ts` | Task decomposition and planning |
+| `ws.test.ts` | WebSocket server and event streaming |
+
+### Test all hooks
+
+A utility script validates that all hooks execute without error:
+
+```bash
+bash hooks/test-all-hooks.sh
 ```
 
 ---
 
-## Installation Methods
+## Deployment
 
-| Feature | CLI Mode (`dcm install`) | Plugin Mode (auto-discovery) |
-|---------|--------------------------|------------------------------|
-| **Setup** | `./dcm install` then `./dcm hooks` | Symlink into `~/.claude/plugins/` |
-| **Hook injection** | Merges into `~/.claude/settings.json` | Plugin's `hooks.json` loaded by Claude Code |
-| **Service startup** | `./dcm start` or auto via ensure-services | Auto via `ensure-services.sh` on SessionStart |
-| **Hook paths** | Absolute paths to hooks directory | `${CLAUDE_PLUGIN_ROOT}` variable paths |
-| **Scope** | Global (all projects) | Per-plugin |
-| **Uninstall** | `./dcm unhook` | Remove the symlink |
+DCM supports four deployment methods, from simplest to most production-ready.
 
-Both modes include `ensure-services.sh`, which auto-starts services if they are not running when a Claude Code session begins. PostgreSQL must be running first -- using systemd is recommended:
+### Method 1: dcm CLI (recommended for local development)
+
+The quickest path to a running system:
 
 ```bash
-sudo systemctl enable postgresql
-sudo systemctl start postgresql
+cd context-manager
+./dcm install    # Full setup (deps, DB, hooks, optional supervisor)
+./dcm start      # Start all services
+./dcm status     # Verify
+```
+
+Services run via `nohup` in the background. Logs are written to `/tmp/dcm-api.log`, `/tmp/dcm-ws.log`, and `/tmp/dcm-dashboard.log`.
+
+### Method 2: Docker Compose (recommended for isolated environments)
+
+A `docker-compose.yml` at the repository root defines all four services (PostgreSQL, API, WebSocket, Dashboard):
+
+```bash
+# Set required environment variables
+export DB_PASSWORD="your_secure_password"
+export WS_AUTH_SECRET="$(openssl rand -hex 32)"
+
+# Start all services
+docker compose up -d
+
+# Verify
+docker compose ps
+curl http://127.0.0.1:3847/health | jq .
+
+# View logs
+docker compose logs -f dcm-api
+docker compose logs -f dcm-ws
+docker compose logs -f dcm-dashboard
+
+# Stop
+docker compose down
+
+# Stop and remove data
+docker compose down -v
+```
+
+The PostgreSQL container automatically initializes the schema from `context-manager/src/db/schema.sql` on first run. Data persists in a named Docker volume (`pgdata`).
+
+### Method 3: Systemd Supervisor (recommended for production on Linux)
+
+The supervisor sets up systemd user services that auto-restart on failure and start on boot:
+
+```bash
+cd context-manager
+
+# Install supervisor (included in `dcm install`, or run manually)
+bash scripts/setup-supervisor.sh install
+
+# Manage via dcm
+./dcm supervisor status       # Check all services
+./dcm supervisor logs         # Follow logs via journalctl
+./dcm supervisor enable       # Enable auto-start on login
+./dcm supervisor disable      # Disable auto-start
+./dcm supervisor restart      # Restart all services
+./dcm supervisor reload       # Re-template after config change
+./dcm supervisor uninstall    # Remove everything
+
+# Or manage directly via systemctl
+systemctl --user status dcm.target
+systemctl --user status dcm-api
+systemctl --user status dcm-ws
+systemctl --user status dcm-dashboard
+systemctl --user restart dcm.target
+journalctl --user -u dcm-api -f
+```
+
+The supervisor creates three service units under `~/.config/systemd/user/`:
+
+| Unit | Description |
+|------|-------------|
+| `dcm.target` | Groups all DCM services |
+| `dcm-api.service` | API server with health check, 512M memory limit |
+| `dcm-ws.service` | WebSocket server |
+| `dcm-dashboard.service` | Next.js dashboard |
+
+Features: auto-restart on crash (`RestartSec=5`), boot start via `WantedBy=default.target`, rate limiting (`StartLimitBurst=5`), watchdog (`WatchdogSec=120`), journal logging.
+
+### Method 4: Manual (for custom setups)
+
+Start each service in a separate terminal or process manager:
+
+```bash
+# Terminal 1: API Server
+cd context-manager
+DB_USER=dcm DB_PASSWORD=your_password bun run src/server.ts
+
+# Terminal 2: WebSocket Server
+cd context-manager
+DB_USER=dcm DB_PASSWORD=your_password bun run src/websocket-server.ts
+
+# Terminal 3: Dashboard
+cd context-dashboard
+npm run dev
 ```
 
 ---
 
-## Configuration
+## Troubleshooting
 
-Copy `.env.example` to `.env` in the `context-manager` directory:
+### "DB_USER environment variable is required"
+
+The API server requires `DB_USER` and `DB_PASSWORD` to be set. Create a `.env` file in the `context-manager/` directory:
 
 ```bash
 cp .env.example .env
+# Edit .env with your database credentials
 ```
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DB_HOST` | `127.0.0.1` | PostgreSQL host |
-| `DB_PORT` | `5432` | PostgreSQL port |
-| `DB_NAME` | `claude_context` | Database name |
-| `DB_USER` | *(required)* | Database user |
-| `DB_PASSWORD` | *(required)* | Database password |
-| `PORT` | `3847` | API server port |
-| `WS_PORT` | `3849` | WebSocket server port |
-| `DASHBOARD_PORT` | `3848` | Dashboard port |
-| `WS_HMAC_SECRET` | -- | HMAC secret for WebSocket auth (required in production) |
-| `API_HOST` | `localhost` | External host for dashboard API URLs |
-| `NODE_ENV` | `development` | Environment (`production` enforces WS auth) |
+### API server starts but database reports "unhealthy"
+
+PostgreSQL is not running or the credentials are wrong:
+
+```bash
+# Check PostgreSQL is running
+sudo systemctl status postgresql
+
+# Test connection manually
+psql -h 127.0.0.1 -U dcm -d claude_context -c "SELECT 1;"
+
+# If the database doesn't exist yet
+sudo -u postgres createdb claude_context
+sudo -u postgres psql -c "CREATE USER dcm WITH PASSWORD 'your_password';"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE claude_context TO dcm;"
+```
+
+### Port already in use
+
+Another process is using port 3847, 3849, or 3848:
+
+```bash
+# Find what's using the port
+lsof -i :3847
+lsof -i :3849
+lsof -i :3848
+
+# Kill the process
+kill $(lsof -ti :3847)
+
+# Or change ports in .env
+PORT=3857
+WS_PORT=3859
+DASHBOARD_PORT=3858
+```
+
+### Hooks not firing / not installed
+
+Verify hooks are present in Claude Code settings:
+
+```bash
+cat ~/.claude/settings.json | jq '.hooks'
+```
+
+If missing, reinstall:
+
+```bash
+cd context-manager
+./dcm hooks
+```
+
+### Dashboard shows "Failed to fetch" or CORS errors
+
+The API server is either not running or the dashboard URL is not in the allowed origins:
+
+```bash
+# Check API is running
+curl http://127.0.0.1:3847/health
+
+# If using a non-default host/port, add it to .env
+ALLOWED_ORIGINS=http://localhost:3848,http://your-host:3848
+```
+
+### WebSocket connection refused
+
+The WebSocket server runs separately from the API:
+
+```bash
+# Check WS server is running
+lsof -i :3849
+
+# Start it if missing
+cd context-manager
+bun run src/websocket-server.ts
+```
+
+### "WS_AUTH_SECRET is not set" warning
+
+In development this is a warning. In production (`NODE_ENV=production`) it is a fatal error. Generate a secret:
+
+```bash
+echo "WS_AUTH_SECRET=$(openssl rand -hex 32)" >> .env
+```
+
+### Schema migration errors
+
+If the schema is outdated, re-run setup:
+
+```bash
+cd context-manager
+bash scripts/setup-db.sh
+```
+
+For a clean reset (destroys all data):
+
+```bash
+./dcm db:reset
+```
+
+### Supervisor services failing
+
+Check logs via journalctl:
+
+```bash
+journalctl --user -u dcm-api --no-pager --lines 50
+journalctl --user -u dcm-ws --no-pager --lines 50
+journalctl --user -u dcm-dashboard --no-pager --lines 50
+```
+
+Reload after config changes:
+
+```bash
+./dcm supervisor reload
+```
 
 ---
 
-## Performance
+## Contributing
 
-### Version Management (v3.1.0)
+### Development Setup
 
-`package.json` is the single source of truth for versioning. The API server reads it dynamically (`import pkg from "../package.json"`), the dashboard sidebar fetches it from `/health`, and `plugin.json` + `openapi.yaml` are kept in sync. No more hardcoded version strings.
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Install dependencies:
+   ```bash
+   cd context-manager && bun install
+   cd ../context-dashboard && npm install
+   ```
+4. Set up the database: `cd ../context-manager && ./dcm db:setup`
+5. Start services: `./dcm start`
+6. Make changes and add tests
+7. Run the test suite: `bun test`
+8. Commit with conventional format: `git commit -m "feat: add my feature"`
+9. Push and open a Pull Request
 
-### Session Reactivation (v3.1.0)
+### Git Workflow
 
-Sessions are considered "active" if `ended_at IS NULL` **or** `ended_at` is within the last 30 minutes. When DCM restarts and a session resumes, `track-session.sh` reactivates it by setting `ended_at = NULL`. This fixes the Flows/Live pages showing 0 active sessions after a DCM restart.
+- **main**: production branch, protected
+- **feature/xxx**: new features
+- **fix/xxx**: bug fixes
 
-## Performance
+### Conventional Commits
 
-DCM is designed for zero-impact integration. Hooks must never slow down Claude Code.
+All commit messages follow the format:
 
-| Operation | Latency | Notes |
-|-----------|---------|-------|
-| Safety gate check | <5ms | Pattern matching only, no HTTP call unless blocked |
-| Context guardian (Layer 1) | <10ms | Local file stat, no HTTP call |
-| Hook tracking (fire-and-forget) | 2-5ms | Background curl, non-blocking |
-| API response (database query) | 5-50ms | Indexed PostgreSQL queries |
-| Compact save | 500ms-2s | Comprehensive snapshot, runs in hook timeout |
-| Compact restore | 200ms-1s | Context brief generation with templates |
-| WebSocket event delivery | 1-5ms | Bun native WS + LISTEN/NOTIFY bridge |
-| Dashboard first paint | 500ms-1s | Next.js with TanStack Query caching |
+```
+type(scope): description
 
----
+Types: feat, fix, refactor, docs, test, chore, perf, excellence
+Scope: api, ws, dashboard, hooks, db, cli, schema
+```
 
-## Security
+Examples:
 
-- **Safety gate**: PreToolUse hook blocks destructive operations (rm -rf, DROP DATABASE, .env access, fork bombs)
-- **Input validation**: Zod schemas on all API endpoints
-- **Rate limiting**: Auth endpoint limited to 10 requests per 15 minutes
-- **HMAC authentication**: WebSocket connections require signed tokens in production
-- **Parameterized queries**: All SQL uses parameterized queries (no injection risk)
-- **CORS protection**: Configurable allowed origins
-- **Circuit breaker**: Hooks gracefully degrade if the API is unreachable
-- **No secrets in logs**: Configuration via environment variables only
-- **Centralized audit trail**: All blocked operations logged in PostgreSQL for review
+```
+feat(api): add preemptive summary endpoint
+fix(hooks): handle missing session_id in track-action
+refactor(dashboard): extract agent card component
+docs(readme): update architecture diagram
+```
+
+### Extension Points
+
+| What | Where |
+|------|-------|
+| Add agent types | `src/data/catalog.ts` |
+| Create prompt templates | `src/templates/` |
+| Add custom hooks | `hooks/` |
+| Customize safety gate rules | `hooks/safety-gate.sh` |
+| Create monitored agents | `agents/monitored-agent-template.md` |
+| Extend the schema | `src/db/migrations/` |
+| Add dashboard pages | `../context-dashboard/src/app/` |
+
+See the full [Contributing Guide](docs/wiki/15-contributing.md) for code style and PR process.
 
 ---
 
@@ -693,64 +953,9 @@ DCM is designed for zero-impact integration. Hooks must never slow down Claude C
 | Resource | Description |
 |----------|-------------|
 | [Wiki](docs/wiki/) | 16-page technical documentation covering every subsystem |
-| [API Docs (Swagger UI)](docs/api/swagger.html) | Interactive API reference with try-it-out |
-| [OpenAPI Spec](docs/api/openapi.yaml) | Machine-readable API specification (3000+ lines) |
-| [Codebase Analysis](docs/_codebase-analysis.md) | Complete technical analysis of all endpoints, schema, hooks |
-
-### Wiki Pages
-
-| Page | Topic |
-|------|-------|
-| [00 - Overview](docs/wiki/00-overview.md) | Project overview and key concepts |
-| [01 - Getting Started](docs/wiki/01-getting-started.md) | Installation and first steps |
-| [02 - Architecture](docs/wiki/02-architecture.md) | System design and data flow |
-| [03 - API Reference](docs/wiki/03-api-reference.md) | Complete endpoint documentation |
-| [04 - Hooks System](docs/wiki/04-hooks-system.md) | Hook scripts deep dive |
-| [05 - Context Guardian](docs/wiki/05-context-guardian.md) | 4-layer protection system |
-| [06 - Compact Lifecycle](docs/wiki/06-compact-lifecycle.md) | Save/restore mechanics |
-| [07 - Inter-Agent Comm](docs/wiki/07-inter-agent-comm.md) | Pub/sub messaging |
-| [08 - Orchestration](docs/wiki/08-orchestration.md) | Waves and batch execution |
-| [09 - WebSocket](docs/wiki/09-websocket.md) | Real-time event system |
-| [10 - Dashboard](docs/wiki/10-dashboard.md) | Monitoring UI guide |
-| [11 - Database Schema](docs/wiki/11-database-schema.md) | Tables, views, indexes |
-| [12 - CLI Reference](docs/wiki/12-cli-reference.md) | All CLI commands |
-| [13 - Configuration](docs/wiki/13-configuration.md) | Environment variables and tuning |
-| [14 - Troubleshooting](docs/wiki/14-troubleshooting.md) | Common issues and solutions |
-| [15 - Contributing](docs/wiki/15-contributing.md) | Development setup and guidelines |
-
----
-
-## Tests
-
-```bash
-cd context-manager
-bun test
-```
-
-Test suites cover API endpoints, message handling, cleanup logic, orchestration planning, and WebSocket functionality.
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Install dependencies (`cd context-manager && bun install`)
-4. Set up the database (`./dcm db:setup`)
-5. Make changes and add tests
-6. Run the test suite (`bun test`)
-7. Commit with conventional format (`git commit -m "feat: add my feature"`)
-8. Push and open a Pull Request
-
-Key extension points:
-- Add agent types in `src/data/catalog.ts`
-- Create prompt templates in `src/templates/`
-- Add custom hooks in `hooks/`
-- Customize safety gate rules in `hooks/safety-gate.sh`
-- Create monitored agents from `agents/monitored-agent-template.md`
-- Extend the schema via migrations in `src/db/migrations/`
-
-See the full [Contributing Guide](docs/wiki/15-contributing.md) for development setup, code style, and PR process.
+| [API Docs (Swagger UI)](docs/api/swagger.html) | Interactive API reference |
+| [OpenAPI Spec](docs/api/openapi.yaml) | Machine-readable API specification |
+| [Codebase Analysis](docs/_codebase-analysis.md) | Complete technical analysis |
 
 ---
 
