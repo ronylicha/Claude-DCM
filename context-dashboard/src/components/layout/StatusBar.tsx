@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { useGlobalCapacity, type SessionCapacity, type ThresholdAlert } from '@/hooks/useGlobalCapacity';
+import { formatTokens, formatModel } from '@/lib/format';
 
 // ============================================
 // Types
@@ -34,14 +35,6 @@ function normalizeZone(zone: string): ZoneKey {
   return valid.includes(zone as ZoneKey) ? (zone as ZoneKey) : 'green';
 }
 
-function formatModel(modelId: string): string {
-  const lower = modelId.toLowerCase();
-  if (lower.includes('opus')) return 'Opus';
-  if (lower.includes('sonnet')) return 'Sonnet';
-  if (lower.includes('haiku')) return 'Haiku';
-  return modelId;
-}
-
 function mapSessionToPastille(s: SessionCapacity, index: number): SessionPastille {
   return {
     letter: sessionLetter(index),
@@ -51,13 +44,6 @@ function mapSessionToPastille(s: SessionCapacity, index: number): SessionPastill
     model: formatModel(s.model_id),
     label: s.project_name || s.session_id.slice(0, 8),
   };
-}
-
-/** Format token count: 1200000 → "1.2M", 340000 → "340K", 1500 → "1.5K" */
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
-  return String(n);
 }
 
 /** Format rate in tokens/min → "12K/min" */

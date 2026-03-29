@@ -8,6 +8,7 @@ import { apiClient } from '@/lib/api-client';
 import type { CockpitDetail } from '@/lib/api-client';
 import { WaveTimeline } from './WaveTimeline';
 import { SessionEvents } from './SessionEvents';
+import { formatTokens, formatModel } from '@/lib/format';
 
 // ============================================
 // Types
@@ -26,24 +27,6 @@ interface CockpitZoomProps {
   onBack: () => void;
 }
 
-// ============================================
-// Helpers
-// ============================================
-
-function formatModel(modelId: string | null | undefined): string {
-  if (!modelId || modelId === 'unknown') return 'Unknown';
-  const lower = modelId.toLowerCase();
-  if (lower.includes('opus')) return 'Opus';
-  if (lower.includes('sonnet')) return 'Sonnet';
-  if (lower.includes('haiku')) return 'Haiku';
-  return modelId;
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
-  return String(n);
-}
 
 // ============================================
 // LargeGauge — 120px SVG donut

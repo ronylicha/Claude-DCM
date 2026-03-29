@@ -4,21 +4,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { useRealtimeEvents, useRealtimeMetrics } from '@/hooks/useWebSocket';
 import apiClient from '@/lib/api-client';
+import { relativeTime, getEventCategory, hashStr, type EventCategory } from '@/lib/format';
 import { Activity, Users, Zap, MessageSquare, Radio, ChevronDown, ChevronUp } from 'lucide-react';
 
 // ============================================
-// Types & Config
+// Config
 // ============================================
-
-type EventCategory = 'task' | 'subtask' | 'message' | 'agent' | 'system';
-
-function getEventCategory(eventType: string): EventCategory {
-  if (eventType.startsWith('task.')) return 'task';
-  if (eventType.startsWith('subtask.')) return 'subtask';
-  if (eventType.startsWith('message.')) return 'message';
-  if (eventType.startsWith('agent.')) return 'agent';
-  return 'system';
-}
 
 const CAT_COLORS: Record<EventCategory, { text: string; border: string }> = {
   task:    { text: 'text-[var(--md-sys-color-tertiary)]', border: 'border-[var(--md-sys-color-outline-variant)]' },
@@ -39,14 +30,6 @@ function CatIcon({ category }: { category: EventCategory }) {
   }
 }
 
-function relativeTime(timestamp: number): string {
-  const diff = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-  if (diff < 1) return 'now';
-  if (diff < 60) return `${diff}s`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-  return `${Math.floor(diff / 3600)}h`;
-}
-
 // ============================================
 // Agent topology
 // ============================================
@@ -63,12 +46,6 @@ const AGENT_COLORS = [
   'bg-[color-mix(in_srgb,var(--dcm-zone-green)_15%,transparent)] text-[var(--dcm-zone-green)] border-[color-mix(in_srgb,var(--dcm-zone-green)_30%,transparent)]',
   'bg-[color-mix(in_srgb,var(--dcm-zone-orange)_15%,transparent)] text-[var(--dcm-zone-orange)] border-[color-mix(in_srgb,var(--dcm-zone-orange)_30%,transparent)]',
 ];
-
-function hashStr(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; }
-  return Math.abs(h);
-}
 
 // ============================================
 // CockpitLivePanel

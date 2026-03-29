@@ -10,21 +10,12 @@ import { CockpitDrawer } from '@/components/cockpit/CockpitDrawer';
 import { useSessionGrid } from '@/hooks/useSessionGrid';
 import { useGlobalCapacity } from '@/hooks/useGlobalCapacity';
 import { useOrchestratorTopology } from '@/hooks/useOrchestratorTopology';
+import { formatTokens } from '@/lib/format';
 
 const OrchestratorTopology3D = dynamic(
   () => import('@/components/cockpit/OrchestratorTopology3D').then(m => ({ default: m.OrchestratorTopology3D })),
   { ssr: false, loading: () => <div className="h-[300px] animate-pulse rounded-md-md bg-[var(--md-sys-color-surface-container)]" /> }
 );
-
-// ============================================
-// Helpers
-// ============================================
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
-  return String(n);
-}
 
 // ============================================
 // Skeleton

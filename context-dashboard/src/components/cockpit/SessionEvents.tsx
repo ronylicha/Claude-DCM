@@ -7,21 +7,12 @@ import {
   useWaveEvents,
   type WSEvent,
 } from '@/hooks/useWebSocket';
+import { relativeTime, getEventCategory, type EventCategory } from '@/lib/format';
 import { Activity, Users, Zap, MessageSquare, Radio } from 'lucide-react';
 
 // ============================================
-// Types & Config
+// Config
 // ============================================
-
-type EventCategory = 'task' | 'subtask' | 'message' | 'agent' | 'system';
-
-function getEventCategory(eventType: string): EventCategory {
-  if (eventType.startsWith('task.')) return 'task';
-  if (eventType.startsWith('subtask.')) return 'subtask';
-  if (eventType.startsWith('message.')) return 'message';
-  if (eventType.startsWith('agent.')) return 'agent';
-  return 'system';
-}
 
 const CAT_COLORS: Record<EventCategory, { text: string; border: string }> = {
   task:    { text: 'text-[var(--md-sys-color-tertiary)]', border: 'border-[var(--md-sys-color-outline-variant)]' },
@@ -40,14 +31,6 @@ function CatIcon({ category }: { category: EventCategory }) {
     case 'agent':   return <Users className={cls} />;
     default:        return <Radio className={cls} />;
   }
-}
-
-function relativeTime(timestamp: number): string {
-  const diff = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-  if (diff < 1) return 'now';
-  if (diff < 60) return `${diff}s`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-  return `${Math.floor(diff / 3600)}h`;
 }
 
 // ============================================
