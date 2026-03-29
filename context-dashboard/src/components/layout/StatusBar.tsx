@@ -278,27 +278,13 @@ export function StatusBar() {
         ) : (
           <>
             <span className="text-[11px] font-semibold text-[var(--md-sys-color-on-surface)]">
-              {data?.agents.total ?? 0}
+              {data?.agents.running ?? 0}
             </span>
             <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)]">
               agents
             </span>
             <div className="flex items-center gap-1 ml-0.5">
-              {/* running dot */}
-              {(data?.agents.running ?? 0) > 0 && (
-                <span
-                  className="flex items-center gap-0.5"
-                  title={`${data!.agents.running} running`}
-                >
-                  <span
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ backgroundColor: 'var(--dcm-zone-green)' }}
-                  />
-                  <span className="text-[10px] text-[var(--md-sys-color-on-surface-variant)]">
-                    {data!.agents.running}
-                  </span>
-                </span>
-              )}
+              {/* blocked dot */}
               {/* blocked dot */}
               {(data?.agents.blocked ?? 0) > 0 && (
                 <span

@@ -9,13 +9,14 @@ import type { TopologyData } from '@/hooks/useOrchestratorTopology';
 
 interface Props {
   data: TopologyData | null;
+  sessionCount?: number;
 }
 
 // ============================================
 // OrchestratorStatusBar
 // ============================================
 
-export function OrchestratorStatusBar({ data }: Props) {
+export function OrchestratorStatusBar({ data, sessionCount }: Props) {
   if (!data) return null;
 
   const { orchestrator } = data;
@@ -49,7 +50,7 @@ export function OrchestratorStatusBar({ data }: Props) {
       <div className="flex items-center gap-1.5">
         <Activity className="w-3.5 h-3.5 text-[var(--md-sys-color-primary)]" aria-hidden="true" />
         <span className="text-[12px] text-[var(--md-sys-color-on-surface-variant)]">
-          {data.nodes.length} session{data.nodes.length !== 1 ? 's' : ''}
+          {sessionCount ?? data.nodes.length} session{(sessionCount ?? data.nodes.length) !== 1 ? 's' : ''}
         </span>
       </div>
 

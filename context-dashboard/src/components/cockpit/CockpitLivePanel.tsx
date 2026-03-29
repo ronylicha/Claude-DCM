@@ -74,7 +74,7 @@ function hashStr(s: string): number {
 // CockpitLivePanel
 // ============================================
 
-export function CockpitLivePanel() {
+export function CockpitLivePanel({ runningAgentCount }: { runningAgentCount?: number }) {
   const [expanded, setExpanded] = useState(false);
   const [agents, setAgents] = useState<Map<string, AgentInfo>>(new Map());
   const [, setTick] = useState(0);
@@ -159,8 +159,8 @@ export function CockpitLivePanel() {
         {!expanded && events.length > 0 && (
           <span className="text-[12px] text-[var(--md-sys-color-outline)]">{events.length} events</span>
         )}
-        {!expanded && agentList.length > 0 && (
-          <span className="text-[12px] text-[var(--md-sys-color-outline)]">{agentList.length} agents</span>
+        {!expanded && (runningAgentCount ?? agentList.length) > 0 && (
+          <span className="text-[12px] text-[var(--md-sys-color-outline)]">{runningAgentCount ?? agentList.length} agents</span>
         )}
         <div className="flex-1" />
         {expanded ? <ChevronUp className="h-4 w-4 text-[var(--md-sys-color-outline)]" /> : <ChevronDown className="h-4 w-4 text-[var(--md-sys-color-outline)]" />}

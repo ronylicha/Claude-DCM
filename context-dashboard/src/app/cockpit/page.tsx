@@ -94,7 +94,7 @@ export default function CockpitPage() {
       {/* Orchestrator topology */}
       {topologyData !== null && (
         <div className="space-y-3">
-          <OrchestratorStatusBar data={topologyData} />
+          <OrchestratorStatusBar data={topologyData} sessionCount={globalData?.sessions.total_active} />
           {show3D ? (
             <OrchestratorTopology3D data={topologyData} />
           ) : (
@@ -124,7 +124,7 @@ export default function CockpitPage() {
       )}
 
       {/* Live activity panel */}
-      <CockpitLivePanel />
+      <CockpitLivePanel runningAgentCount={globalData?.agents.running} />
     </div>
   );
 }
