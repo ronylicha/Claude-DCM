@@ -31,10 +31,7 @@ const navigationGroups: NavGroup[] = [
   {
     label: "Overview",
     items: [
-      { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { name: "Live Activity", href: "/live", icon: Radio },
-      { name: "Waves", href: "/waves", icon: Layers },
-      { name: "Flows", href: "/flows", icon: Network },
+      { name: "Cockpit", href: "/cockpit", icon: LayoutDashboard },
     ],
   },
   {

@@ -6,6 +6,7 @@ import { CockpitGrid } from '@/components/cockpit/CockpitGrid';
 import { CockpitZoom } from '@/components/cockpit/CockpitZoom';
 import { OrchestratorStatusBar } from '@/components/cockpit/OrchestratorStatusBar';
 import { CockpitLivePanel } from '@/components/cockpit/CockpitLivePanel';
+import { CockpitDrawer } from '@/components/cockpit/CockpitDrawer';
 import { useSessionGrid } from '@/hooks/useSessionGrid';
 import { useGlobalCapacity } from '@/hooks/useGlobalCapacity';
 import { useOrchestratorTopology } from '@/hooks/useOrchestratorTopology';
@@ -52,6 +53,7 @@ function CockpitSkeleton() {
 export default function CockpitPage() {
   const [zoomedSession, setZoomedSession] = useState<string | null>(null);
   const [show3D, setShow3D] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const { sessions, loading } = useSessionGrid();
   const { data: globalData } = useGlobalCapacity();
   const { data: topologyData } = useOrchestratorTopology();
@@ -88,6 +90,17 @@ export default function CockpitPage() {
               {globalData.summaries.generating} resume(s) en cours
             </span>
           )}
+          <div className="flex-1" />
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md-sm text-[12px] font-medium text-[var(--md-sys-color-primary)] hover:bg-[var(--md-sys-color-primary-container)] transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none" />
+              <line x1="10" y1="2" x2="10" y2="14" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+            Metriques
+          </button>
         </div>
       )}
 
@@ -125,6 +138,9 @@ export default function CockpitPage() {
 
       {/* Live activity panel */}
       <CockpitLivePanel runningAgentCount={globalData?.agents.running} />
+
+      {/* Metrics drawer */}
+      <CockpitDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </div>
   );
 }
