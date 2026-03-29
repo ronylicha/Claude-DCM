@@ -35,17 +35,19 @@ export async function getCockpitGlobal(c: Context) {
       `,
       // Per-session capacity (include sessions without statusline data)
       db`
-        SELECT DISTINCT ON (s.id)
+        SELECT
           s.id as session_id,
           p.name as project_name,
-          COALESCE(NULLIF(ac.model_id, ''), NULLIF(ac.model_id, 'unknown'), 'unknown') as model_id,
-          COALESCE(ROUND((ac.current_usage::numeric / NULLIF(ac.max_capacity, 0) * 100), 1), 0) as used_percentage,
-          COALESCE(ac.zone, 'green') as zone,
-          ac.predicted_exhaustion_minutes,
-          COALESCE(ac.consumption_rate, 0) as consumption_rate,
-          COALESCE(ac.current_usage, 0) as current_usage,
-          COALESCE(ac.max_capacity, 200000) as max_capacity,
-          COALESCE(ac.source, 'estimated') as source,
+          p.path as project_path,
+          s.started_at,
+          COALESCE(NULLIF(best_ac.model_id, ''), 'unknown') as model_id,
+          COALESCE(ROUND((best_ac.current_usage::numeric / NULLIF(best_ac.max_capacity, 0) * 100), 1), 0) as used_percentage,
+          COALESCE(best_ac.zone, 'green') as zone,
+          best_ac.predicted_exhaustion_minutes,
+          COALESCE(best_ac.consumption_rate, 0) as consumption_rate,
+          COALESCE(best_ac.current_usage, 0) as current_usage,
+          COALESCE(best_ac.max_capacity, 200000) as max_capacity,
+          COALESCE(best_ac.source, 'estimated') as source,
           (SELECT COUNT(*) FROM subtasks st
            JOIN task_lists tl ON st.task_list_id = tl.id
            JOIN requests r ON tl.request_id = r.id
@@ -53,18 +55,19 @@ export async function getCockpitGlobal(c: Context) {
           (SELECT MAX(ws.wave_number) FROM wave_states ws
            WHERE ws.session_id = s.id AND ws.status = 'running') as current_wave
         FROM sessions s
-        LEFT JOIN LATERAL (
-          SELECT * FROM agent_capacity
-          WHERE session_id = s.id
-          ORDER BY
+        LEFT JOIN projects p ON s.project_id = p.id
+        LEFT JOIN (
+          SELECT DISTINCT ON (session_id)
+            session_id, model_id, current_usage, max_capacity, zone,
+            predicted_exhaustion_minutes, consumption_rate, source
+          FROM agent_capacity
+          ORDER BY session_id,
             CASE WHEN source = 'statusline' THEN 0 ELSE 1 END,
             last_updated_at DESC NULLS LAST
-          LIMIT 1
-        ) ac ON true
-        LEFT JOIN projects p ON s.project_id = p.id
+        ) best_ac ON best_ac.session_id = s.id
         WHERE s.ended_at IS NULL
           OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '15 minutes')
-        ORDER BY s.id, s.started_at DESC
+        ORDER BY s.started_at DESC
       `,
       // Summaries status
       db`
