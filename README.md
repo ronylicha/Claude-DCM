@@ -9,7 +9,7 @@
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-f9f1e1.svg" alt="Bun"/></a>
   <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/database-PostgreSQL%2014+-336791.svg" alt="PostgreSQL 14+"/></a>
   <a href="https://hono.dev"><img src="https://img.shields.io/badge/framework-Hono-ff6633.svg" alt="Hono"/></a>
-  <img src="https://img.shields.io/badge/version-1.1.0-green.svg" alt="v1.1.0"/>
+  <img src="https://img.shields.io/badge/version-1.2.0-green.svg" alt="v1.1.0"/>
 </p>
 
 <p align="center">

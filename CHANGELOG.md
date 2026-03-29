@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-03-29
+
+### Added
+
+- **Dynamic skill/agent/command registry** — the catalog now scans `~/.claude/skills/`, `~/.claude/agents/`, and `~/.claude/commands/` at runtime instead of reading from a hardcoded list. Discovers 1200+ skills, 100+ agents, and 20+ commands from whatever the user has installed. Results are cached for 60 seconds. (`8220016`, `6fb9cf1`)
+- **10 AI-generated illustrations** in documentation, one per doc page plus architecture, cockpit, orchestration, and hero banner images. (`d32e5b2`)
+
+### Changed
+
+- **Skill classification rewritten** — old regex matched too broadly (98 skills in "design" including billing, monorepo, tmux). New ID-prefix rules put skills where they belong. Added 7 new categories: business, gamedev, communication, integrations, languages, blockchain, automation. Design dropped from 98 to 15 entries. (`93d252b`)
+- **Documentation cleaned up** — removed 48 outdated files (wiki, old API docs, design plans, orphan images). Kept 6 Diataxis docs. Net: -23,720 lines. (`293e520`)
+- **README updated** — 11 pages (not 12), registry description made generic, hero banner and illustrations added, documentation table with links to all 6 docs. (`df05f8c`, `d32e5b2`)
+
+### Fixed
+
+- **Registry showed 81 skills instead of 1200+** — replaced the 1787-line static `catalog.ts` with a 252-line filesystem scanner. (`8220016`)
+- **Agents not detected (0)** — added `scanAgents()` to read `~/.claude/agents/*.md`. (`6fb9cf1`)
+- **Commands only 3 instead of 21** — `scanCommands()` now recurses into subdirectories. (`6fb9cf1`)
+
+### Removed
+
+- **Static catalog data file** — 1787 lines of hardcoded agent/skill/command entries replaced by dynamic scan. (`8220016`)
+- **48 outdated doc files** — wiki (16 files), old API docs, design plans, orphan images/SVGs. (`293e520`)
+
+### Dependencies
+
+- hono 4.11.10 → 4.12.7, next 16.1.6 → 16.1.7 (Dependabot PR #13)
+
+---
+
 ## [1.1.0] - 2026-03-29
 
 ### Added
@@ -110,5 +140,6 @@ _First production release. The entire DCM (Developer Cockpit Manager) system, bu
 - NULL array bug in `read_by` column causing silent message filtering
 - DB migrations 003-004 and merge conflict resolution
 
+[1.2.0]: https://github.com/ronylicha/Claude-DCM/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ronylicha/Claude-DCM/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ronylicha/Claude-DCM/releases/tag/v1.0.0
