@@ -101,7 +101,7 @@ Complex work is decomposed into **waves** -- sequential execution phases where s
 
 ### Real-Time Dashboard
 
-The monitoring dashboard at `http://localhost:3848` provides 14 pages of live visibility:
+The monitoring dashboard at `http://localhost:3848` provides 12 pages of live visibility:
 
 | Page | What It Shows |
 |------|---------------|
@@ -354,7 +354,7 @@ cd context-manager
 |   WebSocket Server       |     |   Next.js Dashboard                         |
 |   Port 3849              |     |   Port 3848                                 |
 |                          |     |                                             |
-|   Real-time events       |     |   14 pages: Dashboard, Agents, Sessions,    |
+|   Real-time events       |     |   12 pages: Dashboard, Agents, Sessions,    |
 |   HMAC auth              |---->|   Cockpit, Compact, Performance, Tools,     |
 |   Channel subscriptions  |     |   Context, Projects, Messages, Routing,     |
 |                          |     |   Registry                                  |
@@ -367,7 +367,7 @@ cd context-manager
 |---------|-------|------|------|
 | **DCM API** | Bun + Hono + Zod | 3847 | REST API, compact save/restore, routing, orchestration, safety tracking |
 | **WebSocket** | Bun native WS + LISTEN/NOTIFY | 3849 | Real-time event streaming, HMAC auth, channel subscriptions |
-| **Dashboard** | Next.js 16 + React 19 + Recharts + Three.js | 3848 | 14-page monitoring UI with live activity feed |
+| **Dashboard** | Next.js 16 + React 19 + Recharts + Three.js | 3848 | 12-page monitoring UI with live activity feed |
 | **PostgreSQL** | PostgreSQL 14+ | 5432 | 19 tables, 4 views, JSONB metadata, GIN indexes |
 
 ### Data Flow
