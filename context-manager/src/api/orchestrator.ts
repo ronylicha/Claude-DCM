@@ -21,7 +21,14 @@ export async function getOrchestratorTopology(c: Context) {
           (SELECT MAX(a.created_at) FROM actions a WHERE a.session_id = s.id) as last_action_at
         FROM sessions s
         LEFT JOIN projects p ON s.project_id = p.id
-        LEFT JOIN agent_capacity ac ON ac.session_id = s.id
+        LEFT JOIN (
+          SELECT DISTINCT ON (session_id)
+            session_id, model_id, current_usage, max_capacity, zone, consumption_rate
+          FROM agent_capacity
+          ORDER BY session_id,
+            CASE WHEN source = 'statusline' THEN 0 ELSE 1 END,
+            last_updated_at DESC NULLS LAST
+        ) ac ON ac.session_id = s.id
         WHERE s.ended_at IS NULL
           OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '15 minutes')
         ORDER BY s.started_at DESC

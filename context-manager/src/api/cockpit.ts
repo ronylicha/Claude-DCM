@@ -18,7 +18,13 @@ export async function getCockpitGlobal(c: Context) {
           COUNT(*) FILTER (WHERE ac.model_id LIKE '%sonnet%') as sonnet_count,
           COUNT(*) FILTER (WHERE ac.model_id LIKE '%haiku%') as haiku_count
         FROM sessions s
-        LEFT JOIN agent_capacity ac ON ac.session_id = s.id
+        LEFT JOIN (
+          SELECT DISTINCT ON (session_id) session_id, model_id
+          FROM agent_capacity
+          ORDER BY session_id,
+            CASE WHEN source = 'statusline' THEN 0 ELSE 1 END,
+            last_updated_at DESC NULLS LAST
+        ) ac ON ac.session_id = s.id
         WHERE s.ended_at IS NULL
           OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '15 minutes')
       `,
