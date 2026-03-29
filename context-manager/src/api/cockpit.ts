@@ -153,13 +153,31 @@ export async function getCockpitGrid(c: Context) {
         ac.source
       FROM sessions s
       LEFT JOIN projects p ON s.project_id = p.id
-      LEFT JOIN agent_capacity ac ON ac.session_id = s.id
+      LEFT JOIN (
+        SELECT DISTINCT ON (session_id)
+          session_id, model_id, current_usage, max_capacity, zone,
+          consumption_rate, predicted_exhaustion_minutes, source
+        FROM agent_capacity
+        ORDER BY session_id,
+          CASE WHEN source = 'statusline' THEN 0 ELSE 1 END,
+          last_updated_at DESC NULLS LAST
+      ) ac ON ac.session_id = s.id
       WHERE s.ended_at IS NULL
           OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '15 minutes')
       ORDER BY s.started_at DESC
     `;
 
-    const result = await Promise.all(sessions.map(async (sess) => {
+    // Deduplicate by session_id — keep statusline over estimated
+    const sessMap = new Map<string, typeof sessions[0]>();
+    for (const sess of sessions) {
+      const existing = sessMap.get(sess.session_id);
+      if (!existing || (sess.source === 'statusline' && existing.source !== 'statusline')) {
+        sessMap.set(sess.session_id, sess);
+      }
+    }
+    const uniqueSessions = Array.from(sessMap.values());
+
+    const result = await Promise.all(uniqueSessions.map(async (sess) => {
       const [wave, agentStats, lastAction, sparkline, summary] = await Promise.all([
         // Current wave
         db`
