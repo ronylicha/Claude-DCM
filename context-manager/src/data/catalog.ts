@@ -86,23 +86,82 @@ function extractDescriptionFromMd(content: string): string {
 }
 
 function categorizeSkill(id: string, desc: string): string {
-  const text = `${id} ${desc}`.toLowerCase();
-  if (/laravel|php|wordpress/.test(text)) return "php";
-  if (/react|next|vue|svelte|angular|frontend/.test(text)) return "frontend";
-  if (/python|django|flask|fastapi/.test(text)) return "python";
-  if (/typescript|nestjs|node|bun|express/.test(text)) return "typescript";
-  if (/flutter|react.native|ios|android|mobile|expo/.test(text)) return "mobile";
-  if (/docker|kubernetes|devops|ci.cd|deploy|infra/.test(text)) return "devops";
-  if (/security|audit|owasp|pentest|vulnerability/.test(text)) return "security";
-  if (/database|sql|postgres|mongo|redis/.test(text)) return "database";
-  if (/seo|marketing|content|email|social/.test(text)) return "marketing";
-  if (/ai|ml|llm|agent|rag|embedding|training/.test(text)) return "ai";
-  if (/test|qa|tdd|e2e|jest|playwright/.test(text)) return "testing";
-  if (/doc|readme|changelog|writing/.test(text)) return "documentation";
-  if (/design|ui|ux|figma|css|tailwind/.test(text)) return "design";
-  if (/git|pr|commit|review|code.review/.test(text)) return "workflow";
-  if (/bio|chem|med|health|clinical|pharma/.test(text)) return "science";
-  if (/automat|zapier|n8n|webhook/.test(text)) return "automation";
+  const lo = id.toLowerCase();
+  const text = `${lo} ${desc}`.toLowerCase();
+
+  // --- Specific ID-based matches first (high confidence) ---
+
+  // Science & biotech (match ID patterns, not desc — avoids false positives)
+  if (/^(bio|chem|med|health|clinical|pharma|pdb|uniprot|ensembl|pubmed|rdkit|scanpy|anndata|esm|alphafold|gwas|flowio|histolab|pydicom|neurokit|neuropixels|omero|scvi|cellxgene|deepchem|datamol|brenda|opentargets|clinvar|cosmic|hmdb|drugbank|metabolomics|biorxiv|gget|pysam|pydeseq|arboreto|diffdock|clinpgx|ena-database|gene-database|string-database|zinc-database|pathml|pyopenms|dentaire|integrative-medicine|wellness|claude-ally-health|nutritional|treatment-plan|scientific-brainstorming|scientific-writing|scientific-visualization|scientific-schematics|scientific-critical|pufferlib|adaptyv|benchling|latchbio|protocolsio|opentrons|labarchive|fluidsim|cobrapy|etetoolkit|scikit-bio|bioservices|pytdc|pymatgen|astropy|qiskit|cirq|qutip|pennylane|simpy)/.test(lo)) return "science";
+
+  // Automation platforms (by ID)
+  if (/-(automation|automate)$|^automate-|^zapier|^n8n-|^make-automation/.test(lo)) return "automation";
+
+  // Marketing & SEO (by ID)
+  if (/^seo-|^marketing-|^content-market|^email-(marketing|campaign|drafter|sequence)|^social-(media|content)|^cold-email|^copywriting|^ad-creative|^brand-(identity|analyzer|guidelines)|^competitive-(ads|landscape)|^lead-(magnet|research)|^product-strategist|^sales-(automat|enablement)|^executing-marketing|^programmatic-seo|^geo-fundamentals/.test(lo)) return "marketing";
+
+  // Mobile
+  if (/^flutter-|^react-native|^expo-|^mobile-|^ios-developer|^swiftui|^vercel-react-native/.test(lo)) return "mobile";
+
+  // PHP / Laravel / WordPress
+  if (/^laravel|^php-|^wordpress|^backend-laravel/.test(lo)) return "php";
+
+  // Python
+  if (/^python-|^django|^fastapi|^flask|polars|^dask$|^vaex$|^statsmodels$|^sympy$|^matplotlib$|^seaborn$|^plotly$|^scikit-learn$|^pymoo$|^geopandas$|^instructor$|^outlines$|^pydantic|^pymc|^hypothesis-generation/.test(lo)) return "python";
+
+  // TypeScript / Node / NestJS
+  if (/^typescript-|^nestjs|^nodejs|^bun-|^zustand|^prisma|^drizzle|^bullmq|^inngest|^trigger-dev|^upstash/.test(lo)) return "typescript";
+
+  // Frontend / React / Next / Vue / Angular
+  if (/^react-(?!native)|^next(?:js)?-|^vue-|^svelte-|^angular|^frontend-|^tailwind-|^shadcn|^radix-ui|^core-web-vitals|^responsive-design|^web-component|^senior-frontend|^scroll-experience/.test(lo)) return "frontend";
+
+  // UI/UX Design (strict — only actual design skills)
+  if (/^ui-|^ux-|^design-system|^figma|^interaction-design|^visual-design|^design-to-code|^cli-ui-designer|^ui-ux-pro|^material-design|^designer-ui|^design-orchestration|^frontend-design$/.test(lo)) return "design";
+
+  // Database
+  if (/^database-|^sql-|^postgres|^mysql|^mongo|^redis|^clickhouse|^neon-|^supabase|^data-engineer$|^senior-data-engineer|^nosql|^event-store|^dbt-/.test(lo)) return "database";
+
+  // DevOps / Infra / Cloud / Deploy
+  if (/^docker-|^kubernetes|^devops|^deploy|^ci-|^cicd|^terraform|^cloud-|^railway-|^vercel-deploy|^netlify|^cloudflare|^render-deploy|^gitops|^helm|^istio|^linkerd|^service-mesh|^hybrid-cloud|^k8s-|^prometheus|^grafana|^observability|^monitoring|^incident-|^on-call|^slo-|^cost-optim|^server-management|^senior-devops|^lambda-|^gcp-|^aws-|^azure-(?!devops)/.test(lo)) return "devops";
+
+  // Security
+  if (/^security-|^vulnerability|^owasp|^pentest|^penetration|^exploit|^malware|^red-team|^ethical-hacking|^metasploit|^burp-suite|^shodan|^wireshark|^ffuf|^sqlmap|^privilege-escalation|^active-directory|^binary-analysis|^anti-reversing|^memory-forensics|^firmware-analyst|^mtls|^pci-compliance|^api-security|^mobile-security|^backend-security|^frontend-security|^idor-|^file-path-traversal|^cross-site|^html-injection|^broken-auth|^sql-injection|^network-101|^ssh-penetration|^smtp-penetration|^wordpress-penetration|^cloud-penetration|^linux-privilege|^windows-privilege/.test(lo)) return "security";
+
+  // AI / ML / LLM
+  if (/^ai-|^ml-|^llm-|^rag-|^embedding|^training|^fine-tun|^agent-|^langchain|^langgraph|^langsmith|^dspy$|^crewai|^autogpt|^claude-agent|^computer-use|^computer-vision|^model-(compression|merging|evaluation)|^nemo-|^openrlhf|^grpo-|^verl-|^simpo|^gguf|^speculative|^long-context|^constitutional|^prompt-(creator|engineer)|^sparse-autoencoder|^pyvene|^nnsight|^hypogenic|^llamaindex|^llamaguard|^llava$|^clip$|^whisper$|^blip|^rwkv|^mamba|^nanogpt|^implementing-llms|^evaluating-(code|llms)|^hugging|^transformers$|^sentence-transformers|^stable-(baselines|diffusion)|^audiocraft|^sentencepiece|^segment-anything|^sglang$|^pytorch|^torch-|^weights-and-biases|^mlflow$|^tensorboard$|^skypilot|^modal$|^modal-serverless|^openrouter|^openai-docs|^gemini-api|^claude-api$|^voice-ai|^speech$|^sora$|^imagegen$|^generate-image|^denario|^biomni|^torchforge|^nowait-reasoning/.test(lo)) return "ai";
+
+  // Testing / QA
+  if (/^test-|^tdd-|^e2e-|^playwright$|^playwright-|^qa-|^senior-qa|^smart-test|^outside-in-test|^bats-test/.test(lo)) return "testing";
+
+  // Documentation / Writing
+  if (/^doc-|^docs-|^readme$|^changelog-|^documentation-|^technical-writer|^crafting-effective|^writing-clearly|^humanizer$|^beautiful-prose|^wiki-|^codebase-document|^code-documentation|^api-document|^reference-builder|^research-paper|^session-handoff|^meeting-(synthesizer|insights)|^daily-(meeting|news)|^content-research/.test(lo)) return "documentation";
+
+  // Workflow / Git / Code quality
+  if (/^git-|^commit$|^create-pr|^fix-pr|^merge$|^review-code|^code-review|^clean-code|^refactor$|^reducing-entropy|^lint-and-validate|^fix-(errors|grammar)|^production-code|^quality-audit|^tech-debt|^sharp-edges|^find-bugs|^debug|^parallel-(debugging|feature)|^workflow-|^default-workflow|^apex$|^oneshot$|^multitask$|^plan-writing|^create-plan|^gepetto|^session-(replay|learning)|^context-management$|^coding-standards|^skill-(creator|judge|developer|installer|workflow|creation)|^hook-creator|^create-(hooks|slash-commands|subagents|agent)|^command-creator|^plugin-forge|^meta-|^loki-mode|^brainstorm|^ultrathink|^behavioral-modes|^block[r]un|^conductor-|^implementer|^step-orchestrator|^orchestrate$|^parallel-workers|^action$/.test(lo)) return "workflow";
+
+  // Business / Finance / Legal / HR
+  if (/^business-|^finance-|^legal-|^hr-|^contract-|^invoice|^billing|^payment-|^stripe-|^paypal|^plaid|^startup-|^product-manager|^agile-|^scrum|^backlog|^roadmap|^work-delegator|^pm-architect|^quant-analyst|^risk-(manager|metrics|management)|^backtesting|^data-analyst$|^data-scientist$|^senior-data-scientist|^business-analytics|^market-(sizing|research)|^micro-saas|^app-store-optim|^domain-name/.test(lo)) return "business";
+
+  // Game development
+  if (/^game-|^unity-|^godot-|^unreal-|^minecraft/.test(lo)) return "gamedev";
+
+  // Communication / Collaboration
+  if (/^slack-|^discord-|^telegram-|^whatsapp-|^teams-|^zoom-|^calendly-|^professional-communication|^feedback-mastery|^difficult-workplace|^team-(communication|collaboration)|^daily-meeting|^standup/.test(lo)) return "communication";
+
+  // Low-code / No-code / Integrations
+  if (/^shopify-|^hubspot-|^salesforce-|^notion-|^airtable-|^jira$|^linear$|^trello-|^asana-|^monday-|^clickup-|^wrike-|^basecamp-|^todoist-|^freshdesk-|^freshservice-|^zendesk-|^intercom-|^pagerduty-|^sentry-|^datadog-|^confluence-|^bamboohr-|^zoho-|^coda-|^webflow-|^miro-|^canva-|^box-|^dropbox-|^google-(drive|calendar|sheets)|^one-drive|^outlook-|^instagram-|^tiktok-|^youtube-|^twitter-|^reddit-|^linkedin-|^convertkit-|^mailchimp-|^sendgrid-|^postmark-|^brevo-|^activecampaign-|^klaviyo-|^amplitude-|^segment-|^close-|^cal-com|^circleci-|^gitlab-|^bitbucket-|^github-(automation|workflow|issue)|^vercel-automation|^square-|^docusign-|^work-iq$|^connect$|^connect-apps$/.test(lo)) return "integrations";
+
+  // Rust / Go / C / C++ / Java / C# / other languages
+  if (/^rust-|^golang|^go-|^c-pro$|^cpp-|^java-pro$|^csharp-|^ruby-|^elixir-|^haskell-|^julia-|^scala-|^posix-shell|^bash-pro|^powershell|^php-pro$|^dotnet-/.test(lo)) return "languages";
+
+  // Blockchain / Web3
+  if (/^blockchain|^solidity|^web3|^nft-|^defi-/.test(lo)) return "blockchain";
+
+  // --- Fallback desc-based (only for truly unclassifiable) ---
+  if (/\bkubernetes\b|\bdocker\b|\bci.cd\b|\bcloud\b/.test(text)) return "devops";
+  if (/\bllm\b|\bmachine learning\b|\bneural\b|\bfine.tun/.test(text)) return "ai";
+  if (/\bsecurity\b|\bvulnerabilit/.test(text)) return "security";
+
   return "general";
 }
 
