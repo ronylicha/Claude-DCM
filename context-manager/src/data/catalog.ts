@@ -18,6 +18,7 @@ const CLAUDE_DIR = join(HOME, ".claude");
 const SKILLS_DIR = join(CLAUDE_DIR, "skills");
 const PLUGINS_CACHE_DIR = join(CLAUDE_DIR, "plugins", "cache");
 const COMMANDS_DIR = join(CLAUDE_DIR, "commands");
+const AGENTS_DIR = join(CLAUDE_DIR, "agents");
 
 // ============================================
 // Types
@@ -196,12 +197,44 @@ async function scanPluginSkills(): Promise<CatalogSkill[]> {
 }
 
 async function scanCommands(): Promise<CatalogCommand[]> {
-  const entries = await safeLs(COMMANDS_DIR);
   const results: CatalogCommand[] = [];
+
+  async function scanDir(dir: string, prefix: string) {
+    const entries = await safeLs(dir);
+    for (const entry of entries) {
+      const fullPath = join(dir, entry);
+      if (entry.endsWith(".md")) {
+        const content = await safeReadFile(fullPath);
+        const fm = parseYamlFrontmatter(content);
+        const id = prefix ? `${prefix}:${entry.replace(/\.md$/, "")}` : entry.replace(/\.md$/, "");
+        results.push({
+          id,
+          name: fm.name || id,
+          description: (fm.description || extractDescriptionFromMd(content) || id).slice(0, 200),
+          category: "command",
+          source: "user",
+        });
+      } else {
+        // Recurse into subdirectories
+        try {
+          const stat = await import("node:fs/promises").then(m => m.stat(fullPath));
+          if (stat.isDirectory()) await scanDir(fullPath, prefix ? `${prefix}/${entry}` : entry);
+        } catch { /* not a directory */ }
+      }
+    }
+  }
+
+  await scanDir(COMMANDS_DIR, "");
+  return results;
+}
+
+async function scanAgents(): Promise<CatalogAgent[]> {
+  const entries = await safeLs(AGENTS_DIR);
+  const results: CatalogAgent[] = [];
 
   for (const entry of entries) {
     if (!entry.endsWith(".md")) continue;
-    const content = await safeReadFile(join(COMMANDS_DIR, entry));
+    const content = await safeReadFile(join(AGENTS_DIR, entry));
     const fm = parseYamlFrontmatter(content);
     const id = entry.replace(/\.md$/, "");
 
@@ -209,8 +242,9 @@ async function scanCommands(): Promise<CatalogCommand[]> {
       id,
       name: fm.name || id,
       description: (fm.description || extractDescriptionFromMd(content) || id).slice(0, 200),
-      category: "command",
+      category: categorizeSkill(id, fm.description || ""),
       source: "user",
+      tools: [],
     });
   }
 
@@ -234,19 +268,19 @@ export async function scanCatalog(): Promise<{
   log.info("Scanning skills catalog...");
   const t0 = Date.now();
 
-  const [userSkills, pluginSkills, cmds] = await Promise.all([
+  const [userSkills, pluginSkills, cmds, agts] = await Promise.all([
     scanUserSkills(),
     scanPluginSkills(),
     scanCommands(),
+    scanAgents(),
   ]);
 
   cachedSkills = [...userSkills, ...pluginSkills];
   cachedCommands = cmds;
-  // Agents are not separately discoverable — they're defined in CLAUDE.md agent tables
-  cachedAgents = [];
+  cachedAgents = agts;
   lastScanAt = now;
 
-  log.info(`Catalog scanned: ${cachedSkills.length} skills, ${cachedCommands.length} commands in ${Date.now() - t0}ms`);
+  log.info(`Catalog scanned: ${cachedSkills.length} skills, ${cachedAgents.length} agents, ${cachedCommands.length} commands in ${Date.now() - t0}ms`);
 
   return { skills: cachedSkills, agents: cachedAgents, commands: cachedCommands };
 }
