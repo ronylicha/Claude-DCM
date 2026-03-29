@@ -218,6 +218,7 @@ export async function getCockpitGrid(c: Context) {
           consumption_rate: Number(sess.consumption_rate || 0),
           predicted_exhaustion_minutes: sess.predicted_exhaustion_minutes,
           source: sess.source || 'estimated',
+          model_id: sess.model_id || 'unknown',
         },
         wave: wave ? {
           current_number: wave.wave_number,
