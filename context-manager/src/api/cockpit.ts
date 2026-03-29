@@ -35,7 +35,7 @@ export async function getCockpitGlobal(c: Context) {
       `,
       // Per-session capacity (include sessions without statusline data)
       db`
-        SELECT
+        SELECT DISTINCT ON (s.id)
           s.id as session_id,
           p.name as project_name,
           COALESCE(NULLIF(ac.model_id, ''), NULLIF(ac.model_id, 'unknown'), 'unknown') as model_id,
@@ -64,7 +64,7 @@ export async function getCockpitGlobal(c: Context) {
         LEFT JOIN projects p ON s.project_id = p.id
         WHERE s.ended_at IS NULL
           OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '15 minutes')
-        ORDER BY s.started_at DESC
+        ORDER BY s.id, s.started_at DESC
       `,
       // Summaries status
       db`
