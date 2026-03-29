@@ -561,6 +561,24 @@ function TopologyScene({ data }: Props) {
 
 export function OrchestratorTopology3D({ data }: Props) {
   const [contextLost, setContextLost] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  // Delay Canvas mount by one tick to survive React StrictMode double-mount
+  // (StrictMode unmounts/remounts — two WebGL contexts race, first gets lost)
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setReady(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // Suppress THREE.Clock deprecation warning (R3F internal, unfixable on our end)
+  useEffect(() => {
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      if (typeof args[0] === 'string' && args[0].includes('Clock')) return;
+      origWarn.apply(console, args);
+    };
+    return () => { console.warn = origWarn; };
+  }, []);
 
   const handleCreated = useCallback(({ gl }: { gl: THREE.WebGLRenderer }) => {
     const canvas = gl.domElement;
@@ -608,7 +626,11 @@ export function OrchestratorTopology3D({ data }: Props) {
         Click node to focus &middot; Drag to orbit
       </div>
 
-      <Canvas
+      {!ready ? (
+        <div className="h-full flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-[var(--md-sys-color-primary)] border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : <Canvas
         camera={{ position: [0, 3.5, 6], fov: 45 }}
         gl={{
           antialias: true,
@@ -623,7 +645,7 @@ export function OrchestratorTopology3D({ data }: Props) {
         <color attach="background" args={['#0c1222']} />
         <fog attach="fog" args={['#0c1222', 8, 18]} />
         <TopologyScene data={data} />
-      </Canvas>
+      </Canvas>}
     </div>
   );
 }
