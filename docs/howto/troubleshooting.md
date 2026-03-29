@@ -388,6 +388,76 @@ You should receive a heartbeat ping within 30 seconds.
 
 ---
 
+## 11. Dashboard shows "N" dev indicator
+
+**Symptom:** The dashboard UI displays a small "N" badge or "dev" indicator in the corner, signaling it is running in development mode.
+
+**Cause:** The systemd service (or manual launch) is using `bun run dev` or `next dev` instead of `next start`.
+
+**Solution:**
+
+Verify the systemd unit for the dashboard uses the production command:
+
+```bash
+sudo systemctl cat context-dashboard.service | grep ExecStart
+```
+
+The line should read:
+
+```
+ExecStart=/usr/bin/npx next start
+```
+
+If it says `next dev` or `bun run dev`, edit the unit file:
+
+```bash
+sudo systemctl edit --full context-dashboard.service
+```
+
+Change `ExecStart` to use `next start` and make sure `NODE_ENV=production` is set in the `[Service]` section. Then reload and restart:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart context-dashboard
+```
+
+---
+
+## 12. OOM on dashboard restart
+
+**Symptom:** The dashboard service crashes with an out-of-memory error when restarting, or systemd kills it with signal 9 (SIGKILL).
+
+**Cause:** The `MemoryMax` limit in the systemd unit is too low for the Next.js build step that runs before start.
+
+**Solution:**
+
+Set `MemoryMax=4G` in the dashboard service file:
+
+```bash
+sudo systemctl edit --full context-dashboard.service
+```
+
+In the `[Service]` section, set or update:
+
+```ini
+MemoryMax=4G
+```
+
+Then reload and restart:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart context-dashboard
+```
+
+If you are not using systemd, ensure the host has at least 4 GB of available memory when building the dashboard. You can also increase Node.js heap size explicitly:
+
+```bash
+NODE_OPTIONS="--max-old-space-size=4096" npm run build
+```
+
+---
+
 ## General diagnostics
 
 ### Full health check

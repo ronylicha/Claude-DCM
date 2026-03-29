@@ -207,7 +207,7 @@ Full project hierarchy tree views.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/hierarchy/:project_id` | Full hierarchical tree: project -> requests -> tasks -> subtasks. |
-| GET | `/api/active-sessions` | List active sessions using the `v_active_agents` view. |
+| GET | `/api/active-sessions` | List active sessions. Returns both `active_agents` (individual agents from the `v_active_agents` view) and `active_sessions` (grouped by session). |
 
 ---
 
@@ -405,4 +405,4 @@ TTL-based message cleanup stats.
 | Orchestrator | 3 |
 | Authentication | 1 |
 | Cleanup | 1 |
-| **Total** | **102** |
+| **Total (across 11 pages)** | **102** |

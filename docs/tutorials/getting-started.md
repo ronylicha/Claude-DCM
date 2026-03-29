@@ -247,13 +247,13 @@ You should see 19 tables:
 ./dcm start
 ```
 
-This launches three background processes. You will see:
+This launches three background processes. The supervisor runs all services in production mode. You will see:
 
 ```
 Starting DCM services...
   API server starting on port 3847...
   WebSocket server starting on port 3849...
-  Dashboard starting on port 3848...
+  Dashboard starting on port 3848 (next start)...
 All services started.
 ```
 
@@ -271,9 +271,9 @@ Expected output:
 
 ```
 DCM Status
-  API (port 3847):       healthy (v3.1.0)
+  API (port 3847):       healthy (v1.1.0)
   WebSocket (port 3849):  running
-  Dashboard (port 3848):  running
+  Dashboard (port 3848):  running (production)
   PostgreSQL:             connected
   Claude Code hooks:      installed
 ```
@@ -290,7 +290,7 @@ Expected output:
 {
   "status": "healthy",
   "timestamp": "2026-03-28T10:00:00.000Z",
-  "version": "3.1.0",
+  "version": "1.1.0",
   "database": {
     "healthy": true,
     "latency_ms": 2
@@ -367,9 +367,9 @@ Now start a new Claude Code session. DCM will automatically:
 
 ## What to do next
 
-- **View live activity**: Open the dashboard at `http://localhost:3848` and watch events flow in during a Claude Code session.
+- **View live activity**: Open the dashboard at `http://localhost:3848` and watch events flow in during a Claude Code session. The dashboard runs via `next start` (production build), not `next dev`.
 - **Monitor from the terminal**: Run `bash hooks/dashboard.sh --watch` for a terminal-based view.
-- **Learn the API**: See the [API Overview](../reference/api-overview.md) for all 86+ endpoints.
+- **Learn the API**: See the [API Overview](../reference/api-overview.md) for all 102 endpoints.
 - **Deploy for production**: Follow the [Deployment Guide](../howto/deployment.md) for Docker, systemd, or manual setups.
 - **Troubleshoot issues**: Check the [Troubleshooting Guide](../howto/troubleshooting.md) if something is not working.
 

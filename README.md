@@ -5,7 +5,7 @@
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-f9f1e1.svg" alt="Bun"/></a>
   <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/database-PostgreSQL%2014+-336791.svg" alt="PostgreSQL 14+"/></a>
   <a href="https://hono.dev"><img src="https://img.shields.io/badge/framework-Hono-ff6633.svg" alt="Hono"/></a>
-  <img src="https://img.shields.io/badge/version-3.1.0-green.svg" alt="v3.1.0"/>
+  <img src="https://img.shields.io/badge/version-1.1.0-green.svg" alt="v1.1.0"/>
 </p>
 
 <p align="center">
@@ -101,28 +101,31 @@ Complex work is decomposed into **waves** -- sequential execution phases where s
 
 ### Real-Time Dashboard
 
-The monitoring dashboard at `http://localhost:3848` provides 12 pages of live visibility:
+The monitoring dashboard at `http://localhost:3848` provides 11 pages of live visibility:
 
 | Page | What It Shows |
 |------|---------------|
-| **Dashboard** | Health gauge, KPI cards, agent distribution, activity feed |
+| **Cockpit** | Real-time session cockpit with 3D Neural Constellation topology (click-to-focus, orbital rings, particle field), collapsible Live Activity panel (event stream + agent topology grid), Wave Timeline with interactive detail panel in zoom view, Session Events stream in zoom view, Metrics drawer with KPIs, Actions/Hour chart, and Top Tools chart. Unified agent/session counts across all components. |
+| **Projects** | Project hierarchy browser with drill-down |
 | **Sessions** | Session browser with filters, tool counters, timeline |
 | **Agents** | Main/Subagent split, parent links, animated cards, Safety Gate |
-| **Messages** | Inter-agent message history with expandable payloads |
-| **Cockpit** | Real-time session cockpit with 3D topology |
-| **Compact** | Compact operations and snapshot history |
-| **Performance** | API response times, success rates, system health |
-| **Tools** | Tool usage statistics and distribution |
 | **Context** | Context brief viewer and generation |
-| **Projects** | Project hierarchy browser with drill-down |
+| **Compact** | Compact operations and snapshot history |
+| **Tools** | Tool usage statistics and distribution |
 | **Routing** | Keyword-to-tool mappings, routing tester |
+| **Messages** | Inter-agent message history with expandable payloads |
 | **Registry** | Agent catalog browser (66+ agents, 226+ skills) |
+| **Perf** | API response times, success rates, system health |
 
 Built with Next.js 16, React 19, shadcn/ui, Recharts, TanStack Query, Three.js, and Tailwind CSS 4. Full light/dark mode with glassmorphism cards.
 
 ### Intelligent Routing
 
 DCM learns which tools work best for which tasks through a feedback-driven keyword scoring system. Scores adjust dynamically based on success rates.
+
+### Shared Utilities
+
+The dashboard centralizes formatting logic in `lib/format.ts`, a single source of truth for `formatTokens`, `formatModel`, `relativeTime`, and `getEventCategory`. This replaces previously duplicated definitions across cockpit, status bar, and page components.
 
 ---
 
@@ -292,7 +295,7 @@ Expected output:
 DCM Status
 
   Supervisor:          not installed (nohup mode)
-  API (port 3847):       healthy (v3.1.0)
+  API (port 3847):       healthy (v1.1.0)
   WebSocket (port 3849):  running
   Dashboard (port 3848):  running
   PostgreSQL:             connected
@@ -354,10 +357,10 @@ cd context-manager
 |   WebSocket Server       |     |   Next.js Dashboard                         |
 |   Port 3849              |     |   Port 3848                                 |
 |                          |     |                                             |
-|   Real-time events       |     |   12 pages: Dashboard, Agents, Sessions,    |
-|   HMAC auth              |---->|   Cockpit, Compact, Performance, Tools,     |
-|   Channel subscriptions  |     |   Context, Projects, Messages, Routing,     |
-|                          |     |   Registry                                  |
+|   Real-time events       |     |   11 pages: Cockpit, Projects, Sessions,    |
+|   HMAC auth              |---->|   Agents, Context, Compact, Tools,          |
+|   Channel subscriptions  |     |   Routing, Messages, Registry, Perf         |
+|                          |     |                                             |
 +--------------------------+     +---------------------------------------------+
 ```
 
@@ -367,7 +370,7 @@ cd context-manager
 |---------|-------|------|------|
 | **DCM API** | Bun + Hono + Zod | 3847 | REST API, compact save/restore, routing, orchestration, safety tracking |
 | **WebSocket** | Bun native WS + LISTEN/NOTIFY | 3849 | Real-time event streaming, HMAC auth, channel subscriptions |
-| **Dashboard** | Next.js 16 + React 19 + Recharts + Three.js | 3848 | 12-page monitoring UI with live activity feed |
+| **Dashboard** | Next.js 16 + React 19 + Recharts + Three.js | 3848 | 11-page monitoring UI with live activity feed |
 | **PostgreSQL** | PostgreSQL 14+ | 5432 | 19 tables, 4 views, JSONB metadata, GIN indexes |
 
 ### Data Flow
@@ -417,8 +420,9 @@ Claude-DCM/
 |   +-- package.json
 |-- context-dashboard/         # Frontend: Next.js 16 dashboard
 |   |-- src/
-|   |   |-- app/               # 14 page routes (App Router)
-|   |   +-- components/        # React components (shadcn/ui)
+|   |   |-- app/               # 11 page routes (App Router)
+|   |   |-- components/        # React components (shadcn/ui)
+|   |   +-- lib/               # Shared utilities (format.ts)
 |   +-- package.json
 |-- docker-compose.yml         # Containerized deployment
 |-- docs/                      # Wiki, API docs, analysis
@@ -703,7 +707,7 @@ The PostgreSQL container automatically initializes the schema from `context-mana
 
 ### Method 3: Systemd Supervisor (recommended for production on Linux)
 
-The supervisor sets up systemd user services that auto-restart on failure and start on boot:
+The supervisor sets up systemd user services that auto-restart on failure and start on boot. The dashboard service runs in **production mode**: it executes `next build` before starting (`ExecStartPre`) and serves with `next start` (`ExecStart`) under `NODE_ENV=production`.
 
 ```bash
 cd context-manager
@@ -736,7 +740,7 @@ The supervisor creates three service units under `~/.config/systemd/user/`:
 | `dcm.target` | Groups all DCM services |
 | `dcm-api.service` | API server with health check, 512M memory limit |
 | `dcm-ws.service` | WebSocket server |
-| `dcm-dashboard.service` | Next.js dashboard |
+| `dcm-dashboard.service` | Next.js dashboard (production build + serve, `NODE_ENV=production`) |
 
 Features: auto-restart on crash (`RestartSec=5`), boot start via `WantedBy=default.target`, rate limiting (`StartLimitBurst=5`), watchdog (`WatchdogSec=120`), journal logging.
 

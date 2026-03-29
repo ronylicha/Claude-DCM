@@ -135,7 +135,7 @@ Three unit files provide security hardening, memory limits, automatic restarts, 
 |------|-------------|----------------|------------|
 | `context-manager-api.service` | 512 MB | on-failure | postgresql.service |
 | `context-manager-ws.service` | 128 MB | on-failure | context-manager-api |
-| `context-dashboard.service` | 512 MB | always | context-manager-api |
+| `context-dashboard.service` | 4 GB | always | context-manager-api |
 
 ### Install
 
@@ -144,6 +144,8 @@ Before copying, edit the unit files to match your system. The defaults assume:
 - Working directory: `/home/rony/.claude/services/context-manager`
 - User: `rony`
 - Bun binary path from nvm
+
+The dashboard unit uses `ExecStartPre=next build` to build before launch, `ExecStart=next start` for production mode, and `NODE_ENV=production`. The `MemoryMax` for the dashboard is set to 4G to accommodate the build step.
 
 Adjust `WorkingDirectory`, `ExecStart`, `EnvironmentFile`, and `User` as needed.
 
@@ -181,7 +183,8 @@ The unit files include these restrictions by default:
 - `NoNewPrivileges=true`
 - `ProtectSystem=strict`
 - `PrivateTmp=true`
-- Memory limits via `MemoryMax`
+- `NODE_ENV=production` (dashboard unit)
+- Memory limits via `MemoryMax` (4G for dashboard, 512 MB for API, 128 MB for WebSocket)
 
 ---
 
@@ -209,7 +212,7 @@ bun run src/websocket-server.ts
 cd Claude-DCM/context-dashboard
 npm install
 npm run build
-npm start
+npm start   # runs next start (production mode)
 ```
 
 ### Background mode (without systemd)
