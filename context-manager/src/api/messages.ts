@@ -111,7 +111,7 @@ export async function postMessage(c: Context): Promise<Response> {
       ) VALUES (
         ${input.project_id ?? null},
         ${input.from_agent},
-        ${input.to_agent ?? null},
+        ${input.to_agent || 'broadcast'},
         ${input.topic},
         ${input.topic},
         ${sql.json(payload)},

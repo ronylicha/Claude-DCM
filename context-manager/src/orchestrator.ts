@@ -83,19 +83,22 @@ async function orchestratorCycle() {
         sessionNames.push(s?.project_name || sid.slice(0, 8));
       }
 
-      await db`
-        INSERT INTO agent_messages (from_agent_id, to_agent_id, message_type, topic, payload, priority, expires_at)
-        VALUES (
-          'orchestrator-global', NULL, 'notification', 'directive.conflict',
-          ${db.json({
-            action: 'conflict',
-            message: `Conflit fichier: ${conflict.file_path} modifie par ${sessionNames.join(' et ')}`,
-            file: conflict.file_path,
-            sessions: conflict.sessions,
-          })},
-          9, NOW() + INTERVAL '5 minutes'
-        )
-      `;
+      // One message per conflicting session so to_agent_id is always set
+      for (const sid of conflict.sessions) {
+        await db`
+          INSERT INTO agent_messages (from_agent_id, to_agent_id, message_type, topic, payload, priority, expires_at)
+          VALUES (
+            'orchestrator-global', ${sid}, 'notification', 'directive.conflict',
+            ${db.json({
+              action: 'conflict',
+              message: `Conflit fichier: ${conflict.file_path} modifie par ${sessionNames.join(' et ')}`,
+              file: conflict.file_path,
+              sessions: conflict.sessions,
+            })},
+            9, NOW() + INTERVAL '5 minutes'
+          )
+        `;
+      }
       totalDirectives++;
       log.info(`CONFLICT: ${conflict.file_path} edited by ${sessionNames.join(', ')}`);
     }
@@ -128,19 +131,23 @@ async function orchestratorCycle() {
       `;
       if (existing) continue;
 
-      await db`
-        INSERT INTO agent_messages (from_agent_id, to_agent_id, message_type, topic, payload, priority, expires_at)
-        VALUES (
-          'orchestrator-global', NULL, 'notification', 'directive.architecture',
-          ${db.json({
-            action: 'architecture',
-            message: `${sourceName} a modifie ${change.file_path}`,
-            file: change.file_path,
-            source_session: change.session_id,
-          })},
-          7, NOW() + INTERVAL '10 minutes'
-        )
-      `;
+      // Target all OTHER sessions on the same project
+      const targetSessions = sessions.filter(s => s.session_id !== change.session_id && s.project_id === sourceSession?.project_id);
+      for (const target of targetSessions.length > 0 ? targetSessions : sessions.filter(s => s.session_id !== change.session_id)) {
+        await db`
+          INSERT INTO agent_messages (from_agent_id, to_agent_id, message_type, topic, payload, priority, expires_at)
+          VALUES (
+            'orchestrator-global', ${target.session_id}, 'notification', 'directive.architecture',
+            ${db.json({
+              action: 'architecture',
+              message: `${sourceName} a modifie ${change.file_path}`,
+              file: change.file_path,
+              source_session: change.session_id,
+            })},
+            7, NOW() + INTERVAL '10 minutes'
+          )
+        `;
+      }
       totalDirectives++;
       log.info(`ARCH: ${sourceName} modified ${change.file_path}`);
     }
@@ -262,20 +269,24 @@ async function orchestratorCycle() {
         `;
         if (existing) continue;
 
-        await db`
-          INSERT INTO agent_messages (from_agent_id, to_agent_id, message_type, topic, payload, priority, expires_at)
-          VALUES (
-            'orchestrator-global', NULL, 'notification', 'directive.architecture',
-            ${db.json({
-              action: 'architecture',
-              message: `${session.project_name} a modifie ${file.file_path.split('/').pop()}`,
-              file: file.file_path,
-              source_session: file.session_id,
-              source_project: session.project_name,
-            })},
-            7, NOW() + INTERVAL '10 minutes'
-          )
-        `;
+        // Target all other sessions on same project
+        const targets = sessions.filter(s => s.session_id !== file.session_id && s.project_id === session.project_id);
+        for (const target of targets.length > 0 ? targets : sessions.filter(s => s.session_id !== file.session_id)) {
+          await db`
+            INSERT INTO agent_messages (from_agent_id, to_agent_id, message_type, topic, payload, priority, expires_at)
+            VALUES (
+              'orchestrator-global', ${target.session_id}, 'notification', 'directive.architecture',
+              ${db.json({
+                action: 'architecture',
+                message: `${session.project_name} a modifie ${file.file_path.split('/').pop()}`,
+                file: file.file_path,
+                source_session: file.session_id,
+                source_project: session.project_name,
+              })},
+              7, NOW() + INTERVAL '10 minutes'
+            )
+          `;
+        }
         totalDirectives++;
         log.info(`ARCH: ${session.project_name} modified ${file.file_path.split('/').pop()}`);
       }
@@ -285,7 +296,7 @@ async function orchestratorCycle() {
     await db`
       INSERT INTO agent_messages (from_agent_id, to_agent_id, message_type, topic, payload, priority, expires_at)
       VALUES (
-        'orchestrator-global', NULL, 'notification', 'orchestrator.heartbeat',
+        'orchestrator-global', 'broadcast', 'notification', 'orchestrator.heartbeat',
         ${db.json({
           timestamp: new Date().toISOString(),
           active_sessions: sessions.length,

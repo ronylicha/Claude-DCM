@@ -695,13 +695,13 @@ async function broadcastAgentResult(
     completed_at: subtask.completed_at,
   };
 
-  // Insert broadcast message (to_agent_id = NULL means broadcast)
+  // Target the parent session that owns this subtask
   await sql`
     INSERT INTO agent_messages (project_id, from_agent_id, to_agent_id, message_type, topic, payload, expires_at)
     VALUES (
       ${project_id},
       ${subtask.agent_type || 'system'},
-      NULL,
+      ${session_id},
       'notification',
       ${'agent.' + subtask.status},
       ${sql.json(payload)},
