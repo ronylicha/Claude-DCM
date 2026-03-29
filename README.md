@@ -114,7 +114,7 @@ The monitoring dashboard at `http://localhost:3848` provides 11 pages of live vi
 | **Tools** | Tool usage statistics and distribution |
 | **Routing** | Keyword-to-tool mappings, routing tester |
 | **Messages** | Inter-agent message history with expandable payloads |
-| **Registry** | Agent catalog browser (66+ agents, 226+ skills) |
+| **Registry** | Agent type catalog — lists registered agents with scopes, allowed tools, and wave assignments (content depends on your configuration) |
 | **Perf** | API response times, success rates, system health |
 
 Built with Next.js 16, React 19, shadcn/ui, Recharts, TanStack Query, Three.js, and Tailwind CSS 4. Full light/dark mode with glassmorphism cards.
