@@ -89,23 +89,10 @@ export function OrchestratorTopologySVG({ data }: Props) {
         style={{ minHeight: 280 }}
       >
         <defs>
-          {/* Animated dash for connections */}
+          {/* coreRotate is inline because transform-origin depends on dynamic cx/cy */}
           <style>{`
-            @keyframes dashFlow {
-              to { stroke-dashoffset: -20; }
-            }
-            @keyframes pulse {
-              0%, 100% { opacity: 0.6; }
-              50% { opacity: 1; }
-            }
             @keyframes coreRotate {
               to { transform: rotate(360deg); }
-            }
-            .dash-flow {
-              animation: dashFlow 2s linear infinite;
-            }
-            .node-pulse {
-              animation: pulse 2s ease-in-out infinite;
             }
             .core-ring {
               animation: coreRotate 20s linear infinite;
@@ -130,7 +117,7 @@ export function OrchestratorTopologySVG({ data }: Props) {
               stroke={isHovered ? color : 'var(--md-sys-color-outline-variant)'}
               strokeWidth={isHovered ? 2 : 1}
               strokeDasharray="6 4"
-              className={node.active_agents > 0 ? 'dash-flow' : ''}
+              className={node.active_agents > 0 ? 'svg-dash-flow' : ''}
               opacity={isHovered ? 0.9 : 0.4}
             />
           );
@@ -150,7 +137,7 @@ export function OrchestratorTopologySVG({ data }: Props) {
               stroke={color}
               strokeWidth={1.5}
               strokeDasharray="4 4"
-              className="dash-flow"
+              className="svg-dash-flow"
               opacity={0.5}
             />
           );
@@ -248,7 +235,7 @@ export function OrchestratorTopologySVG({ data }: Props) {
                   fill="none"
                   stroke={color}
                   strokeWidth={1}
-                  className="node-pulse"
+                  className="svg-node-pulse"
                 />
               )}
               {/* Project name */}

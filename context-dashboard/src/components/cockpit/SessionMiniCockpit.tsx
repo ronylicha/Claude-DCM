@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import type { MiniCockpitData } from '@/hooks/useSessionGrid';
 import { formatTokens, formatModel } from '@/lib/format';
 
@@ -101,10 +102,10 @@ function Sparkline({
 
 interface SessionMiniCockpitProps {
   session: MiniCockpitData;
-  onZoom: () => void;
+  onZoom: (sessionId: string) => void;
 }
 
-export function SessionMiniCockpit({ session, onZoom }: SessionMiniCockpitProps) {
+export const SessionMiniCockpit = memo(function SessionMiniCockpit({ session, onZoom }: SessionMiniCockpitProps) {
   const { context, wave, agents, sparkline, preemptive_summary } = session;
   const zone = context.zone || 'green';
   const isCritical = zone === 'critical';
@@ -125,7 +126,7 @@ export function SessionMiniCockpit({ session, onZoom }: SessionMiniCockpitProps)
       ]
         .filter(Boolean)
         .join(' ')}
-      onClick={onZoom}
+      onClick={() => onZoom(session.session_id)}
       aria-label={`Session ${session.project_name} — contexte ${Math.round(context.used_percentage)}%`}
     >
       {/* ── Header ── */}
@@ -243,7 +244,7 @@ export function SessionMiniCockpit({ session, onZoom }: SessionMiniCockpitProps)
         <button
           onClick={e => {
             e.stopPropagation();
-            onZoom();
+            onZoom(session.session_id);
           }}
           className="min-h-[48px] px-3 text-[14px] font-medium text-[var(--md-sys-color-primary)] hover:opacity-80 transition-opacity"
           aria-label={`Zoom sur la session ${session.project_name}`}
@@ -253,4 +254,4 @@ export function SessionMiniCockpit({ session, onZoom }: SessionMiniCockpitProps)
       </div>
     </article>
   );
-}
+});

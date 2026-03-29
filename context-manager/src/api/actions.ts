@@ -368,6 +368,71 @@ export async function getActions(c: Context): Promise<Response> {
 }
 
 /**
+ * GET /api/actions/top-tools - Get top tools by usage count
+ * @param c - Hono context
+ */
+export async function getActionsTopTools(c: Context): Promise<Response> {
+  try {
+    const sql = getDb();
+    const limit = Math.min(parseInt(c.req.query("limit") ?? "10", 10), 100);
+    const toolType = c.req.query("tool_type");
+
+    let results;
+
+    if (toolType) {
+      results = await sql`
+        SELECT
+          tool_name,
+          tool_type,
+          COUNT(*) as count,
+          SUM(CASE WHEN exit_code = 0 THEN 1 ELSE 0 END) as success_count,
+          AVG(duration_ms) as avg_duration_ms
+        FROM actions
+        WHERE tool_type = ${toolType}
+        GROUP BY tool_name, tool_type
+        ORDER BY count DESC
+        LIMIT ${limit}
+      `;
+    } else {
+      results = await sql`
+        SELECT
+          tool_name,
+          tool_type,
+          COUNT(*) as count,
+          SUM(CASE WHEN exit_code = 0 THEN 1 ELSE 0 END) as success_count,
+          AVG(duration_ms) as avg_duration_ms
+        FROM actions
+        GROUP BY tool_name, tool_type
+        ORDER BY count DESC
+        LIMIT ${limit}
+      `;
+    }
+
+    const data = results.map((row: Record<string, unknown>) => ({
+      tool_name: String(row.tool_name),
+      tool_type: String(row.tool_type),
+      count: Number(row.count),
+      success_count: Number(row.success_count),
+      avg_duration_ms: row.avg_duration_ms !== null ? Math.round(Number(row.avg_duration_ms)) : null,
+    }));
+
+    return c.json({
+      data,
+      limit,
+    });
+  } catch (error) {
+    log.error("GET /api/actions/top-tools error:", error);
+    return c.json(
+      {
+        error: "Failed to fetch top tools",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
+  }
+}
+
+/**
  * DELETE /api/actions/:id - Delete a single action
  * @param c - Hono context
  */

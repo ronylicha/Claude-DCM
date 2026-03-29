@@ -311,6 +311,20 @@
 .animate-count-up { animation: count-up 0.5s ease-out both; }
 .animate-float { animation: float 3s ease-in-out infinite; }
 
+/* ============================================
+   Topology SVG animations
+   ============================================ */
+
+@keyframes dashFlow {
+  to { stroke-dashoffset: -20; }
+}
+@keyframes svgPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+.svg-dash-flow { animation: dashFlow 2s linear infinite; }
+.svg-node-pulse { animation: svgPulse 2s ease-in-out infinite; }
+
 /* Stagger children animations */
 .stagger-children > * { animation: fade-in 0.4s ease-out both; }
 .stagger-children > *:nth-child(1) { animation-delay: 0ms; }

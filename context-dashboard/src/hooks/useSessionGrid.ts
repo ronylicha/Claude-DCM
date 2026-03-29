@@ -91,7 +91,7 @@ export function useSessionGrid() {
   // Poll regularly to catch new/removed sessions
   // WS events only update existing sessions, they don't add new ones
   useEffect(() => {
-    const interval = setInterval(fetchGrid, connected ? 8000 : 15000);
+    const interval = setInterval(fetchGrid, connected ? 60000 : 15000);
     return () => clearInterval(interval);
   }, [connected, fetchGrid]);
 

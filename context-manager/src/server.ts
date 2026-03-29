@@ -10,7 +10,7 @@ import { logger } from "hono/logger";
 import { config, validateConfig } from "./config";
 import { createLogger } from "./lib/logger";
 import { closeDb, testConnectionWithRetry, healthCheck, getDbStats } from "./db/client";
-import { postAction, getActions, getActionsHourly, deleteAction, deleteActionsBySession } from "./api/actions";
+import { postAction, getActions, getActionsHourly, getActionsTopTools, deleteAction, deleteActionsBySession } from "./api/actions";
 import { suggestRouting, getRoutingStats, postRoutingFeedback } from "./api/routing";
 import { postProject, getProjects, getProjectById, getProjectByPath, deleteProject } from "./api/projects";
 import { postRequest, getRequests, getRequestById, patchRequest, deleteRequest } from "./api/requests";
@@ -214,6 +214,7 @@ app.delete("/api/subtasks/:id", deleteSubtask);
 app.post("/api/actions", postAction);
 app.get("/api/actions", getActions);
 app.get("/api/actions/hourly", getActionsHourly);
+app.get("/api/actions/top-tools", getActionsTopTools);
 app.delete("/api/actions/:id", deleteAction);
 app.delete("/api/actions/by-session/:session_id", deleteActionsBySession);
 

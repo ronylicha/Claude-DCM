@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "@/providers/query-provider";
+import { WebSocketProvider } from "@/providers/websocket-provider";
 import { NavigationRail } from "@/components/layout/NavigationRail";
 import { TopAppBar } from "@/components/layout/TopAppBar";
 import { StatusBar } from "@/components/layout/StatusBar";
@@ -58,16 +59,18 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <QueryProvider>
-          <div className="flex h-screen overflow-hidden">
-            <NavigationRail />
-            <div className="flex flex-col flex-1 ml-[72px] overflow-hidden">
-              <TopAppBar />
-              <main className="flex-1 overflow-auto p-6 pb-[72px]">
-                {children}
-              </main>
+          <WebSocketProvider>
+            <div className="flex h-screen overflow-hidden">
+              <NavigationRail />
+              <div className="flex flex-col flex-1 ml-[72px] overflow-hidden">
+                <TopAppBar />
+                <main className="flex-1 overflow-auto p-6 pb-[72px]">
+                  {children}
+                </main>
+              </div>
             </div>
-          </div>
-          <StatusBar />
+            <StatusBar />
+          </WebSocketProvider>
         </QueryProvider>
       </body>
     </html>

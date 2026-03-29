@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useWSContext } from "@/providers/websocket-provider";
 
 // ============================================
 // Types
@@ -64,22 +65,8 @@ export interface MetricSnapshot {
   timestamp: number;
 }
 
-interface WSMessage {
-  type: string;
-  [key: string]: unknown;
-}
-
 // ============================================
-// Configuration
-// ============================================
-
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:3849";
-const MAX_RECONNECT_ATTEMPTS = 5;
-const RECONNECT_DELAY_MS = 2000;
-const PING_INTERVAL_MS = 25000;
-
-// ============================================
-// useWebSocket Hook
+// useWebSocket Hook — backed by singleton provider
 // ============================================
 
 export interface UseWebSocketOptions {
@@ -103,258 +90,50 @@ export interface UseWebSocketReturn {
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketReturn {
-  const {
-    channels = [],
-    agentId,
-    sessionId,
-    token,
-    onEvent,
-    autoConnect = true,
-  } = options;
+  const { channels = [], onEvent, autoConnect = true } = options;
 
-  const [connected, setConnected] = useState(false);
-  const [connecting, setConnecting] = useState(false);
+  const ws = useWSContext();
   const [lastMessage, setLastMessage] = useState<WSEvent | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  // Refs for stable references (avoid dependency issues)
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectAttemptsRef = useRef(0);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const subscribedChannelsRef = useRef<Set<string>>(new Set());
-  const mountedRef = useRef(false);
-  const connectingRef = useRef(false);
+  // Stable listener ID unique per hook instance
+  const listenerIdRef = useRef(`ws_${Math.random().toString(36).substring(2, 8)}`);
 
-  // Store options in refs to avoid dependency issues
-  const optionsRef = useRef({ channels, agentId, sessionId, token, onEvent });
-  optionsRef.current = { channels, agentId, sessionId, token, onEvent };
+  // Keep onEvent in a ref so the listener closure is always fresh
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
 
-  // Helper function to send messages (uses wsRef directly)
-  const sendMessage = useCallback((type: string, data: Record<string, unknown>) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const message: WSMessage = {
-        type,
-        ...data,
-        id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        timestamp: Date.now(),
-      };
-      wsRef.current.send(JSON.stringify(message));
-    }
-  }, []);
-
-  // Stable send function (no dependencies)
-  const send = useCallback((type: string, data: Record<string, unknown>) => {
-    sendMessage(type, data);
-  }, [sendMessage]);
-
-  // Stable subscribe function (no dependencies on other callbacks)
-  const subscribe = useCallback((channel: string) => {
-    if (!subscribedChannelsRef.current.has(channel)) {
-      subscribedChannelsRef.current.add(channel);
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        sendMessage("subscribe", { channel });
-      }
-    }
-  }, [sendMessage]);
-
-  // Stable unsubscribe function (no dependencies on other callbacks)
-  const unsubscribe = useCallback((channel: string) => {
-    if (subscribedChannelsRef.current.has(channel)) {
-      subscribedChannelsRef.current.delete(channel);
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        sendMessage("unsubscribe", { channel });
-      }
-    }
-  }, [sendMessage]);
-
-  // Cleanup function (stable, no dependencies)
-  const cleanup = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-    if (pingIntervalRef.current) {
-      clearInterval(pingIntervalRef.current);
-      pingIntervalRef.current = null;
-    }
-    if (wsRef.current) {
-      wsRef.current.close(1000, "cleanup");
-      wsRef.current = null;
-    }
-    connectingRef.current = false;
-  }, []);
-
-  // Connect function - uses refs to avoid dependencies
-  const connect = useCallback(() => {
-    // Prevent double connections
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
-    if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
-    if (connectingRef.current) return;
-
-    connectingRef.current = true;
-    setConnecting(true);
-    setError(null);
-
-    // Read options from ref
-    const { agentId: aid, sessionId: sid, token: tkn, channels: chs, onEvent: onEvt } = optionsRef.current;
-
-    // Build URL with query params
-    const url = new URL(WS_URL);
-    if (aid) url.searchParams.set("agent_id", aid);
-    if (sid) url.searchParams.set("session_id", sid);
-
-    try {
-      const ws = new WebSocket(url.toString());
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        console.log("[WS] Connected");
-        connectingRef.current = false;
-        setConnected(true);
-        setConnecting(false);
-        setError(null);
-        reconnectAttemptsRef.current = 0;
-
-        // Authenticate if needed
-        if (aid || sid || tkn) {
-          sendMessage("auth", {
-            ...(tkn ? { token: tkn } : {}),
-            agent_id: aid,
-            session_id: sid,
-          });
-        }
-
-        // Subscribe to initial channels
-        for (const channel of chs) {
-          if (!subscribedChannelsRef.current.has(channel)) {
-            subscribedChannelsRef.current.add(channel);
-          }
-          sendMessage("subscribe", { channel });
-        }
-
-        // Restore subscriptions after reconnect
-        for (const channel of subscribedChannelsRef.current) {
-          if (!chs.includes(channel)) {
-            sendMessage("subscribe", { channel });
-          }
-        }
-
-        // Start ping interval
-        pingIntervalRef.current = setInterval(() => {
-          if (wsRef.current?.readyState === WebSocket.OPEN) {
-            sendMessage("ping", {});
-          }
-        }, PING_INTERVAL_MS);
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data) as WSMessage;
-
-          // Handle different message types
-          if (data.type === "connected") {
-            console.log("[WS] Received connected confirmation");
-            return;
-          }
-
-          if (data.type === "ack") {
-            // Acknowledgment - could log or handle
-            return;
-          }
-
-          if (data.type === "pong") {
-            // Pong response - connection is alive
-            return;
-          }
-
-          // It's an event
-          if ("event" in data && "channel" in data) {
-            const wsEvent = data as unknown as WSEvent;
-            setLastMessage(wsEvent);
-            // Use ref to get current onEvent callback
-            optionsRef.current.onEvent?.(wsEvent);
-          }
-        } catch (err) {
-          console.error("[WS] Failed to parse message:", err);
-        }
-      };
-
-      ws.onerror = () => {
-        // WebSocket errors are expected when the server is not running
-        // Use warn instead of error to avoid alarming users
-        console.warn("[WS] WebSocket connection failed (server may not be running)");
-        setError("WebSocket server unavailable");
-      };
-
-      ws.onclose = (event) => {
-        console.log(`[WS] Disconnected: ${event.code} ${event.reason}`);
-        connectingRef.current = false;
-        setConnected(false);
-        setConnecting(false);
-
-        // Clear ping interval
-        if (pingIntervalRef.current) {
-          clearInterval(pingIntervalRef.current);
-          pingIntervalRef.current = null;
-        }
-
-        // Only attempt reconnect if still mounted and not a clean close
-        if (mountedRef.current && event.code !== 1000 && reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
-          reconnectAttemptsRef.current++;
-          const delay = RECONNECT_DELAY_MS * reconnectAttemptsRef.current;
-          console.log(`[WS] Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`);
-
-          reconnectTimeoutRef.current = setTimeout(() => {
-            if (mountedRef.current) {
-              connect();
-            }
-          }, delay);
-        } else if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
-          setError("Max reconnection attempts reached");
-        }
-      };
-    } catch (err) {
-      console.error("[WS] Failed to create WebSocket:", err);
-      connectingRef.current = false;
-      setConnecting(false);
-      setError(err instanceof Error ? err.message : "Failed to connect");
-    }
-  }, [sendMessage]);
-
-  // Reconnect function
-  const reconnect = useCallback(() => {
-    cleanup();
-    reconnectAttemptsRef.current = 0;
-    connect();
-  }, [cleanup, connect]);
-
-  // Auto-connect on mount - run only once
+  // Subscribe requested channels on mount / when channels list changes
   useEffect(() => {
-    // Prevent double-mount in StrictMode
-    if (mountedRef.current) return;
-    mountedRef.current = true;
-
-    if (autoConnect) {
-      connect();
+    if (!autoConnect) return;
+    for (const channel of channels) {
+      ws.subscribe(channel);
     }
-
-    return () => {
-      mountedRef.current = false;
-      cleanup();
-    };
+    // Channels are intentionally not unsubscribed on cleanup — the singleton
+    // keeps the subscriptions alive as long as any consumer needs them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Intentionally empty - run only once on mount
+  }, [autoConnect, ws.subscribe, channels.join(",")]);
+
+  // Register / unregister the per-instance event listener
+  useEffect(() => {
+    const id = listenerIdRef.current;
+    ws.addListener(id, (event: WSEvent) => {
+      setLastMessage(event);
+      onEventRef.current?.(event);
+    });
+    return () => {
+      ws.removeListener(id);
+    };
+  }, [ws.addListener, ws.removeListener]);
 
   return {
-    connected,
-    connecting,
+    connected: ws.connected,
+    connecting: ws.connecting,
     lastMessage,
-    error,
-    send,
-    subscribe,
-    unsubscribe,
-    reconnect,
+    error: ws.error,
+    send: ws.send,
+    subscribe: ws.subscribe,
+    unsubscribe: ws.unsubscribe,
+    reconnect: ws.reconnect,
   };
 }
 

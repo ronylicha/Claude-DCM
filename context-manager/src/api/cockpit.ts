@@ -145,63 +145,85 @@ export async function getCockpitGrid(c: Context) {
   try {
     const sessions = await getActiveSessionsWithCapacity(15);
 
-    const result = await Promise.all(sessions.map(async (sess) => {
-      const [wave, agentStats, lastAction, sparkline, summary] = await Promise.all([
-        // Current wave
-        db`
-          SELECT wave_number, status, total_tasks, completed_tasks
-          FROM wave_states
-          WHERE session_id = ${sess.session_id} AND status IN ('running', 'pending')
-          ORDER BY wave_number ASC LIMIT 1
-        `.then(r => r[0]),
-        // Agent stats
-        db`
-          SELECT
-            COUNT(*) as total,
-            COUNT(*) FILTER (WHERE st.status = 'running') as running,
-            COUNT(*) FILTER (WHERE st.status = 'blocked') as blocked
-          FROM subtasks st
-          JOIN task_lists tl ON st.task_list_id = tl.id
-          JOIN requests r ON tl.request_id = r.id
-          WHERE r.session_id = ${sess.session_id}
-            AND st.status IN ('running', 'blocked', 'pending')
-        `.then(r => r[0]),
-        // Last action (use a.session_id directly — no JOIN chain needed)
-        db`
-          SELECT a.tool_name, a.file_paths, a.created_at,
-                 COALESCE(st.agent_id, 'unknown') as agent_id
-          FROM actions a
-          LEFT JOIN subtasks st ON a.subtask_id = st.id
-          WHERE a.session_id = ${sess.session_id}
-          ORDER BY a.created_at DESC LIMIT 1
-        `.then(r => r[0]),
-        // Sparkline: 12 points over last hour (5min buckets)
-        db`
-          SELECT
-            date_trunc('minute', a.created_at) -
-            (EXTRACT(minute FROM a.created_at)::int % 5) * INTERVAL '1 minute' as bucket,
-            COUNT(*) as count
-          FROM actions a
-          WHERE a.session_id = ${sess.session_id}
-            AND a.created_at > NOW() - INTERVAL '1 hour'
-          GROUP BY bucket
-          ORDER BY bucket
-        `.then(rows => {
-          const points = new Array(12).fill(0);
-          const now = Date.now();
-          rows.forEach(r => {
-            const idx = Math.floor((now - new Date(r.bucket).getTime()) / 300000);
-            if (idx >= 0 && idx < 12) points[11 - idx] = Number(r.count);
-          });
-          return points;
-        }),
-        // Preemptive summary status
-        db`
-          SELECT status FROM preemptive_summaries
-          WHERE session_id = ${sess.session_id}
-          ORDER BY created_at DESC LIMIT 1
-        `.then(r => r[0]?.status || 'none'),
-      ]);
+    const sessionIds = sessions.map(s => s.session_id);
+
+    if (sessionIds.length === 0) return c.json({ sessions: [] });
+
+    const [waves, agentStats, lastActions, sparklines, summaries] = await Promise.all([
+      // 1. Current wave per session
+      db`
+        SELECT DISTINCT ON (session_id) session_id, wave_number, status, total_tasks, completed_tasks
+        FROM wave_states
+        WHERE session_id = ANY(${sessionIds}) AND status IN ('running', 'pending')
+        ORDER BY session_id, wave_number ASC
+      `,
+      // 2. Agent stats per session
+      db`
+        SELECT r.session_id,
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE st.status = 'running') as running,
+          COUNT(*) FILTER (WHERE st.status = 'blocked') as blocked
+        FROM subtasks st
+        JOIN task_lists tl ON st.task_list_id = tl.id
+        JOIN requests r ON tl.request_id = r.id
+        WHERE r.session_id = ANY(${sessionIds})
+          AND st.status IN ('running', 'blocked', 'pending')
+        GROUP BY r.session_id
+      `,
+      // 3. Last action per session
+      db`
+        SELECT DISTINCT ON (a.session_id)
+          a.session_id, a.tool_name, a.file_paths, a.created_at,
+          COALESCE(st.agent_id, 'unknown') as agent_id
+        FROM actions a
+        LEFT JOIN subtasks st ON a.subtask_id = st.id
+        WHERE a.session_id = ANY(${sessionIds})
+        ORDER BY a.session_id, a.created_at DESC
+      `,
+      // 4. Sparkline data (all sessions at once)
+      db`
+        SELECT a.session_id,
+          date_trunc('minute', a.created_at) -
+          (EXTRACT(minute FROM a.created_at)::int % 5) * INTERVAL '1 minute' as bucket,
+          COUNT(*) as count
+        FROM actions a
+        WHERE a.session_id = ANY(${sessionIds})
+          AND a.created_at > NOW() - INTERVAL '1 hour'
+        GROUP BY a.session_id, bucket
+        ORDER BY a.session_id, bucket
+      `,
+      // 5. Latest preemptive summary per session
+      db`
+        SELECT DISTINCT ON (session_id) session_id, status
+        FROM preemptive_summaries
+        WHERE session_id = ANY(${sessionIds})
+        ORDER BY session_id, created_at DESC
+      `,
+    ]);
+
+    const waveMap = new Map(waves.map(w => [w.session_id, w]));
+    const agentMap = new Map(agentStats.map(a => [a.session_id, a]));
+    const actionMap = new Map(lastActions.map(a => [a.session_id, a]));
+    const summaryMap = new Map(summaries.map(s => [s.session_id, s]));
+
+    const now = Date.now();
+    const sparklineMap = new Map<string, number[]>();
+    for (const sess of sessions) {
+      const points = new Array(12).fill(0);
+      const rows = sparklines.filter(r => r.session_id === sess.session_id);
+      rows.forEach(r => {
+        const idx = Math.floor((now - new Date(r.bucket).getTime()) / 300000);
+        if (idx >= 0 && idx < 12) points[11 - idx] = Number(r.count);
+      });
+      sparklineMap.set(sess.session_id, points);
+    }
+
+    const result = sessions.map(sess => {
+      const wave = waveMap.get(sess.session_id);
+      const stats = agentMap.get(sess.session_id);
+      const lastAction = actionMap.get(sess.session_id);
+      const sparkline = sparklineMap.get(sess.session_id) || new Array(12).fill(0);
+      const summary = summaryMap.get(sess.session_id)?.status || 'none';
 
       return {
         session_id: sess.session_id,
@@ -226,9 +248,9 @@ export async function getCockpitGrid(c: Context) {
           status: wave.status,
         } : null,
         agents: {
-          total: Number(agentStats?.total || 0),
-          running: Number(agentStats?.running || 0),
-          blocked: Number(agentStats?.blocked || 0),
+          total: Number(stats?.total || 0),
+          running: Number(stats?.running || 0),
+          blocked: Number(stats?.blocked || 0),
           last_action: lastAction ? {
             agent_id: lastAction.agent_id,
             tool_name: lastAction.tool_name,
@@ -239,7 +261,7 @@ export async function getCockpitGrid(c: Context) {
         sparkline,
         preemptive_summary: { status: summary },
       };
-    }));
+    });
 
     return c.json({ sessions: result });
   } catch (error) {
@@ -254,8 +276,8 @@ export async function getCockpitSession(c: Context) {
   const db = getDb();
   try {
     const [capacity, waves, agents, summaryStatus] = await Promise.all([
-      db`SELECT * FROM agent_capacity WHERE session_id = ${session_id} ORDER BY current_usage DESC LIMIT 1`.then(r => r[0]),
-      db`SELECT * FROM wave_states WHERE session_id = ${session_id} ORDER BY wave_number ASC`,
+      db`SELECT current_usage, max_capacity, zone, consumption_rate, predicted_exhaustion_minutes, model_id, source FROM agent_capacity WHERE session_id = ${session_id} ORDER BY current_usage DESC LIMIT 1`.then(r => r[0]),
+      db`SELECT wave_number, status, total_tasks, completed_tasks, failed_tasks, started_at, completed_at FROM wave_states WHERE session_id = ${session_id} ORDER BY wave_number ASC`,
       db`
         SELECT st.*, r.session_id
         FROM subtasks st

@@ -6,7 +6,7 @@
 
 import { createLogger } from "../lib/logger";
 import { getDb } from "../db/client";
-import { broadcast } from "./handlers";
+import { broadcast, clients } from "./handlers";
 import type { MetricSnapshot, EventType } from "./types";
 
 const log = createLogger("WSBridge");
@@ -84,6 +84,7 @@ export async function stopDatabaseBridge(): Promise<void> {
 // ============================================
 
 async function broadcastMetrics(): Promise<void> {
+  if (clients.size === 0) return;
   try {
     const metrics = await getMetricSnapshot();
     broadcast("metrics", "metric.update", metrics);

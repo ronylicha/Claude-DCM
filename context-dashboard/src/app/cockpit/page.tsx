@@ -1,17 +1,25 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { CockpitGrid } from '@/components/cockpit/CockpitGrid';
-import { CockpitZoom } from '@/components/cockpit/CockpitZoom';
 import { OrchestratorStatusBar } from '@/components/cockpit/OrchestratorStatusBar';
 import { CockpitLivePanel } from '@/components/cockpit/CockpitLivePanel';
-import { CockpitDrawer } from '@/components/cockpit/CockpitDrawer';
+import { OrchestratorTopologySVG } from '@/components/cockpit/OrchestratorTopologySVG';
 import { useSessionGrid } from '@/hooks/useSessionGrid';
 import { useGlobalCapacity } from '@/hooks/useGlobalCapacity';
 import { useOrchestratorTopology } from '@/hooks/useOrchestratorTopology';
 import { formatTokens } from '@/lib/format';
 
-import { OrchestratorTopologySVG } from '@/components/cockpit/OrchestratorTopologySVG';
+const CockpitDrawer = dynamic(
+  () => import('@/components/cockpit/CockpitDrawer').then(m => ({ default: m.CockpitDrawer })),
+  { ssr: false }
+);
+
+const CockpitZoom = dynamic(
+  () => import('@/components/cockpit/CockpitZoom').then(m => ({ default: m.CockpitZoom })),
+  { ssr: false }
+);
 
 // ============================================
 // KPI Chip — compact stat indicator (M3 chip style)

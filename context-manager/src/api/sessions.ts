@@ -123,46 +123,53 @@ export async function getSessions(c: Context) {
     const offset = parseInt(c.req.query("offset") || "0");
     const activeOnly = c.req.query("active_only") === "true";
 
-    let sessions: SessionRow[];
-
-    if (projectId) {
-      if (activeOnly) {
-        sessions = await sql<SessionRow[]>`
-          SELECT * FROM sessions
-          WHERE project_id = ${projectId} AND (ended_at IS NULL OR ended_at > NOW() - INTERVAL '30 minutes')
-          ORDER BY started_at DESC
-          LIMIT ${limit} OFFSET ${offset}
-        `;
-      } else {
-        sessions = await sql<SessionRow[]>`
-          SELECT * FROM sessions
-          WHERE project_id = ${projectId}
-          ORDER BY started_at DESC
-          LIMIT ${limit} OFFSET ${offset}
-        `;
-      }
-    } else {
-      if (activeOnly) {
-        sessions = await sql<SessionRow[]>`
-          SELECT * FROM sessions
-          WHERE (ended_at IS NULL OR ended_at > NOW() - INTERVAL '30 minutes')
-          ORDER BY started_at DESC
-          LIMIT ${limit} OFFSET ${offset}
-        `;
-      } else {
-        sessions = await sql<SessionRow[]>`
-          SELECT * FROM sessions
-          ORDER BY started_at DESC
-          LIMIT ${limit} OFFSET ${offset}
-        `;
-      }
-    }
-
-    // Get total count
-    const countResult = await sql<{ count: string }[]>`
-      SELECT COUNT(*) as count FROM sessions
-      ${projectId ? sql`WHERE project_id = ${projectId}` : sql``}
-    `;
+    // Build both queries in parallel, sharing the same WHERE clauses
+    const [sessions, countResult] = await Promise.all([
+      projectId
+        ? activeOnly
+          ? sql<SessionRow[]>`
+              SELECT id, project_id, started_at, ended_at, total_tools_used, total_success, total_errors FROM sessions
+              WHERE project_id = ${projectId} AND (ended_at IS NULL OR ended_at > NOW() - INTERVAL '30 minutes')
+              ORDER BY started_at DESC
+              LIMIT ${limit} OFFSET ${offset}
+            `
+          : sql<SessionRow[]>`
+              SELECT id, project_id, started_at, ended_at, total_tools_used, total_success, total_errors FROM sessions
+              WHERE project_id = ${projectId}
+              ORDER BY started_at DESC
+              LIMIT ${limit} OFFSET ${offset}
+            `
+        : activeOnly
+          ? sql<SessionRow[]>`
+              SELECT id, project_id, started_at, ended_at, total_tools_used, total_success, total_errors FROM sessions
+              WHERE (ended_at IS NULL OR ended_at > NOW() - INTERVAL '30 minutes')
+              ORDER BY started_at DESC
+              LIMIT ${limit} OFFSET ${offset}
+            `
+          : sql<SessionRow[]>`
+              SELECT id, project_id, started_at, ended_at, total_tools_used, total_success, total_errors FROM sessions
+              ORDER BY started_at DESC
+              LIMIT ${limit} OFFSET ${offset}
+            `,
+      projectId
+        ? activeOnly
+          ? sql<{ count: string }[]>`
+              SELECT COUNT(*) as count FROM sessions
+              WHERE project_id = ${projectId} AND (ended_at IS NULL OR ended_at > NOW() - INTERVAL '30 minutes')
+            `
+          : sql<{ count: string }[]>`
+              SELECT COUNT(*) as count FROM sessions
+              WHERE project_id = ${projectId}
+            `
+        : activeOnly
+          ? sql<{ count: string }[]>`
+              SELECT COUNT(*) as count FROM sessions
+              WHERE (ended_at IS NULL OR ended_at > NOW() - INTERVAL '30 minutes')
+            `
+          : sql<{ count: string }[]>`
+              SELECT COUNT(*) as count FROM sessions
+            `,
+    ]);
 
     return c.json({
       sessions,
@@ -191,7 +198,7 @@ export async function getSessionById(c: Context) {
     const sql = getDb();
 
     const sessions = await sql<SessionRow[]>`
-      SELECT * FROM sessions WHERE id = ${id}
+      SELECT id, project_id, started_at, ended_at, total_tools_used, total_success, total_errors FROM sessions WHERE id = ${id}
     `;
 
     if (sessions.length === 0) {
