@@ -44,7 +44,7 @@ export async function getCockpitGlobal(c: Context) {
           ac.predicted_exhaustion_minutes,
           COALESCE(ac.consumption_rate, 0) as consumption_rate,
           COALESCE(ac.current_usage, 0) as current_usage,
-          COALESCE(ac.max_capacity, 200000) as max_capacity,
+          COALESCE(ac.max_capacity, 1000000) as max_capacity,
           COALESCE(ac.source, 'estimated') as source,
           (SELECT COUNT(*) FROM subtasks st
            JOIN task_lists tl ON st.task_list_id = tl.id
@@ -206,7 +206,7 @@ export async function getCockpitGrid(c: Context) {
         context: {
           used_percentage: Number(sess.used_percentage || 0),
           current_usage: Number(sess.current_usage || 0),
-          context_window_size: Number(sess.max_capacity || 200000),
+          context_window_size: Number(sess.max_capacity || 1000000),
           zone: sess.zone || 'green',
           consumption_rate: Number(sess.consumption_rate || 0),
           predicted_exhaustion_minutes: sess.predicted_exhaustion_minutes,
@@ -265,7 +265,7 @@ export async function getCockpitSession(c: Context) {
     ]);
 
     // Default capacity if no data yet
-    const cap = capacity || { current_usage: 0, max_capacity: 200000, zone: 'green', consumption_rate: 0, predicted_exhaustion_minutes: null, model_id: 'unknown', source: 'estimated' };
+    const cap = capacity || { current_usage: 0, max_capacity: 1000000, zone: 'green', consumption_rate: 0, predicted_exhaustion_minutes: null, model_id: 'unknown', source: 'estimated' };
 
     const usedPct = cap.max_capacity > 0
       ? (cap.current_usage / cap.max_capacity * 100)
