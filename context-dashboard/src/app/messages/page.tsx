@@ -16,8 +16,6 @@ import {
   Search,
   RefreshCw,
   Clock,
-  CheckCircle,
-  Activity,
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -101,22 +99,23 @@ function formatRelativeTime(dateString: string): string {
 function MessageCard({
   message,
   index,
+  onView,
 }: {
   message: InterAgentMessage;
   index: number;
+  onView: (msg: InterAgentMessage) => void;
 }) {
   const fromTypeColor = getAgentTypeColor(message.from_agent_id);
   const toTypeColor = getAgentTypeColor(message.to_agent_id);
-  const isRead = (message.read_by?.length ?? 0) > 0;
   const payload = message.payload || {};
 
   return (
     <Card
-      className={cn("bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 animate-fade-in hover:shadow-md transition-all duration-200", isRead ? "opacity-75" : "")}
+      className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1 animate-fade-in hover:shadow-md transition-all duration-200"
       style={{ animationDelay: `${index * 40}ms` }}
     >
       <CardContent className="pt-5 pb-4">
-        {/* Top row: message type + read status */}
+        {/* Top row: message type + priority */}
         <div className="flex items-start justify-between gap-3">
           <Badge
             variant="outline"
@@ -124,12 +123,6 @@ function MessageCard({
           >
             {message.message_type}
           </Badge>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <div className={cn("h-2 w-2 rounded-full", isRead ? "bg-[var(--md-sys-color-outline)]" : "dot-healthy")} />
-            <span className={cn("text-xs font-medium", isRead ? "text-[var(--md-sys-color-on-surface-variant)]" : "text-[var(--dcm-zone-green)]")}>
-              {isRead ? "Read" : "Unread"}
-            </span>
-          </div>
         </div>
 
         {/* From and To agents */}
@@ -169,17 +162,18 @@ function MessageCard({
           </div>
         )}
 
-        {/* Bottom row: timestamps and expiry */}
+        {/* Bottom row: timestamps + view button */}
         <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between text-[11px] text-muted-foreground">
           <span className="flex items-center gap-1">
             <Clock className="h-3 w-3" />
             {formatRelativeTime(message.created_at)}
           </span>
-          {message.expires_at && (
-            <span className="text-[10px]">
-              Expires {formatRelativeTime(message.expires_at)}
-            </span>
-          )}
+          <button
+            onClick={() => onView(message)}
+            className="text-[11px] font-medium text-[var(--md-sys-color-primary)] hover:underline"
+          >
+            Voir
+          </button>
         </div>
       </CardContent>
     </Card>
@@ -214,7 +208,7 @@ export default function MessagesPage() {
   // Filter states
   const [searchQuery, setSearchQuery] = useState("");
   const [messageTypeFilter, setMessageTypeFilter] = useState<string>("all");
-  const [readFilter, setReadFilter] = useState<string>("all");
+  const [selectedMessage, setSelectedMessage] = useState<InterAgentMessage | null>(null);
 
   // Fetch inter-agent messages
   const {
@@ -254,25 +248,16 @@ export default function MessagesPage() {
         return false;
       }
 
-      // Read status filter
-      if (readFilter !== "all") {
-        const isRead = (msg.read_by?.length ?? 0) > 0;
-        const shouldShow = readFilter === "unread" ? !isRead : isRead;
-        if (!shouldShow) return false;
-      }
-
       return true;
     });
-  }, [data?.messages, searchQuery, messageTypeFilter, readFilter]);
+  }, [data?.messages, searchQuery, messageTypeFilter]);
 
   // Calculate stats
   const stats = useMemo(() => {
-    if (!data?.messages) return { total: 0, unread: 0, types: 0, byType: [] };
-    const unread = data.messages.filter((m) => (m.read_by?.length ?? 0) === 0).length;
+    if (!data?.messages) return { total: 0, types: 0, byType: [] };
     const uniqueTypes = new Set(data.messages.map((m) => m.message_type)).size;
     return {
       total: data.count || data.messages.length,
-      unread,
       types: uniqueTypes,
       byType: messageTypes,
     };
@@ -305,19 +290,10 @@ export default function MessagesPage() {
           className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1"
         />
         <KPICard
-          title="Unread"
-          value={stats?.unread ?? 0}
-          icon={<Activity className="h-4 w-4" />}
-          description="Not yet read by recipient"
-          loading={isLoading}
-          className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1"
-          trend={stats?.unread ? { value: stats.unread, label: "pending" } : undefined}
-        />
-        <KPICard
-          title="Read"
-          value={(stats?.total ?? 0) - (stats?.unread ?? 0)}
-          icon={<CheckCircle className="h-4 w-4" />}
-          description="Successfully read"
+          title="Filtered"
+          value={filteredMessages.length}
+          icon={<Search className="h-4 w-4" />}
+          description="Matching current filters"
           loading={isLoading}
           className="bg-[var(--md-sys-color-surface-container-low)] border border-[var(--md-sys-color-outline-variant)] md-elevation-1"
         />
@@ -375,19 +351,6 @@ export default function MessagesPage() {
               </select>
             </div>
 
-            {/* Read status filter */}
-            <div className="min-w-[140px]">
-              <label className="text-xs text-muted-foreground mb-1 block">Read Status</label>
-              <select
-                value={readFilter}
-                onChange={(e) => setReadFilter(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="all">All</option>
-                <option value="unread">Unread</option>
-                <option value="read">Read</option>
-              </select>
-            </div>
           </div>
         </CardContent>
       </Card>
@@ -433,11 +396,92 @@ export default function MessagesPage() {
                 key={message.id}
                 message={message}
                 index={index}
+                onView={setSelectedMessage}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Message detail modal */}
+      {selectedMessage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setSelectedMessage(null)}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[80vh] overflow-y-auto mx-4 rounded-xl bg-[var(--md-sys-color-surface)] border border-[var(--md-sys-color-outline-variant)] shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--md-sys-color-outline-variant)]">
+              <div className="flex items-center gap-3">
+                <Badge
+                  variant="outline"
+                  className="bg-[color-mix(in_srgb,var(--md-sys-color-primary)_15%,transparent)] text-[var(--md-sys-color-primary)] border-[color-mix(in_srgb,var(--md-sys-color-primary)_30%,transparent)]"
+                >
+                  {selectedMessage.message_type}
+                </Badge>
+                {selectedMessage.topic && (
+                  <span className="text-[13px] text-[var(--md-sys-color-on-surface-variant)]">{selectedMessage.topic}</span>
+                )}
+              </div>
+              <button
+                onClick={() => setSelectedMessage(null)}
+                className="text-[var(--md-sys-color-on-surface-variant)] hover:text-[var(--md-sys-color-on-surface)] text-lg px-2"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <div className="px-6 py-5 space-y-4">
+              {/* Routing */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--md-sys-color-outline)]">From</span>
+                  <Badge variant="secondary" className={cn("mt-1 block w-fit text-xs px-2 py-0.5 font-mono", getAgentTypeColor(selectedMessage.from_agent_id).badge)}>
+                    {selectedMessage.from_agent_id}
+                  </Badge>
+                </div>
+                <div>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--md-sys-color-outline)]">To</span>
+                  <Badge variant="secondary" className={cn("mt-1 block w-fit text-xs px-2 py-0.5 font-mono", getAgentTypeColor(selectedMessage.to_agent_id).badge)}>
+                    {selectedMessage.to_agent_id}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Timestamps */}
+              <div className="grid grid-cols-2 gap-4 text-[12px] text-[var(--md-sys-color-on-surface-variant)]">
+                <div>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--md-sys-color-outline)]">Created</span>
+                  <p className="mt-0.5">{new Date(selectedMessage.created_at).toLocaleString('fr-FR')}</p>
+                </div>
+                {selectedMessage.expires_at && (
+                  <div>
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--md-sys-color-outline)]">Expires</span>
+                    <p className="mt-0.5">{new Date(selectedMessage.expires_at).toLocaleString('fr-FR')}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Full payload */}
+              <div>
+                <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--md-sys-color-outline)]">Payload</span>
+                <pre className="mt-1 p-4 rounded-lg bg-[var(--md-sys-color-surface-container)] text-[12px] font-mono text-[var(--md-sys-color-on-surface)] overflow-x-auto whitespace-pre-wrap break-words">
+                  {JSON.stringify(selectedMessage.payload, null, 2)}
+                </pre>
+              </div>
+
+              {/* Message ID */}
+              <div className="text-[10px] text-[var(--md-sys-color-outline)] font-mono">
+                ID: {selectedMessage.id}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </PageContainer>
   );
 }
