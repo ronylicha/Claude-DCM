@@ -53,7 +53,14 @@ export async function getCockpitGlobal(c: Context) {
           (SELECT MAX(ws.wave_number) FROM wave_states ws
            WHERE ws.session_id = s.id AND ws.status = 'running') as current_wave
         FROM sessions s
-        LEFT JOIN agent_capacity ac ON ac.session_id = s.id
+        LEFT JOIN LATERAL (
+          SELECT * FROM agent_capacity
+          WHERE session_id = s.id
+          ORDER BY
+            CASE WHEN source = 'statusline' THEN 0 ELSE 1 END,
+            last_updated_at DESC NULLS LAST
+          LIMIT 1
+        ) ac ON true
         LEFT JOIN projects p ON s.project_id = p.id
         WHERE s.ended_at IS NULL
           OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '15 minutes')
