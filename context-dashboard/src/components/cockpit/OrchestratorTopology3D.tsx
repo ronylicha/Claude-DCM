@@ -612,9 +612,9 @@ export function OrchestratorTopology3D({ data }: Props) {
   }
 
   return (
-    <div className="h-[400px] rounded-md-md overflow-hidden bg-gradient-to-b from-[#0c1222] to-[#0f172a] border border-[var(--md-sys-color-outline-variant)] relative">
+    <div className="h-[320px] rounded-[16px] overflow-hidden bg-[var(--md-sys-color-surface-container-lowest)] relative">
       {/* Legend overlay */}
-      <div className="absolute top-3 left-3 z-10 flex items-center gap-3 px-3 py-1.5 rounded-lg bg-black/40 backdrop-blur-sm text-[10px] text-white/60">
+      <div className="absolute top-3 left-3 z-10 flex items-center gap-3 px-3 py-1.5 rounded-md-md bg-[var(--md-sys-color-surface-container)]/80 backdrop-blur-sm text-[10px] text-[var(--md-sys-color-on-surface-variant)]">
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#22c55e]" />OK</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#eab308]" />Warn</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#f97316]" />High</span>
