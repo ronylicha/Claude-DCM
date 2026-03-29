@@ -205,6 +205,7 @@ export async function getActiveSessionsWithCapacity(inactivityMinutes = 15) {
       FROM agent_capacity
       ORDER BY session_id,
         CASE WHEN source = 'statusline' THEN 0 ELSE 1 END,
+        current_usage DESC NULLS LAST,
         last_updated_at DESC NULLS LAST
     ) ac ON ac.session_id = s.id
     WHERE s.ended_at IS NULL
