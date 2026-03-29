@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-03-29
+
+### Added
+
+- **SVG/CSS topology replaces Three.js** — no more WebGL context loss, no heavy 3D dependencies. Pure SVG with CSS animations: rotating core ring, animated dash-flow connections, usage ring arcs per session node, click-to-inspect detail card. M3 color tokens throughout. (`757093f`)
+- **Statusline Notification hook** — registered `statusline-dcm.sh` on the `Notification` event in Claude Code settings. Pushes real token data (model_id, context_window_size, used_percentage) from Claude Code to DCM in real time. (`9ecb1b5`)
+- **KPI chips** in cockpit summary bar — compact M3 chip-style indicators for sessions, agents, and tokens. (`757093f`)
+
+### Changed
+
+- **Cockpit layout redesigned** — topology always visible (no toggle), KPI chips row at top, sessions grid below, live activity at bottom. (`757093f`)
+- **DRY: shared session query** — extracted `getActiveSessionsWithCapacity()` in `db/client.ts`. Replaces 3 duplicate DISTINCT ON subqueries across cockpit, orchestrator, and topology endpoints. (`4d9ba53`)
+- **Capacity dedup** — DISTINCT ON (session_id) subquery prefers statusline over estimated, then highest current_usage, then most recent. Eliminates all duplicate session rows. (`a2eab7b`, `5bc8b98`)
+
+### Fixed
+
+- **Duplicate sessions in grid and topology** — sessions appeared 2-3 times due to multiple agent_capacity rows per session. Fixed with DISTINCT ON subquery + TS-level dedup. (`82ee354`, `e4c122f`)
+- **model_id not showing** — was missing from the `context` block in grid response. Added to response builder. (`dba5f80`)
+- **Empty model_id string** — COALESCE didn't catch empty strings. Now uses NULLIF. (`b253c8b`)
+- **Statusline hook never fired** — was registered in hooks.json but not in Claude Code settings.json `Notification` event. (`9ecb1b5`)
+- **Context window default** — fallback to 200K for Sonnet/Haiku; Opus sends real 1M via statusline. (`e1bc4a0`)
+
+### Removed
+
+- **OrchestratorTopology3D.tsx** — 651 lines deleted. Three.js, @react-three/fiber, @react-three/drei no longer needed for topology. (`85e1a4e`)
+
+---
+
 ## [1.2.0] - 2026-03-29
 
 ### Added
@@ -140,6 +168,7 @@ _First production release. The entire DCM (Developer Cockpit Manager) system, bu
 - NULL array bug in `read_by` column causing silent message filtering
 - DB migrations 003-004 and merge conflict resolution
 
+[1.3.0]: https://github.com/ronylicha/Claude-DCM/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/ronylicha/Claude-DCM/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ronylicha/Claude-DCM/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ronylicha/Claude-DCM/releases/tag/v1.0.0
