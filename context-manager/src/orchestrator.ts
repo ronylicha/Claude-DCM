@@ -9,7 +9,7 @@
  * Cycle: every 30 seconds.
  */
 
-import { getDb, publishEvent } from "./db/client";
+import { getDb, publishEvent, getActiveSessionsWithCapacity } from "./db/client";
 import { createLogger } from "./lib/logger";
 
 const log = createLogger("Orchestrator");
@@ -39,27 +39,8 @@ async function orchestratorCycle() {
   cycleCount++;
 
   try {
-    // 1. Get active sessions
-    const sessions = await db`
-      SELECT s.id as session_id, p.name as project_name, p.path as project_path,
-        COALESCE(ac.model_id, 'unknown') as model_id,
-        COALESCE(ROUND((ac.current_usage::numeric / NULLIF(ac.max_capacity, 0) * 100), 1), 0) as used_percentage,
-        COALESCE(ac.zone, 'green') as zone,
-        COALESCE(ac.max_capacity, 200000) as max_capacity,
-        COALESCE(ac.current_usage, 0) as current_usage
-      FROM sessions s
-      LEFT JOIN projects p ON s.project_id = p.id
-      LEFT JOIN (
-        SELECT DISTINCT ON (session_id)
-          session_id, model_id, current_usage, max_capacity, zone
-        FROM agent_capacity
-        ORDER BY session_id,
-          CASE WHEN source = 'statusline' THEN 0 ELSE 1 END,
-          last_updated_at DESC NULLS LAST
-      ) ac ON ac.session_id = s.id
-      WHERE s.ended_at IS NULL
-        OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '1 minute' * ${INACTIVITY_THRESHOLD_MIN})
-    `;
+    // 1. Get active sessions (shared query — DRY)
+    const sessions = await getActiveSessionsWithCapacity(INACTIVITY_THRESHOLD_MIN);
 
     if (sessions.length === 0) {
       idleCycles++;

@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { getDb } from "../db/client";
+import { getDb, getActiveSessionsWithCapacity } from "../db/client";
 import { createLogger } from "../lib/logger";
 
 const log = createLogger("Orchestrator");
@@ -9,30 +9,7 @@ export async function getOrchestratorTopology(c: Context) {
   const db = getDb();
   try {
     const [sessions, messages, conflicts, heartbeat] = await Promise.all([
-      // Active sessions (same logic as cockpit)
-      db`
-        SELECT s.id as session_id, p.name as project_name, p.path as project_path,
-          COALESCE(ac.model_id, 'unknown') as model_id,
-          COALESCE(ROUND((ac.current_usage::numeric / NULLIF(ac.max_capacity, 0) * 100), 1), 0) as used_percentage,
-          COALESCE(ac.zone, 'green') as zone,
-          COALESCE(ac.consumption_rate, 0) as consumption_rate,
-          (SELECT COUNT(*) FROM subtasks st JOIN task_lists tl ON st.task_list_id = tl.id
-           JOIN requests r ON tl.request_id = r.id WHERE r.session_id = s.id AND st.status = 'running') as active_agents,
-          (SELECT MAX(a.created_at) FROM actions a WHERE a.session_id = s.id) as last_action_at
-        FROM sessions s
-        LEFT JOIN projects p ON s.project_id = p.id
-        LEFT JOIN (
-          SELECT DISTINCT ON (session_id)
-            session_id, model_id, current_usage, max_capacity, zone, consumption_rate
-          FROM agent_capacity
-          ORDER BY session_id,
-            CASE WHEN source = 'statusline' THEN 0 ELSE 1 END,
-            last_updated_at DESC NULLS LAST
-        ) ac ON ac.session_id = s.id
-        WHERE s.ended_at IS NULL
-          OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '15 minutes')
-        ORDER BY s.started_at DESC
-      `,
+      getActiveSessionsWithCapacity(15),
       // Recent cross-project messages (directives)
       db`
         SELECT from_agent_id, to_agent_id, topic, payload, created_at,

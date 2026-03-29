@@ -169,3 +169,46 @@ export async function publishEvent(channel: string, event: string, data: Record<
     }
   }
 }
+
+/**
+ * Query active sessions with best capacity data (1 row per session).
+ * Deduplicates agent_capacity: prefers statusline over estimated.
+ * @param inactivityMinutes — include sessions with activity within this window
+ */
+export async function getActiveSessionsWithCapacity(inactivityMinutes = 15) {
+  const db = getDb();
+  return db.unsafe(`
+    SELECT
+      s.id as session_id,
+      p.name as project_name,
+      p.path as project_path,
+      s.project_id,
+      s.started_at,
+      COALESCE(NULLIF(ac.model_id, ''), 'unknown') as model_id,
+      COALESCE(ROUND((ac.current_usage::numeric / NULLIF(ac.max_capacity, 0) * 100), 1), 0) as used_percentage,
+      COALESCE(ac.zone, 'green') as zone,
+      COALESCE(ac.consumption_rate, 0) as consumption_rate,
+      COALESCE(ac.current_usage, 0) as current_usage,
+      COALESCE(ac.max_capacity, 200000) as max_capacity,
+      ac.predicted_exhaustion_minutes,
+      COALESCE(ac.source, 'estimated') as source,
+      (SELECT COUNT(*) FROM subtasks st
+       JOIN task_lists tl ON st.task_list_id = tl.id
+       JOIN requests r ON tl.request_id = r.id
+       WHERE r.session_id = s.id AND st.status = 'running') as active_agents
+    FROM sessions s
+    LEFT JOIN projects p ON s.project_id = p.id
+    LEFT JOIN (
+      SELECT DISTINCT ON (session_id)
+        session_id, model_id, current_usage, max_capacity, zone,
+        consumption_rate, predicted_exhaustion_minutes, source
+      FROM agent_capacity
+      ORDER BY session_id,
+        CASE WHEN source = 'statusline' THEN 0 ELSE 1 END,
+        last_updated_at DESC NULLS LAST
+    ) ac ON ac.session_id = s.id
+    WHERE s.ended_at IS NULL
+      OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '${inactivityMinutes} minutes')
+    ORDER BY s.started_at DESC
+  `);
+}
