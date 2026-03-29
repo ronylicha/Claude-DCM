@@ -162,6 +162,14 @@ install_supervisor() {
         systemctl --user enable dcm-dashboard.service 2>/dev/null || true
     fi
 
+    # Pre-build dashboard for production (outside systemd to avoid OOM)
+    if [[ -n "$DASHBOARD_ROOT" && -d "$DASHBOARD_ROOT" ]]; then
+        echo -n "  Building dashboard for production... "
+        (cd "$DASHBOARD_ROOT" && NODE_ENV=production npx next build >/dev/null 2>&1) && \
+            echo -e "${GREEN}done${NC}" || \
+            echo -e "${YELLOW}build failed (run manually: cd $DASHBOARD_ROOT && npx next build)${NC}"
+    fi
+
     # Start the target (pulls in all services)
     systemctl --user start dcm.target
 
@@ -287,6 +295,14 @@ reload_supervisor() {
     template_service "$TEMPLATE_DIR/dcm-ws.service" "$SYSTEMD_USER_DIR/dcm-ws.service"
     if [[ -n "$DASHBOARD_ROOT" && -d "$DASHBOARD_ROOT" ]]; then
         template_service "$TEMPLATE_DIR/dcm-dashboard.service" "$SYSTEMD_USER_DIR/dcm-dashboard.service"
+    fi
+
+    # Pre-build dashboard for production
+    if [[ -n "$DASHBOARD_ROOT" && -d "$DASHBOARD_ROOT" ]]; then
+        echo -n "  Building dashboard... "
+        (cd "$DASHBOARD_ROOT" && NODE_ENV=production npx next build >/dev/null 2>&1) && \
+            echo -e "${GREEN}done${NC}" || \
+            echo -e "${YELLOW}build failed${NC}"
     fi
 
     systemctl --user daemon-reload
