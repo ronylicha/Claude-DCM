@@ -38,7 +38,7 @@ export async function getCockpitGlobal(c: Context) {
         SELECT
           s.id as session_id,
           p.name as project_name,
-          COALESCE(ac.model_id, 'unknown') as model_id,
+          COALESCE(NULLIF(ac.model_id, ''), NULLIF(ac.model_id, 'unknown'), 'unknown') as model_id,
           COALESCE(ROUND((ac.current_usage::numeric / NULLIF(ac.max_capacity, 0) * 100), 1), 0) as used_percentage,
           COALESCE(ac.zone, 'green') as zone,
           ac.predicted_exhaustion_minutes,
