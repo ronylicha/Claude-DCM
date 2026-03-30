@@ -233,22 +233,8 @@ export default function PipelineDetailPage() {
     },
   });
 
-  // Fetch steps for the selected wave
-  const { data: stepsData } = useQuery({
-    queryKey: ['pipeline-steps', pipelineId, selectedWave],
-    queryFn: () => apiClient.getPipelineSteps(pipelineId, selectedWave),
-    refetchInterval: (query) => {
-      const pipeline = pipelineData?.pipeline;
-      if (!pipeline) return 5000;
-      const isActive = pipeline.status === 'running' || pipeline.status === 'pending';
-      return isActive ? 3000 : false;
-    },
-    enabled: !!pipelineData,
-  });
-
   const pipeline = pipelineData?.pipeline ?? null;
   const allSteps = pipelineData?.steps ?? [];
-  const currentWaveSteps = stepsData?.steps ?? [];
 
   // Auto-select current wave when data first arrives
   useEffect(() => {
@@ -257,6 +243,12 @@ export default function PipelineDetailPage() {
       initialWaveSet.current = true;
     }
   }, [pipeline]);
+
+  // Handle wave selection with smooth scroll
+  const handleSelectWave = useCallback((waveNumber: number) => {
+    setSelectedWave(waveNumber);
+    document.getElementById(`wave-${waveNumber}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
 
   // WebSocket for real-time updates
   const handleWSEvent = useCallback(
@@ -474,44 +466,94 @@ export default function PipelineDetailPage() {
           <WaveStepper
             waves={waveStepperData}
             selectedWave={selectedWave}
-            onSelectWave={setSelectedWave}
+            onSelectWave={handleSelectWave}
           />
         </div>
       )}
 
-      {/* Current wave panel: step cards */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-[14px] font-medium text-[var(--md-sys-color-on-surface)]">
-            Wave {selectedWave} Steps
-          </h2>
-          <span className="text-[12px] text-[var(--md-sys-color-outline)] tabular-nums">
-            {currentWaveSteps.length} {currentWaveSteps.length === 1 ? 'step' : 'steps'}
-          </span>
-        </div>
+      {/* All waves — full pipeline visualization */}
+      <div className="space-y-6">
+        {waveStepperData.map((wave) => {
+          const waveSteps = allSteps
+            .filter((s) => s.wave_number === wave.waveNumber)
+            .sort((a, b) => a.step_order - b.step_order);
 
-        {currentWaveSteps.length === 0 ? (
-          <div
-            className={cn(
-              'flex flex-col items-center justify-center py-10 rounded-[12px]',
-              'bg-[var(--md-sys-color-surface-container)]',
-              'border border-[var(--md-sys-color-outline-variant)]',
-            )}
-          >
-            <Clock className="h-6 w-6 text-[var(--md-sys-color-outline)] mb-2" aria-hidden="true" />
-            <p className="text-[13px] text-[var(--md-sys-color-outline)]">
-              No steps in this wave
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {currentWaveSteps
-              .sort((a, b) => a.step_order - b.step_order)
-              .map((step) => (
-                <StepCard key={step.id} step={step} />
-              ))}
-          </div>
-        )}
+          const isCurrentWave = pipeline.current_wave === wave.waveNumber;
+          const isSelected = selectedWave === wave.waveNumber;
+
+          return (
+            <div
+              key={wave.waveNumber}
+              id={`wave-${wave.waveNumber}`}
+              className={cn(
+                'rounded-[16px] overflow-hidden transition-all duration-300',
+                'border',
+                isSelected
+                  ? 'border-[var(--md-sys-color-primary)] shadow-[var(--md-sys-elevation-1)]'
+                  : 'border-[var(--md-sys-color-outline-variant)]',
+                isCurrentWave && pipeline.status === 'running'
+                  ? 'bg-[color-mix(in_srgb,var(--md-sys-color-primary)_3%,var(--md-sys-color-surface-container))]'
+                  : 'bg-[var(--md-sys-color-surface-container)]',
+              )}
+            >
+              {/* Wave header */}
+              <button
+                type="button"
+                onClick={() => handleSelectWave(wave.waveNumber)}
+                className={cn(
+                  'w-full flex items-center justify-between px-4 py-3 cursor-pointer',
+                  'hover:bg-[color-mix(in_srgb,var(--md-sys-color-on-surface)_4%,transparent)]',
+                  'transition-colors duration-200',
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  {/* Wave number badge */}
+                  <div
+                    className={cn(
+                      'flex items-center justify-center w-7 h-7 rounded-full text-[12px] font-bold',
+                      wave.status === 'completed' &&
+                        'bg-[var(--dcm-zone-green)] text-white',
+                      wave.status === 'running' &&
+                        'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)] animate-pulse',
+                      wave.status === 'failed' &&
+                        'bg-[var(--dcm-zone-red)] text-white',
+                      wave.status === 'pending' &&
+                        'bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface-variant)] border border-[var(--md-sys-color-outline-variant)]',
+                    )}
+                  >
+                    {wave.status === 'completed' ? (
+                      <CheckCircle2 className="h-4 w-4" />
+                    ) : wave.status === 'failed' ? (
+                      <XCircle className="h-4 w-4" />
+                    ) : (
+                      wave.waveNumber
+                    )}
+                  </div>
+                  <div className="text-left">
+                    <span className="text-[13px] font-medium text-[var(--md-sys-color-on-surface)]">
+                      Wave {wave.waveNumber}
+                    </span>
+                    <span className="text-[11px] text-[var(--md-sys-color-outline)] ml-2">
+                      {wave.stepCount} step{(wave.stepCount ?? 0) > 1 ? 's' : ''}
+                    </span>
+                  </div>
+                </div>
+                {isCurrentWave && pipeline.status === 'running' && (
+                  <span className="text-[10px] font-medium text-[var(--md-sys-color-primary)] uppercase tracking-wider">
+                    Active
+                  </span>
+                )}
+              </button>
+
+              {/* Steps grid — always visible */}
+              <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                {waveSteps.map((step) => (
+                  <StepCard key={step.id} step={step} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Synthesis panel (terminal state only) */}

@@ -54,7 +54,14 @@ const STEP_STATUS: Record<string, StepStatusStyle> = {
     dot: 'bg-[var(--md-sys-color-outline-variant)]',
     label: 'text-[var(--md-sys-color-outline)]',
     labelText: 'Pending',
-    border: '',
+    border: 'border-dashed',
+    icon: Clock,
+  },
+  queued: {
+    dot: 'bg-[var(--md-sys-color-outline-variant)]',
+    label: 'text-[var(--md-sys-color-outline)]',
+    labelText: 'Queued',
+    border: 'border-dashed',
     icon: Clock,
   },
 };
@@ -136,6 +143,7 @@ export function StepCard({ step }: StepCardProps) {
   const style = getStepStatus(step.status);
   const StatusIcon = style.icon;
   const isRunning = step.status === 'running';
+  const isPendingOrQueued = step.status === 'pending' || step.status === 'queued';
 
   return (
     <div
@@ -146,6 +154,7 @@ export function StepCard({ step }: StepCardProps) {
         'transition-all duration-200',
         style.border,
         isRunning && 'shadow-[var(--md-sys-elevation-1)]',
+        isPendingOrQueued && 'opacity-60',
       )}
       role="article"
       aria-label={`Step: ${step.agent_type}, ${style.labelText}`}

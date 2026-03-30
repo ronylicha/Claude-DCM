@@ -282,6 +282,140 @@ export async function getPipelineDetail(c: Context): Promise<Response> {
 }
 
 /**
+ * POST /api/pipelines/upload - Create a pipeline from multipart/form-data with file uploads
+ * @param c - Hono context
+ */
+export async function postCreatePipelineWithFiles(c: Context): Promise<Response> {
+  try {
+    const body = await c.req.parseBody({ all: true });
+
+    const sessionId = String(body["session_id"] ?? "");
+    const instructions = String(body["instructions"] ?? "");
+
+    if (!sessionId || !instructions) {
+      return c.json({ error: "session_id and instructions are required" }, 400);
+    }
+
+    // Parse uploaded files
+    const documents: Array<{ name: string; content: string; type: "markdown" | "text" | "json" | "code" }> = [];
+
+    // Handle single or multiple files
+    const rawFiles = body["files"];
+    const fileList = Array.isArray(rawFiles) ? rawFiles : rawFiles ? [rawFiles] : [];
+
+    for (const file of fileList) {
+      if (file instanceof File) {
+        const content = await file.text();
+        const name = file.name;
+        const ext = name.split(".").pop()?.toLowerCase() ?? "";
+
+        let type: "markdown" | "text" | "json" | "code" = "text";
+        if (ext === "md" || ext === "markdown") type = "markdown";
+        else if (ext === "json") type = "json";
+        else if (["ts", "tsx", "js", "jsx", "py", "php", "sh", "sql"].includes(ext)) type = "code";
+
+        documents.push({ name, content, type });
+        log.info(`Uploaded file: ${name} (${type}, ${content.length} chars)`);
+      }
+    }
+
+    // Parse optional JSON arrays from text fields
+    let targetFiles: string[] = [];
+    let targetDirectories: string[] = [];
+    try {
+      if (body["target_files"]) targetFiles = JSON.parse(String(body["target_files"]));
+    } catch { /* ignore parse errors */ }
+    try {
+      if (body["target_directories"]) targetDirectories = JSON.parse(String(body["target_directories"]));
+    } catch { /* ignore parse errors */ }
+
+    const input: PipelineInput = {
+      instructions,
+      documents,
+      target_files: targetFiles,
+      target_directories: targetDirectories,
+    };
+
+    log.info(`Creating pipeline with files: session=${sessionId}, docs=${documents.length}, instructions=${instructions.slice(0, 80)}...`);
+
+    const pipeline = await createPipeline(sessionId, input);
+
+    return c.json({ success: true, pipeline }, 201);
+  } catch (error) {
+    log.error("POST /api/pipelines/upload error:", error);
+    return c.json(
+      {
+        error: "Failed to create pipeline with files",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
+    );
+  }
+}
+
+/**
+ * GET /api/pipelines/:id/events - Get timeline events for a pipeline
+ * @param c - Hono context
+ */
+export async function getPipelineEvents(c: Context): Promise<Response> {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Missing pipeline ID" }, 400);
+
+    const sql = (await import("../db/client")).getDb();
+    const events = await sql`
+      SELECT id, pipeline_id, event_type, wave_number, step_order, agent_type, message, data, created_at
+      FROM pipeline_events
+      WHERE pipeline_id = ${id}
+      ORDER BY created_at ASC
+    `;
+
+    return c.json({ events, count: events.length });
+  } catch (error) {
+    log.error("GET /api/pipelines/:id/events error:", error);
+    return c.json({ error: "Failed to fetch events", message: error instanceof Error ? error.message : "Unknown error" }, 500);
+  }
+}
+
+/**
+ * GET /api/pipelines/:id/live - Get pipeline + all steps + recent events (optimized for live view)
+ * @param c - Hono context
+ */
+export async function getPipelineLive(c: Context): Promise<Response> {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Missing pipeline ID" }, 400);
+
+    const pipeline = await getPipeline(id);
+    if (!pipeline) return c.json({ error: "Pipeline not found" }, 404);
+
+    const steps = await getPipelineSteps(id);
+
+    const sql = (await import("../db/client")).getDb();
+    const events = await sql`
+      SELECT event_type, wave_number, step_order, agent_type, message, created_at
+      FROM pipeline_events
+      WHERE pipeline_id = ${id}
+      ORDER BY created_at DESC
+      LIMIT 50
+    `;
+
+    // Group steps by wave
+    const waves: Record<number, typeof steps> = {};
+    for (const step of steps) {
+      const wn = step.wave_number;
+      if (!waves[wn]) waves[wn] = [];
+      waves[wn].push(step);
+    }
+
+    return c.json({ pipeline, steps, waves, events, total_steps: steps.length });
+  } catch (error) {
+    log.error("GET /api/pipelines/:id/live error:", error);
+    return c.json({ error: "Failed to fetch live data", message: error instanceof Error ? error.message : "Unknown error" }, 500);
+  }
+}
+
+/**
  * GET /api/pipelines/:id/steps - Get pipeline steps, optionally filtered by wave_number
  * @param c - Hono context
  */

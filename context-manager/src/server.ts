@@ -69,6 +69,7 @@ import { getStatsOverview, getStatsTokens, getStatsActivity, getStatsAgents } fr
 import { postSkill, postWorkflow, postAdvisor, getStatus, checkGate } from "./api/skill-gate";
 import {
   postCreatePipeline,
+  postCreatePipelineWithFiles,
   postStartPipeline,
   postPausePipeline,
   postCancelPipeline,
@@ -76,6 +77,8 @@ import {
   getListPipelines,
   getPipelineDetail,
   getPipelineStepsList,
+  getPipelineLive,
+  getPipelineEvents,
 } from "./api/pipeline";
 
 // Version from package.json (single source of truth)
@@ -565,8 +568,11 @@ app.get("/api/skill-gate/:session_id/check", checkGate);
 // Pipeline API - Phase 13 (DCM v5.1)
 // ============================================
 
+app.post("/api/pipelines/upload", postCreatePipelineWithFiles);
 app.post("/api/pipelines", postCreatePipeline);
 app.get("/api/pipelines", getListPipelines);
+app.get("/api/pipelines/:id/live", getPipelineLive);
+app.get("/api/pipelines/:id/events", getPipelineEvents);
 app.get("/api/pipelines/:id", getPipelineDetail);
 app.get("/api/pipelines/:id/steps", getPipelineStepsList);
 app.post("/api/pipelines/:id/start", postStartPipeline);
