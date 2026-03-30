@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-03-31
+
+### Added
+
+- **Skill Gate API** — 5 new endpoints (`/api/skill-gate/:sid/{skills,workflow,advisor,status,check}`) with dynamic enforcement via PostgreSQL. Adapts to any machine via `skill-index.json` + advisor reco + catalog fallback.
+- **`session_skills` + `session_workflow_state` tables** — replaces `/tmp/claude-skill-gate/` flat files with persistent PostgreSQL storage.
+- **`skill-gate-enforce.sh`** — unified PreToolUse hook for Edit/Write/MultiEdit/Agent. Single 30-line hook replaces 3 bash scripts + 200 lines of shell logic.
+- **`skill-gate-status.sh`** — UserPromptSubmit hook injecting workflow state + advisor + delegation rules into systemMessage.
+- **Skill Gate section in Routing dashboard** — session lookup with live skills, workflow state, imposed agents.
+- **3-layer routing** — `suggest-skills.sh` queries routing API (skills + agents) + catalog API (discovery) in parallel with keyword-sorted catalog search.
+- **Skill Advisor + DCM integration** — `engine.ts` queries DCM routing before Haiku, merges learned scores, sends positive feedback for validated choices.
+- **Agent enforcement** — wrong agent = BLOCK with recommended agents per domain.
+
+### Changed
+
+- **`track-action.sh`** — registers skills in `session_skills` + detects impact/regression agents. Replaces `track-skill-loaded.sh` + `track-workflow-agent.sh`.
+- **`track-session.sh`** — initializes `session_workflow_state`. Replaces `session-init-skill-gate.sh`.
+- **`setup-hooks.sh`** — auto-detects dev vs deploy path, merges at individual hook level preserving non-DCM hooks.
+- **`skill-advisor/engine.ts`** — writes reco to API + local file fallback.
+
+### Removed
+
+- 7 custom scripts from `~/.claude/scripts/`: `enforce-skills-before-{code,agent}.sh`, `enforce-claude-rules.sh`, `track-skill-loaded.sh`, `track-workflow-agent.sh`, `session-init-skill-gate.sh`, `lib/skill-gate-common.sh`. All migrated to DCM.
+- `/tmp/claude-skill-gate/` flat file dependency.
+
+---
+
 ## [1.3.1] - 2026-03-30
 
 ### Added

@@ -542,3 +542,6 @@ ON CONFLICT (version) DO NOTHING;
 
 INSERT INTO schema_version (version) VALUES ('4.2.0')
 ON CONFLICT (version) DO NOTHING;
+
+INSERT INTO schema_version (version) VALUES ('5.0.0')
+ON CONFLICT (version) DO NOTHING;
