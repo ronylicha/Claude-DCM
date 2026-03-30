@@ -738,6 +738,59 @@ export interface OrchestratorTopologyData {
 }
 
 // ============================================
+// Stats types
+// ============================================
+
+export type StatsPeriod = 'day' | 'week' | 'month' | 'year' | 'all';
+export type StatsGranularity = 'hour' | 'day' | 'week' | 'month';
+
+export interface StatsOverview {
+  period: StatsPeriod;
+  tokens: {
+    total: number;
+    input: number;
+    output: number;
+    byDay: Array<{ date: string; input: number; output: number; total: number }>;
+  };
+  sessions: { total: number; avgDuration: number; avgToolsUsed: number };
+  actions: { total: number; successRate: number; avgDuration: number; uniqueTools: number };
+  agents: { totalUsed: number; topAgent: string; avgSubtasksPerSession: number };
+  comparison: { tokensDelta: number; sessionsDelta: number; actionsDelta: number };
+}
+
+export interface StatsTokens {
+  data: Array<{ date: string; input_tokens: number; output_tokens: number; total_tokens: number }>;
+  byAgent: Array<{ agent_type: string; total_tokens: number; percentage: number }>;
+  byTool: Array<{ tool_name: string; total_tokens: number; percentage: number }>;
+  byModel: Array<{ model_id: string; total_tokens: number; percentage: number }>;
+  totals: { input: number; output: number; total: number };
+}
+
+export interface StatsActivity {
+  heatmap: Array<{ date: string; count: number; level: 0 | 1 | 2 | 3 | 4 }>;
+  byHour: Array<{ hour: number; count: number }>;
+  byDayOfWeek: Array<{ day: number; count: number }>;
+  streak: { current: number; longest: number };
+  totalDays: number;
+  activeDays: number;
+}
+
+export interface StatsAgentLeaderboard {
+  leaderboard: Array<{
+    agent_type: string;
+    display_name: string;
+    category: string;
+    tasks_completed: number;
+    tasks_failed: number;
+    success_rate: number;
+    total_tokens: number;
+    avg_duration_ms: number;
+    trend: 'up' | 'down' | 'stable';
+  }>;
+  totalAgentTypes: number;
+}
+
+// ============================================
 // API Error
 // ============================================
 
@@ -1262,6 +1315,33 @@ export const apiClient = {
     apiFetch<OrchestratorTopologyData>('/api/orchestrator/topology'),
   getOrchestratorStatus: () =>
     apiFetch<OrchestratorTopologyData['orchestrator']>('/api/orchestrator/status'),
+
+  // ==========================================
+  // Stats - /api/stats
+  // ==========================================
+  getStatsOverview: async (period: StatsPeriod = 'month'): Promise<StatsOverview> => {
+    const res = await fetch(`${API_BASE_URL}/api/stats/overview?period=${period}`);
+    if (!res.ok) throw new Error(`Stats overview failed: ${res.status}`);
+    return res.json();
+  },
+
+  getStatsTokens: async (period: StatsPeriod = 'month', granularity: StatsGranularity = 'day'): Promise<StatsTokens> => {
+    const res = await fetch(`${API_BASE_URL}/api/stats/tokens?period=${period}&granularity=${granularity}`);
+    if (!res.ok) throw new Error(`Stats tokens failed: ${res.status}`);
+    return res.json();
+  },
+
+  getStatsActivity: async (period: StatsPeriod = 'year'): Promise<StatsActivity> => {
+    const res = await fetch(`${API_BASE_URL}/api/stats/activity?period=${period}`);
+    if (!res.ok) throw new Error(`Stats activity failed: ${res.status}`);
+    return res.json();
+  },
+
+  getStatsAgents: async (period: StatsPeriod = 'month', limit = 20): Promise<StatsAgentLeaderboard> => {
+    const res = await fetch(`${API_BASE_URL}/api/stats/agents?period=${period}&limit=${limit}`);
+    if (!res.ok) throw new Error(`Stats agents failed: ${res.status}`);
+    return res.json();
+  },
 
   // ==========================================
   // Compact Snapshots - /api/agent-contexts

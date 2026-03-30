@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Database,
   Gauge,
+  BarChart3,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from './ThemeToggle';
@@ -54,6 +55,7 @@ const navigationGroups: NavGroup[] = [
       { name: 'Messages', href: '/messages', icon: MessageSquare },
       { name: 'Registry', href: '/registry', icon: Database },
       { name: 'Perf', href: '/performance', icon: Gauge },
+      { name: 'Stats', href: '/stats', icon: BarChart3 },
     ],
   },
 ];

@@ -65,6 +65,7 @@ import { getCockpitGlobal, getCockpitGrid, getCockpitSession } from "./api/cockp
 import { postPreemptiveSummary, getPreemptiveSummary, getRawContext } from "./api/compact-preemptive";
 import { getOrchestratorTopology, getOrchestratorStatus } from "./api/orchestrator";
 import { startOrchestrator, stopOrchestrator, getOrchestratorStats } from "./orchestrator";
+import { getStatsOverview, getStatsTokens, getStatsActivity, getStatsAgents } from "./api/stats";
 
 // Version from package.json (single source of truth)
 import pkg from "../package.json";
@@ -529,6 +530,15 @@ app.get("/api/compact/preemptive/:session_id", getPreemptiveSummary);
 app.get("/api/orchestrator/topology", getOrchestratorTopology);
 app.get("/api/orchestrator/status", getOrchestratorStatus);
 app.get("/api/orchestrator/stats", (c) => c.json(getOrchestratorStats()));
+
+// ============================================
+// Stats API - Analytics for statistics page
+// ============================================
+
+app.get("/api/stats/overview", getStatsOverview);
+app.get("/api/stats/tokens", getStatsTokens);
+app.get("/api/stats/activity", getStatsActivity);
+app.get("/api/stats/agents", getStatsAgents);
 
 // ============================================
 // Server Startup
