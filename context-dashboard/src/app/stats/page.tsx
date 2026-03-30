@@ -277,7 +277,7 @@ function ActivityHeatmap({ data }: { data: StatsActivity }) {
       </div>
 
       {/* Grid */}
-      <div className="relative overflow-x-auto">
+      <div className="relative overflow-x-auto overflow-y-visible">
         {/* Day labels */}
         <div className="flex gap-px mb-1 ml-0">
           <div className="w-[10px]" />
@@ -322,7 +322,7 @@ function ActivityHeatmap({ data }: { data: StatsActivity }) {
                         const parentRect = (e.currentTarget.closest(".relative") as HTMLElement)?.getBoundingClientRect();
                         setTooltip({
                           x: rect.left - (parentRect?.left ?? 0) + 5,
-                          y: rect.top - (parentRect?.top ?? 0) - 28,
+                          y: rect.bottom - (parentRect?.top ?? 0) + 6,
                           text: `${day.dateStr} — ${day.count} action${day.count !== 1 ? "s" : ""}`,
                         });
                       }
@@ -337,7 +337,7 @@ function ActivityHeatmap({ data }: { data: StatsActivity }) {
         {/* Tooltip */}
         {tooltip && (
           <div
-            className="absolute pointer-events-none rounded-md px-2 py-1 text-xs font-medium shadow-lg z-10 whitespace-nowrap"
+            className="absolute pointer-events-none rounded-md px-2 py-1 text-xs font-medium shadow-lg z-50 whitespace-nowrap"
             style={{
               left: tooltip.x,
               top: tooltip.y,
@@ -664,7 +664,7 @@ export default function StatsPage() {
         </SectionCard>
 
         <SectionCard
-          title="Tokens par agent"
+          title="Tokens par outil"
           icon={<Coins className="h-5 w-5" />}
         >
           {loadingTokens ? (
