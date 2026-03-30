@@ -38,19 +38,22 @@ export async function trackAgentTurn(c: Context): Promise<Response> {
     }
 
     const row = result[0];
-    const turnsUsed = Number(row.turns_used);
-    const maxTurns = row.max_turns ? Number(row.max_turns) : null;
+    if (!row) {
+      return c.json({ error: "No running subtask found for agent_id" }, 404);
+    }
+    const turnsUsed = Number(row["turns_used"]);
+    const maxTurns = row["max_turns"] ? Number(row["max_turns"]) : null;
 
     const shouldWarn = maxTurns !== null && turnsUsed >= Math.floor(maxTurns * 0.8);
     const shouldStop = maxTurns !== null && turnsUsed >= maxTurns;
 
     return c.json({
       agent_id: body.agent_id,
-      agent_type: row.agent_type,
-      subtask_id: row.id,
+      agent_type: row["agent_type"],
+      subtask_id: row["id"],
       turns_used: turnsUsed,
       max_turns: maxTurns,
-      retry_count: Number(row.retry_count),
+      retry_count: Number(row["retry_count"]),
       should_warn: shouldWarn,
       should_stop: shouldStop,
     });
@@ -121,7 +124,10 @@ export async function relaunchAgent(c: Context): Promise<Response> {
     }
 
     const agent = result[0];
-    const retryCount = Number(agent.retry_count);
+    if (!agent) {
+      return c.json({ error: "Agent not found" }, 404);
+    }
+    const retryCount = Number(agent["retry_count"]);
     const maxRetries = 2;
 
     if (retryCount >= maxRetries) {
@@ -130,13 +136,13 @@ export async function relaunchAgent(c: Context): Promise<Response> {
         reason: "max_retries_exceeded",
         retry_count: retryCount,
         max_retries: maxRetries,
-        agent_type: agent.agent_type,
-        description: agent.description,
+        agent_type: agent["agent_type"],
+        description: agent["description"],
       });
     }
 
     const partialResult = body.partial_result || "";
-    const previousContext = (agent.last_relaunch_context as string) || "";
+    const previousContext = (agent["last_relaunch_context"] as string) || "";
     const compactedContext = [
       previousContext ? `Previous attempt context: ${previousContext}` : "",
       partialResult ? `Partial result from attempt ${retryCount + 1}: ${partialResult}` : "",
@@ -148,12 +154,12 @@ export async function relaunchAgent(c: Context): Promise<Response> {
           last_relaunch_context = ${compactedContext},
           status = 'failed',
           completed_at = NOW()
-      WHERE id = ${agent.id}
+      WHERE id = ${agent["id"]}
     `;
 
     const relaunchPrompt = [
       `RELAUNCH (attempt ${retryCount + 2}/3) - Continue the following task:`,
-      `Original task: ${agent.description}`,
+      `Original task: ${agent["description"]}`,
       compactedContext ? `\nContext from previous attempt(s):\n${compactedContext}` : "",
       `\nContinue where the previous agent left off. Do NOT restart from scratch.`,
     ].filter(Boolean).join("\n");
@@ -162,10 +168,10 @@ export async function relaunchAgent(c: Context): Promise<Response> {
       should_relaunch: true,
       retry_count: retryCount + 1,
       max_retries: maxRetries,
-      agent_type: agent.agent_type,
-      original_description: agent.description,
+      agent_type: agent["agent_type"],
+      original_description: agent["description"],
       relaunch_prompt: relaunchPrompt,
-      max_turns: agent.max_turns,
+      max_turns: agent["max_turns"],
     });
   } catch (error) {
     log.error("POST /api/agents/relaunch error:", error);

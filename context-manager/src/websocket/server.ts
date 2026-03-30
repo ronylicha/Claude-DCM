@@ -105,8 +105,8 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve> {
 
         const clientData: WSClientData = {
           id: generateClientId(),
-          agent_id: agentId,
-          session_id: sessionId,
+          ...(agentId !== undefined ? { agent_id: agentId } : {}),
+          ...(sessionId !== undefined ? { session_id: sessionId } : {}),
           subscriptions: new Set<string>(),
           authenticated: false,
           connectedAt: Date.now(),

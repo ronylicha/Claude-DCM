@@ -47,7 +47,7 @@ export async function testConnection(): Promise<boolean> {
   try {
     const db = getDb();
     const result = await db`SELECT 1 as connected`;
-    return result[0]?.connected === 1;
+    return result[0]?.["connected"] === 1;
   } catch (error) {
     log.error("Connection test failed:", error);
     return false;
@@ -123,10 +123,10 @@ export async function getDbStats(): Promise<{
   const [messages] = await db`SELECT COUNT(*) as count FROM agent_messages`;
 
   return {
-    projectCount: Number(projects?.count ?? 0),
-    requestCount: Number(requests?.count ?? 0),
-    actionCount: Number(actions?.count ?? 0),
-    messageCount: Number(messages?.count ?? 0),
+    projectCount: Number(projects?.["count"] ?? 0),
+    requestCount: Number(requests?.["count"] ?? 0),
+    actionCount: Number(actions?.["count"] ?? 0),
+    messageCount: Number(messages?.["count"] ?? 0),
   };
 }
 
@@ -153,7 +153,7 @@ export async function publishEvent(channel: string, event: string, data: Record<
   const payload = JSON.stringify({ channel, event, data, timestamp: Date.now() });
   // PostgreSQL NOTIFY has 8000 byte payload limit
   const truncated = payload.length > 7900
-    ? JSON.stringify({ channel, event, data: { id: data.id, truncated: true }, timestamp: Date.now() })
+    ? JSON.stringify({ channel, event, data: { id: data["id"], truncated: true }, timestamp: Date.now() })
     : payload;
 
   for (let attempt = 0; attempt < 2; attempt++) {

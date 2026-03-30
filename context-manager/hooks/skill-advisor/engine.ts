@@ -10,14 +10,14 @@
  */
 
 import { readFile, writeFile, rename, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+// @ts-expect-error — module exists at runtime but has no type declarations
 import { generateTextCC } from "../claude-code-ai/claude";
 
 const SKILL_INDEX_PATH = join(import.meta.dir, "skill-index.json");
 const SKILL_GATE_ROOT = "/tmp/claude-skill-gate";
-const DCM_API_URL = process.env.CONTEXT_MANAGER_URL || "http://127.0.0.1:3847";
+const DCM_API_URL = process.env["CONTEXT_MANAGER_URL"] || "http://127.0.0.1:3847";
 const DCM_TIMEOUT_MS = 1500;
 
 // Rate limit: skip if last analysis was < 8 seconds ago
@@ -406,7 +406,7 @@ async function main() {
 		})),
 		dcm_keywords: keywords,
 	};
-	(reco as Record<string, unknown>).dcm_routing = dcmData;
+	(reco as unknown as Record<string, unknown>)["dcm_routing"] = dcmData;
 
 	// Send positive feedback to DCM for chosen skills/agents (fire-and-forget)
 	const feedbackPromises: Promise<void>[] = [];

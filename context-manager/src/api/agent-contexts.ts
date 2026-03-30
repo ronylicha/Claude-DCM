@@ -44,7 +44,9 @@ export async function getAgentContexts(c: Context): Promise<Response> {
           ORDER BY last_updated DESC
           LIMIT ${limit} OFFSET ${offset}`;
 
-    const [{ total }] = await sql`SELECT COUNT(*) as total FROM agent_contexts`;
+    const totalResults = await sql`SELECT COUNT(*) as total FROM agent_contexts`;
+    const totalRow = totalResults[0];
+    const total = totalRow ? totalRow["total"] : 0;
 
     // Stats
     const stats = await sql`
@@ -65,23 +67,24 @@ export async function getAgentContexts(c: Context): Promise<Response> {
       ORDER BY count DESC
       LIMIT 20`;
 
+    const statsRow = stats[0];
     return c.json({
       contexts,
       total: Number(total),
       limit,
       offset,
       stats: {
-        total: Number(stats[0].total),
-        unique_types: Number(stats[0].unique_types),
-        running: Number(stats[0].running),
-        completed: Number(stats[0].completed),
-        failed: Number(stats[0].failed),
+        total: Number(statsRow ? statsRow["total"] : 0),
+        unique_types: Number(statsRow ? statsRow["unique_types"] : 0),
+        running: Number(statsRow ? statsRow["running"] : 0),
+        completed: Number(statsRow ? statsRow["completed"] : 0),
+        failed: Number(statsRow ? statsRow["failed"] : 0),
       },
-      type_distribution: typeDistribution.map(t => ({
-        agent_type: t.agent_type,
-        count: Number(t.count),
-        running: Number(t.running),
-        completed: Number(t.completed),
+      type_distribution: typeDistribution.map((t: Record<string, unknown>) => ({
+        agent_type: t["agent_type"],
+        count: Number(t["count"]),
+        running: Number(t["running"]),
+        completed: Number(t["completed"]),
       })),
       timestamp: new Date().toISOString(),
     });
@@ -98,7 +101,7 @@ export async function getAgentContextsStats(c: Context): Promise<Response> {
   try {
     const sql = getDb();
 
-    const [overview] = await sql`
+    const overviewResults = await sql`
       SELECT
         COUNT(*) as total_contexts,
         COUNT(DISTINCT agent_type) as unique_agent_types,
@@ -109,6 +112,10 @@ export async function getAgentContextsStats(c: Context): Promise<Response> {
         MIN(last_updated) as oldest_context,
         MAX(last_updated) as newest_context
       FROM agent_contexts`;
+    const overview = overviewResults[0];
+    if (!overview) {
+      return c.json({ error: "Failed to get overview stats" }, 500);
+    }
 
     const topTypes = await sql`
       SELECT agent_type, COUNT(*) as count,
@@ -137,24 +144,24 @@ export async function getAgentContextsStats(c: Context): Promise<Response> {
 
     return c.json({
       overview: {
-        total_contexts: Number(overview.total_contexts),
-        unique_agent_types: Number(overview.unique_agent_types),
-        unique_projects: Number(overview.unique_projects),
-        active_agents: Number(overview.active_agents),
-        completed_agents: Number(overview.completed_agents),
-        failed_agents: Number(overview.failed_agents),
-        oldest_context: overview.oldest_context,
-        newest_context: overview.newest_context,
+        total_contexts: Number(overview["total_contexts"]),
+        unique_agent_types: Number(overview["unique_agent_types"]),
+        unique_projects: Number(overview["unique_projects"]),
+        active_agents: Number(overview["active_agents"]),
+        completed_agents: Number(overview["completed_agents"]),
+        failed_agents: Number(overview["failed_agents"]),
+        oldest_context: overview["oldest_context"],
+        newest_context: overview["newest_context"],
       },
-      top_types: topTypes.map(t => ({
-        agent_type: t.agent_type,
-        count: Number(t.count),
-        running: Number(t.running),
+      top_types: topTypes.map((t: Record<string, unknown>) => ({
+        agent_type: t["agent_type"],
+        count: Number(t["count"]),
+        running: Number(t["running"]),
       })),
       recent_activity: recentActivity,
-      tools_used: toolsUsed.map(t => ({
-        tool: t.tool,
-        usage_count: Number(t.usage_count),
+      tools_used: toolsUsed.map((t: Record<string, unknown>) => ({
+        tool: t["tool"],
+        usage_count: Number(t["usage_count"]),
       })),
       timestamp: new Date().toISOString(),
     });

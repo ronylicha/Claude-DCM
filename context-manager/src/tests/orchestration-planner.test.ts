@@ -12,7 +12,6 @@ import { describe, it, expect, beforeAll } from "bun:test";
 import {
   estimateComplexity,
   buildScopeSection,
-  COMPLEXITY_TIERS,
 } from "../api/orchestration-planner";
 
 const BASE_URL = process.env["DCM_API_URL"] || "http://127.0.0.1:3847";
@@ -177,13 +176,13 @@ describe("POST /api/orchestration/craft-prompt", () => {
     });
 
     expect(status).toBe(200);
-    expect(data.crafted_prompt).toBeDefined();
-    expect(typeof data.crafted_prompt).toBe("string");
-    expect((data.crafted_prompt as string)).toContain("src/server.ts");
-    expect(data.max_turns).toBeGreaterThan(0);
-    expect(data.model).toBeDefined();
-    expect(data.complexity).toBeDefined();
-    expect(data.scope_directives).toBeDefined();
+    expect(data["crafted_prompt"]).toBeDefined();
+    expect(typeof data["crafted_prompt"]).toBe("string");
+    expect((data["crafted_prompt"] as string)).toContain("src/server.ts");
+    expect(data["max_turns"]).toBeGreaterThan(0);
+    expect(data["model"]).toBeDefined();
+    expect(data["complexity"]).toBeDefined();
+    expect(data["scope_directives"]).toBeDefined();
   });
 
   it("handles unknown agent type gracefully", async () => {
@@ -196,8 +195,8 @@ describe("POST /api/orchestration/craft-prompt", () => {
     });
 
     expect(status).toBe(200);
-    expect(data.crafted_prompt).toBeDefined();
-    expect(data.complexity).toBeDefined();
+    expect(data["crafted_prompt"]).toBeDefined();
+    expect(data["complexity"]).toBeDefined();
   });
 
   it("validates required fields", async () => {
@@ -216,7 +215,7 @@ describe("POST /api/orchestration/craft-prompt", () => {
       agent_type: "Snipper",
       target_files: ["README.md"],
     });
-    expect(trivial.data.complexity).toBe("trivial");
+    expect(trivial.data["complexity"]).toBe("trivial");
 
     // Complex
     const complex = await api("POST", "/api/orchestration/craft-prompt", {
@@ -224,7 +223,7 @@ describe("POST /api/orchestration/craft-prompt", () => {
       agent_type: "Explore",
       target_directories: ["src/"],
     });
-    expect(complex.data.complexity).toBe("complex");
+    expect(complex.data["complexity"]).toBe("complex");
   });
 });
 
@@ -241,15 +240,15 @@ describe("POST /api/orchestration/decompose", () => {
     });
 
     expect(status).toBe(200);
-    expect(data.plan_id).toBeDefined();
-    expect(Array.isArray(data.subtasks)).toBe(true);
+    expect(data["plan_id"]).toBeDefined();
+    expect(Array.isArray(data["subtasks"])).toBe(true);
 
-    const subtasks = data.subtasks as Array<{ wave: number; agent_type: string }>;
+    const subtasks = data["subtasks"] as Array<{ wave: number; agent_type: string }>;
 
     // Wave 0: explore
     const wave0 = subtasks.filter((s) => s.wave === 0);
     expect(wave0.length).toBeGreaterThanOrEqual(1);
-    expect(wave0[0].agent_type).toBe("Explore");
+    expect(wave0[0]?.agent_type).toBe("Explore");
 
     // Wave 2: validation
     const wave2 = subtasks.filter((s) => s.wave === 2);
@@ -263,7 +262,7 @@ describe("POST /api/orchestration/decompose", () => {
       task_description: "Write tests for the user controller",
     });
 
-    const subtasks = data.subtasks as Array<{ agent_type: string }>;
+    const subtasks = data["subtasks"] as Array<{ agent_type: string }>;
     const agentTypes = subtasks.map((s) => s.agent_type);
     expect(agentTypes).toContain("test-engineer");
   });
@@ -276,7 +275,7 @@ describe("POST /api/orchestration/decompose", () => {
       constraints: { max_total_turns: 15, max_parallel: 2 },
     });
 
-    const plan = data.execution_plan as { total_turns: number };
+    const plan = data["execution_plan"] as { total_turns: number };
     expect(plan.total_turns).toBeLessThanOrEqual(15);
   });
 
@@ -288,7 +287,7 @@ describe("POST /api/orchestration/decompose", () => {
       constraints: { max_parallel: 2 },
     });
 
-    const waves = (data.execution_plan as { waves: Array<{ parallel: number }> }).waves;
+    const waves = (data["execution_plan"] as { waves: Array<{ parallel: number }> }).waves;
     for (const wave of waves) {
       expect(wave.parallel).toBeLessThanOrEqual(2);
     }
@@ -301,7 +300,7 @@ describe("POST /api/orchestration/decompose", () => {
       task_description: "Add a new feature",
     });
 
-    const subtasks = data.subtasks as Array<{ step: number; wave: number; depends_on: number[] }>;
+    const subtasks = data["subtasks"] as Array<{ step: number; wave: number; depends_on: number[] }>;
 
     // Wave 0 tasks have no dependencies
     const wave0 = subtasks.filter((s) => s.wave === 0);

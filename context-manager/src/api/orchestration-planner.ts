@@ -6,7 +6,7 @@
 
 import type { Context } from "hono";
 import { z } from "zod";
-import { getDb, publishEvent } from "../db/client";
+import { getDb } from "../db/client";
 import { createLogger } from "../lib/logger";
 
 const log = createLogger("OrcPlanner");
@@ -71,24 +71,25 @@ const COMPLEXITY_KEYWORDS: Record<string, string[]> = {
 export function estimateComplexity(
   description: string,
   targetFileCount: number,
-  agentScope?: AgentRegistryRow | null,
+  _agentScope?: AgentRegistryRow | null,
 ): ComplexityTier {
   const lower = description.toLowerCase();
 
   // Check keywords from highest to lowest
   for (const tier of ["expert", "complex", "moderate", "simple", "trivial"] as const) {
     const keywords = COMPLEXITY_KEYWORDS[tier];
-    if (keywords.some((kw) => lower.includes(kw))) {
-      return COMPLEXITY_TIERS[tier];
+    const tierDef = COMPLEXITY_TIERS[tier];
+    if (keywords && tierDef && keywords.some((kw) => lower.includes(kw))) {
+      return tierDef;
     }
   }
 
   // Fallback: estimate by file count
-  if (targetFileCount <= 1) return COMPLEXITY_TIERS.trivial;
-  if (targetFileCount <= 3) return COMPLEXITY_TIERS.simple;
-  if (targetFileCount <= 8) return COMPLEXITY_TIERS.moderate;
-  if (targetFileCount <= 15) return COMPLEXITY_TIERS.complex;
-  return COMPLEXITY_TIERS.expert;
+  if (targetFileCount <= 1) return COMPLEXITY_TIERS["trivial"]!;
+  if (targetFileCount <= 3) return COMPLEXITY_TIERS["simple"]!;
+  if (targetFileCount <= 8) return COMPLEXITY_TIERS["moderate"]!;
+  if (targetFileCount <= 15) return COMPLEXITY_TIERS["complex"]!;
+  return COMPLEXITY_TIERS["expert"]!;
 }
 
 // ============================================
@@ -242,7 +243,7 @@ const DecomposeInputSchema = z.object({
   constraints: z.object({
     max_parallel: z.number().int().min(1).max(5).optional().default(3),
     max_total_turns: z.number().int().min(5).max(200).optional().default(50),
-  }).optional().default({}),
+  }).optional().default({ max_parallel: 3, max_total_turns: 50 }),
 });
 
 // ============================================

@@ -65,7 +65,7 @@ export async function postProject(c: Context): Promise<Response> {
       VALUES (
         ${normalizedPath},
         ${body.name ?? null},
-        ${sql.json(body.metadata ?? {})}
+        ${sql.json((body.metadata ?? {}) as unknown as import("postgres").JSONValue)}
       )
       ON CONFLICT (path) DO UPDATE SET
         name = COALESCE(EXCLUDED.name, projects.name),

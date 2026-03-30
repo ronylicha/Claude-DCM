@@ -81,44 +81,51 @@ export async function getDashboardKpis(c: Context): Promise<Response> {
       `,
     ]);
 
-    const total24h = Number(actionStats24h[0]?.total ?? 0);
-    const success24h = Number(actionStats24h[0]?.success ?? 0);
+    const actionRow = actionStats24h[0];
+    const sessionRow = sessionStats[0];
+    const agentRow = agentContextStats[0];
+    const subtaskRow = subtaskStats[0];
+    const routingRow = routingStats[0];
+    const hourRow = actionsPerHour[0];
+
+    const total24h = Number(actionRow ? actionRow["total"] : 0);
+    const success24h = Number(actionRow ? actionRow["success"] : 0);
 
     return c.json({
       actions_24h: {
         total: total24h,
         success: success24h,
         success_rate: total24h > 0 ? Math.round((success24h / total24h) * 100) : 0,
-        unique_tools: Number(actionStats24h[0]?.unique_tools ?? 0),
-        active_sessions: Number(actionStats24h[0]?.active_sessions ?? 0),
-        avg_per_hour: Number(actionsPerHour[0]?.avg_per_hour ?? 0),
+        unique_tools: Number(actionRow ? actionRow["unique_tools"] : 0),
+        active_sessions: Number(actionRow ? actionRow["active_sessions"] : 0),
+        avg_per_hour: Number(hourRow ? hourRow["avg_per_hour"] : 0),
       },
       sessions: {
-        total: Number(sessionStats[0]?.total ?? 0),
-        active: Number(sessionStats[0]?.active ?? 0),
-        avg_tools_per_session: Number(sessionStats[0]?.avg_tools ?? 0),
+        total: Number(sessionRow ? sessionRow["total"] : 0),
+        active: Number(sessionRow ? sessionRow["active"] : 0),
+        avg_tools_per_session: Number(sessionRow ? sessionRow["avg_tools"] : 0),
       },
       agents: {
-        contexts_total: Number(agentContextStats[0]?.total ?? 0),
-        unique_types: Number(agentContextStats[0]?.unique_types ?? 0),
+        contexts_total: Number(agentRow ? agentRow["total"] : 0),
+        unique_types: Number(agentRow ? agentRow["unique_types"] : 0),
         top_types: topAgentTypes.map((r: Record<string, unknown>) => ({
-          agent_type: r.agent_type as string,
-          count: Number(r.count),
+          agent_type: r["agent_type"] as string,
+          count: Number(r["count"]),
         })),
       },
       subtasks: {
-        total: Number(subtaskStats[0]?.total ?? 0),
-        completed: Number(subtaskStats[0]?.completed ?? 0),
-        running: Number(subtaskStats[0]?.running ?? 0),
-        failed: Number(subtaskStats[0]?.failed ?? 0),
-        completion_rate: Number(subtaskStats[0]?.total ?? 0) > 0
-          ? Math.round((Number(subtaskStats[0]?.completed ?? 0) / Number(subtaskStats[0]?.total ?? 0)) * 100)
+        total: Number(subtaskRow ? subtaskRow["total"] : 0),
+        completed: Number(subtaskRow ? subtaskRow["completed"] : 0),
+        running: Number(subtaskRow ? subtaskRow["running"] : 0),
+        failed: Number(subtaskRow ? subtaskRow["failed"] : 0),
+        completion_rate: Number(subtaskRow ? subtaskRow["total"] : 0) > 0
+          ? Math.round((Number(subtaskRow ? subtaskRow["completed"] : 0) / Number(subtaskRow ? subtaskRow["total"] : 0)) * 100)
           : 0,
       },
       routing: {
-        keywords: Number(routingStats[0]?.keywords ?? 0),
-        tools: Number(routingStats[0]?.tools ?? 0),
-        mappings: Number(routingStats[0]?.mappings ?? 0),
+        keywords: Number(routingRow ? routingRow["keywords"] : 0),
+        tools: Number(routingRow ? routingRow["tools"] : 0),
+        mappings: Number(routingRow ? routingRow["mappings"] : 0),
       },
       timestamp: new Date().toISOString(),
     });

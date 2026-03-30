@@ -11,7 +11,7 @@
  * @module tests/api
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { describe, it, expect, beforeAll } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Configuration

@@ -8,7 +8,7 @@ const LOG_LEVELS: Record<LogLevel, number> = {
 };
 
 export function getLogLevel(): LogLevel {
-  const level = process.env.LOG_LEVEL?.toLowerCase() as LogLevel | undefined;
+  const level = process.env["LOG_LEVEL"]?.toLowerCase() as LogLevel | undefined;
   return level && ['debug', 'info', 'warn', 'error'].includes(level) ? level : 'info';
 }
 
@@ -36,7 +36,7 @@ export function createLogger(tag: string) {
       }
     },
     debug(...args: unknown[]) {
-      if (shouldLog(logLevel, 'debug') || process.env.DEBUG) {
+      if (shouldLog(logLevel, 'debug') || process.env["DEBUG"]) {
         console.debug(`[${tag}]`, ...args);
       }
     },

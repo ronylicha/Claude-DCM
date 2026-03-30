@@ -8,12 +8,12 @@
  */
 
 import { readdir, readFile } from "node:fs/promises";
-import { join, basename } from "node:path";
+import { join } from "node:path";
 import { createLogger } from "../lib/logger";
 
 const log = createLogger("Catalog");
 
-const HOME = process.env.HOME || "/home/" + (process.env.USER || "user");
+const HOME = process.env["HOME"] || "/home/" + (process.env["USER"] || "user");
 const CLAUDE_DIR = join(HOME, ".claude");
 const SKILLS_DIR = join(CLAUDE_DIR, "skills");
 const PLUGINS_CACHE_DIR = join(CLAUDE_DIR, "plugins", "cache");
@@ -55,7 +55,7 @@ function parseYamlFrontmatter(content: string): Record<string, string> {
   const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!match) return {};
   const result: Record<string, string> = {};
-  for (const line of match[1].split("\n")) {
+  for (const line of (match[1] ?? "").split("\n")) {
     const colonIdx = line.indexOf(":");
     if (colonIdx === -1) continue;
     const key = line.slice(0, colonIdx).trim();
@@ -73,7 +73,7 @@ function parseYamlFrontmatter(content: string): Record<string, string> {
 function extractDescriptionFromMd(content: string): string {
   // Try frontmatter first
   const fm = parseYamlFrontmatter(content);
-  if (fm.description) return fm.description.slice(0, 200);
+  if (fm["description"]) return fm["description"].slice(0, 200);
 
   // Fallback: first non-heading paragraph
   const lines = content.split("\n");
@@ -195,8 +195,8 @@ async function scanUserSkills(): Promise<CatalogSkill[]> {
     const content = await safeReadFile(skillFile);
 
     const fm = parseYamlFrontmatter(content);
-    const name = fm.name || entry;
-    const description = fm.description || extractDescriptionFromMd(content) || entry;
+    const name = fm["name"] || entry;
+    const description = fm["description"] || extractDescriptionFromMd(content) || entry;
 
     results.push({
       id: entry,
@@ -232,8 +232,8 @@ async function scanPluginSkills(): Promise<CatalogSkill[]> {
           if (!content) continue;
 
           const fm = parseYamlFrontmatter(content);
-          const name = fm.name || skillEntry;
-          const description = fm.description || extractDescriptionFromMd(content) || skillEntry;
+          const name = fm["name"] || skillEntry;
+          const description = fm["description"] || extractDescriptionFromMd(content) || skillEntry;
           const qualifiedId = `${plugin}:${skillEntry}`;
 
           // Avoid duplicates (multiple versions)
@@ -268,8 +268,8 @@ async function scanCommands(): Promise<CatalogCommand[]> {
         const id = prefix ? `${prefix}:${entry.replace(/\.md$/, "")}` : entry.replace(/\.md$/, "");
         results.push({
           id,
-          name: fm.name || id,
-          description: (fm.description || extractDescriptionFromMd(content) || id).slice(0, 200),
+          name: fm["name"] || id,
+          description: (fm["description"] || extractDescriptionFromMd(content) || id).slice(0, 200),
           category: "command",
           source: "user",
         });
@@ -299,9 +299,9 @@ async function scanAgents(): Promise<CatalogAgent[]> {
 
     results.push({
       id,
-      name: fm.name || id,
-      description: (fm.description || extractDescriptionFromMd(content) || id).slice(0, 200),
-      category: categorizeSkill(id, fm.description || ""),
+      name: fm["name"] || id,
+      description: (fm["description"] || extractDescriptionFromMd(content) || id).slice(0, 200),
+      category: categorizeSkill(id, fm["description"] || ""),
       source: "user",
       tools: [],
     });

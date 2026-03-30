@@ -62,7 +62,7 @@ export async function postBlocking(c: Context): Promise<Response> {
     const sql = getDb();
 
     // Upsert blocking record (update reason if already exists)
-    const [blocked] = await sql<BlockedAgentRow[]>`
+    const blockedRows = await sql<BlockedAgentRow[]>`
       INSERT INTO blocked_agents (blocked_by, blocked_agent, reason)
       VALUES (${input.blocked_by}, ${input.blocked_agent}, ${input.reason ?? null})
       ON CONFLICT (blocked_by, blocked_agent)
@@ -70,6 +70,11 @@ export async function postBlocking(c: Context): Promise<Response> {
         reason = EXCLUDED.reason
       RETURNING id, blocked_by, blocked_agent, reason, created_at
     `;
+    const blocked = blockedRows[0];
+
+    if (!blocked) {
+      return c.json({ error: "Failed to create blocking record" }, 500);
+    }
 
     // Publish real-time event via PostgreSQL NOTIFY
     await publishEvent(`agents/${blocked.blocked_agent}`, "agent.blocked", {
@@ -191,18 +196,23 @@ export async function deleteBlocking(c: Context): Promise<Response> {
       return c.json({ error: "Blocking record not found" }, 404);
     }
 
+    const deletedRow = deleted[0];
+    if (!deletedRow) {
+      return c.json({ error: "Blocking record not found" }, 404);
+    }
+
     // Publish real-time event via PostgreSQL NOTIFY
-    await publishEvent(`agents/${deleted[0].blocked_agent}`, "agent.unblocked", {
-      by: deleted[0].blocked_by,
+    await publishEvent(`agents/${deletedRow.blocked_agent}`, "agent.unblocked", {
+      by: deletedRow.blocked_by,
     });
 
     return c.json({
       success: true,
       unblocked: {
-        id: deleted[0].id,
-        blocked_by: deleted[0].blocked_by,
-        blocked_agent: deleted[0].blocked_agent,
-        reason: deleted[0].reason,
+        id: deletedRow.id,
+        blocked_by: deletedRow.blocked_by,
+        blocked_agent: deletedRow.blocked_agent,
+        reason: deletedRow.reason,
       },
     });
   } catch (error) {
@@ -255,18 +265,23 @@ export async function postUnblock(c: Context): Promise<Response> {
       return c.json({ error: "Blocking record not found" }, 404);
     }
 
+    const deletedRow2 = deleted[0];
+    if (!deletedRow2) {
+      return c.json({ error: "Blocking record not found" }, 404);
+    }
+
     // Publish real-time event via PostgreSQL NOTIFY
-    await publishEvent(`agents/${deleted[0].blocked_agent}`, "agent.unblocked", {
-      by: deleted[0].blocked_by,
+    await publishEvent(`agents/${deletedRow2.blocked_agent}`, "agent.unblocked", {
+      by: deletedRow2.blocked_by,
     });
 
     return c.json({
       success: true,
       unblocked: {
-        id: deleted[0].id,
-        blocked_by: deleted[0].blocked_by,
-        blocked_agent: deleted[0].blocked_agent,
-        reason: deleted[0].reason,
+        id: deletedRow2.id,
+        blocked_by: deletedRow2.blocked_by,
+        blocked_agent: deletedRow2.blocked_agent,
+        reason: deletedRow2.reason,
       },
     });
   } catch (error) {

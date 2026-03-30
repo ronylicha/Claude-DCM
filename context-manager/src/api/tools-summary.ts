@@ -38,7 +38,7 @@ let cache: CacheEntry | null = null;
 // Helper Functions
 // ============================================
 
-const CLAUDE_DIR = join(process.env.HOME || "", ".claude");
+const CLAUDE_DIR = join(process.env["HOME"] || "", ".claude");
 
 /**
  * Count skills by finding directories with SKILL.md

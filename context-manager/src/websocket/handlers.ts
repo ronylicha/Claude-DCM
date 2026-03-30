@@ -6,7 +6,6 @@
 import { createLogger } from "../lib/logger";
 import type {
   WSClient,
-  WSClientData,
   IncomingMessage,
   WSSubscribe,
   WSUnsubscribe,
@@ -225,7 +224,10 @@ function handleAuth(ws: WSClient, msg: WSAuth): void {
   }
   
   ws.data.agent_id = payload.agent_id;
-  ws.data.session_id = payload.session_id || ws.data.session_id;
+  const resolvedSession = payload.session_id || ws.data.session_id;
+  if (resolvedSession !== undefined) {
+    ws.data.session_id = resolvedSession;
+  }
   ws.data.authenticated = true;
 
   // Send auth success
@@ -413,7 +415,7 @@ function sendAck(ws: WSClient, id: string | undefined, success: boolean, error?:
     type: "ack",
     id,
     success,
-    error,
+    ...(error !== undefined ? { error } : {}),
     timestamp: Date.now(),
   };
 

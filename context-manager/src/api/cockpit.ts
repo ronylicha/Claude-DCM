@@ -4,6 +4,112 @@ import { createLogger } from "../lib/logger";
 
 const log = createLogger("Cockpit");
 
+interface SessionCountRow {
+  total_active: number;
+  opus_count: number;
+  sonnet_count: number;
+  haiku_count: number;
+}
+
+interface AgentSummaryRow {
+  total: number;
+  running: number;
+  blocked: number;
+  completed: number;
+}
+
+interface CapacityRow {
+  session_id: string;
+  project_name: string | null;
+  project_path: string | null;
+  started_at: string;
+  model_id: string;
+  used_percentage: number;
+  zone: string;
+  predicted_exhaustion_minutes: number | null;
+  consumption_rate: number;
+  current_usage: number;
+  max_capacity: number;
+  source: string;
+  agents_count: number;
+  current_wave: number | null;
+}
+
+interface SummaryCountRow {
+  generating: number;
+  ready: number;
+}
+
+interface WaveRow {
+  session_id: string;
+  wave_number: number;
+  status: string;
+  total_tasks: number;
+  completed_tasks: number;
+}
+
+interface AgentStatRow {
+  session_id: string;
+  total: number;
+  running: number;
+  blocked: number;
+}
+
+interface LastActionRow {
+  session_id: string;
+  tool_name: string;
+  file_paths: string[] | null;
+  created_at: string;
+  agent_id: string;
+}
+
+interface SparklineRow {
+  session_id: string;
+  bucket: string;
+  count: number;
+}
+
+interface SummaryStatusRow {
+  session_id: string;
+  status: string;
+}
+
+interface CapacityDetailRow {
+  current_usage: number;
+  max_capacity: number;
+  zone: string;
+  consumption_rate: number;
+  predicted_exhaustion_minutes: number | null;
+  model_id: string;
+  source: string;
+}
+
+interface WaveDetailRow {
+  wave_number: number;
+  status: string;
+  total_tasks: number;
+  completed_tasks: number;
+  failed_tasks: number;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+interface AgentDetailRow {
+  id: string;
+  agent_type: string;
+  agent_id: string;
+  parent_agent_id: string | null;
+  status: string;
+  description: string | null;
+  started_at: string | null;
+  session_id: string;
+}
+
+interface SummaryDetailRow {
+  status: string;
+  created_at: string;
+}
+
 // GET /api/cockpit/global — Aggregated data for StatusBar (all sessions)
 export async function getCockpitGlobal(c: Context) {
   const db = getDb();
@@ -11,7 +117,7 @@ export async function getCockpitGlobal(c: Context) {
     // Parallel queries
     const [sessions, agents, capacities, summaries] = await Promise.all([
       // Active sessions count + by model
-      db`
+      db<SessionCountRow[]>`
         SELECT
           COUNT(*) as total_active,
           COUNT(*) FILTER (WHERE ac.model_id LIKE '%opus%') as opus_count,
@@ -29,7 +135,7 @@ export async function getCockpitGlobal(c: Context) {
           OR EXISTS (SELECT 1 FROM actions a WHERE a.session_id = s.id AND a.created_at > NOW() - INTERVAL '15 minutes')
       `,
       // Agent summary
-      db`
+      db<AgentSummaryRow[]>`
         SELECT
           COUNT(*) as total,
           COUNT(*) FILTER (WHERE status = 'running') as running,
@@ -40,7 +146,7 @@ export async function getCockpitGlobal(c: Context) {
           AND created_at > NOW() - INTERVAL '24 hours'
       `,
       // Per-session capacity (include sessions without statusline data)
-      db`
+      db<CapacityRow[]>`
         SELECT DISTINCT ON (s.id)
           s.id as session_id,
           p.name as project_name,
@@ -76,7 +182,7 @@ export async function getCockpitGlobal(c: Context) {
         ORDER BY s.id, s.started_at DESC
       `,
       // Summaries status
-      db`
+      db<SummaryCountRow[]>`
         SELECT
           COUNT(*) FILTER (WHERE status = 'generating') as generating,
           COUNT(*) FILTER (WHERE status = 'ready') as ready
@@ -90,7 +196,7 @@ export async function getCockpitGlobal(c: Context) {
     const sm = summaries[0];
 
     // Deduplicate capacities by session_id — keep statusline over estimated
-    const capMap = new Map<string, typeof capacities[0]>();
+    const capMap = new Map<string, CapacityRow>();
     for (const cap of capacities) {
       const existing = capMap.get(cap.session_id);
       if (!existing || (cap.source === 'statusline' && existing.source !== 'statusline')) {
@@ -145,20 +251,20 @@ export async function getCockpitGrid(c: Context) {
   try {
     const sessions = await getActiveSessionsWithCapacity(15);
 
-    const sessionIds = sessions.map(s => s.session_id);
+    const sessionIds = sessions.map(s => s["session_id"] as string);
 
     if (sessionIds.length === 0) return c.json({ sessions: [] });
 
     const [waves, agentStats, lastActions, sparklines, summaries] = await Promise.all([
       // 1. Current wave per session
-      db`
+      db<WaveRow[]>`
         SELECT DISTINCT ON (session_id) session_id, wave_number, status, total_tasks, completed_tasks
         FROM wave_states
         WHERE session_id = ANY(${sessionIds}) AND status IN ('running', 'pending')
         ORDER BY session_id, wave_number ASC
       `,
       // 2. Agent stats per session
-      db`
+      db<AgentStatRow[]>`
         SELECT r.session_id,
           COUNT(*) as total,
           COUNT(*) FILTER (WHERE st.status = 'running') as running,
@@ -171,7 +277,7 @@ export async function getCockpitGrid(c: Context) {
         GROUP BY r.session_id
       `,
       // 3. Last action per session
-      db`
+      db<LastActionRow[]>`
         SELECT DISTINCT ON (a.session_id)
           a.session_id, a.tool_name, a.file_paths, a.created_at,
           COALESCE(st.agent_id, 'unknown') as agent_id
@@ -181,7 +287,7 @@ export async function getCockpitGrid(c: Context) {
         ORDER BY a.session_id, a.created_at DESC
       `,
       // 4. Sparkline data (all sessions at once)
-      db`
+      db<SparklineRow[]>`
         SELECT a.session_id,
           date_trunc('minute', a.created_at) -
           (EXTRACT(minute FROM a.created_at)::int % 5) * INTERVAL '1 minute' as bucket,
@@ -193,7 +299,7 @@ export async function getCockpitGrid(c: Context) {
         ORDER BY a.session_id, bucket
       `,
       // 5. Latest preemptive summary per session
-      db`
+      db<SummaryStatusRow[]>`
         SELECT DISTINCT ON (session_id) session_id, status
         FROM preemptive_summaries
         WHERE session_id = ANY(${sessionIds})
@@ -209,37 +315,39 @@ export async function getCockpitGrid(c: Context) {
     const now = Date.now();
     const sparklineMap = new Map<string, number[]>();
     for (const sess of sessions) {
+      const sessId = sess["session_id"] as string;
       const points = new Array(12).fill(0);
-      const rows = sparklines.filter(r => r.session_id === sess.session_id);
+      const rows = sparklines.filter(r => r.session_id === sessId);
       rows.forEach(r => {
         const idx = Math.floor((now - new Date(r.bucket).getTime()) / 300000);
         if (idx >= 0 && idx < 12) points[11 - idx] = Number(r.count);
       });
-      sparklineMap.set(sess.session_id, points);
+      sparklineMap.set(sessId, points);
     }
 
     const result = sessions.map(sess => {
-      const wave = waveMap.get(sess.session_id);
-      const stats = agentMap.get(sess.session_id);
-      const lastAction = actionMap.get(sess.session_id);
-      const sparkline = sparklineMap.get(sess.session_id) || new Array(12).fill(0);
-      const summary = summaryMap.get(sess.session_id)?.status || 'none';
+      const sessId = sess["session_id"] as string;
+      const wave = waveMap.get(sessId);
+      const stats = agentMap.get(sessId);
+      const lastAction = actionMap.get(sessId);
+      const sparkline = sparklineMap.get(sessId) || new Array(12).fill(0);
+      const summary = summaryMap.get(sessId)?.status || 'none';
 
       return {
-        session_id: sess.session_id,
-        project_name: sess.project_name,
-        project_path: sess.project_path,
-        model_id: sess.model_id,
-        started_at: sess.started_at,
+        session_id: sessId,
+        project_name: sess["project_name"] as string | null,
+        project_path: sess["project_path"] as string | null,
+        model_id: sess["model_id"] as string,
+        started_at: sess["started_at"] as string,
         context: {
-          used_percentage: Number(sess.used_percentage || 0),
-          current_usage: Number(sess.current_usage || 0),
-          context_window_size: Number(sess.max_capacity || 200000),
-          zone: sess.zone || 'green',
-          consumption_rate: Number(sess.consumption_rate || 0),
-          predicted_exhaustion_minutes: sess.predicted_exhaustion_minutes,
-          source: sess.source || 'estimated',
-          model_id: sess.model_id || 'unknown',
+          used_percentage: Number(sess["used_percentage"] || 0),
+          current_usage: Number(sess["current_usage"] || 0),
+          context_window_size: Number(sess["max_capacity"] || 200000),
+          zone: (sess["zone"] as string) || 'green',
+          consumption_rate: Number(sess["consumption_rate"] || 0),
+          predicted_exhaustion_minutes: sess["predicted_exhaustion_minutes"] as number | null,
+          source: (sess["source"] as string) || 'estimated',
+          model_id: (sess["model_id"] as string) || 'unknown',
         },
         wave: wave ? {
           current_number: wave.wave_number,
@@ -276,9 +384,9 @@ export async function getCockpitSession(c: Context) {
   const db = getDb();
   try {
     const [capacity, waves, agents, summaryStatus] = await Promise.all([
-      db`SELECT current_usage, max_capacity, zone, consumption_rate, predicted_exhaustion_minutes, model_id, source FROM agent_capacity WHERE session_id = ${session_id} ORDER BY current_usage DESC LIMIT 1`.then(r => r[0]),
-      db`SELECT wave_number, status, total_tasks, completed_tasks, failed_tasks, started_at, completed_at FROM wave_states WHERE session_id = ${session_id} ORDER BY wave_number ASC`,
-      db`
+      db<CapacityDetailRow[]>`SELECT current_usage, max_capacity, zone, consumption_rate, predicted_exhaustion_minutes, model_id, source FROM agent_capacity WHERE session_id = ${session_id} ORDER BY current_usage DESC LIMIT 1`.then(r => r[0]),
+      db<WaveDetailRow[]>`SELECT wave_number, status, total_tasks, completed_tasks, failed_tasks, started_at, completed_at FROM wave_states WHERE session_id = ${session_id} ORDER BY wave_number ASC`,
+      db<AgentDetailRow[]>`
         SELECT st.*, r.session_id
         FROM subtasks st
         JOIN task_lists tl ON st.task_list_id = tl.id
@@ -286,7 +394,7 @@ export async function getCockpitSession(c: Context) {
         WHERE r.session_id = ${session_id}
         ORDER BY st.created_at DESC
       `,
-      db`
+      db<SummaryDetailRow[]>`
         SELECT status, created_at FROM preemptive_summaries
         WHERE session_id = ${session_id}
         ORDER BY created_at DESC LIMIT 1

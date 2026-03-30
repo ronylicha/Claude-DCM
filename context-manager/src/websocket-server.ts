@@ -41,7 +41,7 @@ async function main(): Promise<void> {
   log.info("Database connected");
 
   // Start WebSocket server
-  const server = startWebSocketServer();
+  startWebSocketServer();
 
   log.info("");
   log.info("========================================");

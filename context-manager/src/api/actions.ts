@@ -148,7 +148,7 @@ export async function postAction(c: Context): Promise<Response> {
     }
 
     // Insert action record (session_id is a direct column since v4.1)
-    const [action] = await sql`
+    const actionResults = await sql`
       INSERT INTO actions (
         subtask_id,
         tool_name,
@@ -178,6 +178,10 @@ export async function postAction(c: Context): Promise<Response> {
       )
       RETURNING id, tool_name, tool_type, exit_code, duration_ms, session_id, created_at
     `;
+    const action = actionResults[0];
+    if (!action) {
+      return c.json({ error: "Failed to insert action" }, 500);
+    }
 
     // Extract keywords from input for routing intelligence
     const success = (body.exit_code ?? 0) === 0;
@@ -193,13 +197,14 @@ export async function postAction(c: Context): Promise<Response> {
         // Find or create project if project_path is provided
         let projectId: string | null = null;
         if (body.project_path) {
-          const [project] = await sql`
+          const projectResults = await sql`
             INSERT INTO projects (path, name)
             VALUES (${body.project_path}, ${body.project_path.split("/").pop() || "unknown"})
             ON CONFLICT (path) DO UPDATE SET updated_at = NOW()
             RETURNING id
           `;
-          projectId = project?.id ?? null;
+          const project = projectResults[0];
+          projectId = project ? project["id"] as string : null;
         }
 
         // Upsert session with counter increment
@@ -227,22 +232,22 @@ export async function postAction(c: Context): Promise<Response> {
 
     // Publish real-time event via PostgreSQL NOTIFY
     await publishEvent("global", "action.created", {
-      id: action.id,
-      tool_name: action.tool_name,
-      tool_type: action.tool_type,
-      exit_code: action.exit_code,
+      id: action["id"],
+      tool_name: action["tool_name"],
+      tool_type: action["tool_type"],
+      exit_code: action["exit_code"],
       session_id: body.session_id,
     });
 
     return c.json({
       success: true,
       action: {
-        id: action.id,
-        tool_name: action.tool_name,
-        tool_type: action.tool_type,
-        exit_code: action.exit_code,
-        duration_ms: action.duration_ms,
-        created_at: action.created_at,
+        id: action["id"],
+        tool_name: action["tool_name"],
+        tool_type: action["tool_type"],
+        exit_code: action["exit_code"],
+        duration_ms: action["duration_ms"],
+        created_at: action["created_at"],
         session_id: body.session_id,
         keywords_extracted: keywords.length,
       },
@@ -278,8 +283,8 @@ export async function getActionsHourly(c: Context): Promise<Response> {
     `;
 
     const data = results.map((row: Record<string, unknown>) => ({
-      hour: row.hour instanceof Date ? row.hour.toISOString() : String(row.hour),
-      count: Number(row.count),
+      hour: row["hour"] instanceof Date ? row["hour"].toISOString() : String(row["hour"]),
+      count: Number(row["count"]),
     }));
 
     return c.json({
@@ -347,7 +352,8 @@ export async function getActions(c: Context): Promise<Response> {
 
     // Get total count for pagination
     const totalResult = await sql`SELECT COUNT(*)::int as total FROM actions`;
-    const total = totalResult[0]?.total ?? actions.length;
+    const totalRow = totalResult[0];
+    const total = totalRow ? totalRow["total"] : actions.length;
 
     return c.json({
       actions,
@@ -409,11 +415,11 @@ export async function getActionsTopTools(c: Context): Promise<Response> {
     }
 
     const data = results.map((row: Record<string, unknown>) => ({
-      tool_name: String(row.tool_name),
-      tool_type: String(row.tool_type),
-      count: Number(row.count),
-      success_count: Number(row.success_count),
-      avg_duration_ms: row.avg_duration_ms !== null ? Math.round(Number(row.avg_duration_ms)) : null,
+      tool_name: String(row["tool_name"]),
+      tool_type: String(row["tool_type"]),
+      count: Number(row["count"]),
+      success_count: Number(row["success_count"]),
+      avg_duration_ms: row["avg_duration_ms"] !== null ? Math.round(Number(row["avg_duration_ms"])) : null,
     }));
 
     return c.json({

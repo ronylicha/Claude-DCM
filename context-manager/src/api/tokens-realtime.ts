@@ -66,13 +66,13 @@ export async function postTokensRealtime(c: Context) {
 
     // Calculate EMA consumption rate
     let newRate = 0;
-    if (existing?.last_statusline_at) {
+    if (existing?.["last_statusline_at"]) {
       const elapsed =
-        (Date.now() - new Date(existing.last_statusline_at).getTime()) / 60000; // minutes
+        (Date.now() - new Date(existing["last_statusline_at"] as string).getTime()) / 60000; // minutes
       if (elapsed > 0) {
-        const delta = total_tokens - (existing.current_usage || 0);
+        const delta = total_tokens - ((existing["current_usage"] as number) || 0);
         const instantRate = Math.max(0, delta) / elapsed; // tokens per minute
-        const previousRate = existing.consumption_rate || 0;
+        const previousRate = (existing["consumption_rate"] as number) || 0;
         newRate = EMA_ALPHA * instantRate + (1 - EMA_ALPHA) * previousRate;
       }
     }
@@ -108,7 +108,7 @@ export async function postTokensRealtime(c: Context) {
     `;
 
     // 3. Check for threshold crossing and publish events
-    const previousZone = existing?.zone || "green";
+    const previousZone = (existing?.["zone"] as string) || "green";
 
     // Broadcast capacity update via WebSocket
     await publishEvent("global", "capacity.update", {
@@ -203,7 +203,7 @@ export async function postTokensRealtime(c: Context) {
       WHERE session_id = ${session_id}
     `;
 
-    const estimatedTokens = Number(estimatedSum?.estimated || 0);
+    const estimatedTokens = Number(estimatedSum?.["estimated"] || 0);
     if (estimatedTokens > 0 && total_tokens > 0) {
       const ratio = total_tokens / estimatedTokens;
       await db`
@@ -246,13 +246,18 @@ export async function getTokenProjection(c: Context) {
 
     // Aggregate: use the main orchestrator or highest usage agent
     const main = capacities[0];
-    const remaining = main.max_capacity - main.current_usage;
-    const rate = main.consumption_rate || 0;
+    if (!main) {
+      return c.json({ error: "No capacity data for session" }, 404);
+    }
+    const mainMaxCapacity = main["max_capacity"] as number;
+    const mainCurrentUsage = main["current_usage"] as number;
+    const remaining = mainMaxCapacity - mainCurrentUsage;
+    const rate = (main["consumption_rate"] as number) || 0;
 
     function project(periodMinutes: number) {
       if (rate <= 0) return { total_tokens: remaining, compactions: 0 };
 
-      const usableAfterCompact = main.max_capacity * 0.80;
+      const usableAfterCompact = mainMaxCapacity * 0.80;
       const minutesUntilCompact = remaining / rate;
       let totalTokens = remaining;
       let compactions = 0;
@@ -273,13 +278,13 @@ export async function getTokenProjection(c: Context) {
 
     return c.json({
       session_id,
-      agent_id: main.agent_id,
-      model_id: main.model_id,
+      agent_id: main["agent_id"],
+      model_id: main["model_id"],
       current: {
-        usage: main.current_usage,
-        max: main.max_capacity,
+        usage: mainCurrentUsage,
+        max: mainMaxCapacity,
         remaining,
-        zone: main.zone,
+        zone: main["zone"],
         rate,
       },
       projection_5h,
@@ -314,10 +319,10 @@ export async function getTokenCalibration(c: Context) {
     }
 
     return c.json({
-      ratio: latest.ratio,
-      real_tokens: latest.real_tokens,
-      estimated_tokens: latest.estimated_tokens,
-      calculated_at: latest.calculated_at,
+      ratio: latest["ratio"],
+      real_tokens: latest["real_tokens"],
+      estimated_tokens: latest["estimated_tokens"],
+      calculated_at: latest["calculated_at"],
       source: "calibrated",
     });
   } catch (error) {

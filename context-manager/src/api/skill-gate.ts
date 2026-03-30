@@ -6,11 +6,8 @@
 
 import type { Context } from "hono";
 import { getDb } from "../db/client";
-import { createLogger } from "../lib/logger";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-
-const log = createLogger("SkillGate");
 
 // Cached skill index (loaded once, refreshed every 5 min)
 let skillIndex: SkillIndex | null = null;
@@ -71,7 +68,7 @@ async function loadSkillIndex(): Promise<SkillIndex | null> {
 
   const paths = [
     join(__dirname, "../../hooks/skill-advisor/skill-index.json"),
-    join(process.env.HOME || "/home/user", ".claude/scripts/skill-advisor/skill-index.json"),
+    join(process.env["HOME"] || "/home/user", ".claude/scripts/skill-advisor/skill-index.json"),
   ];
 
   for (const p of paths) {
@@ -146,9 +143,10 @@ export async function postSkill(c: Context): Promise<Response> {
   `;
 
   // Update skills_loaded count
-  const [{ count }] = await sql`
+  const countRows = await sql`
     SELECT COUNT(*)::int as count FROM session_skills WHERE session_id = ${sessionId}
   `;
+  const count = countRows[0]?.["count"] ?? 0;
 
   await sql`
     INSERT INTO session_workflow_state (session_id, skills_loaded)
@@ -248,17 +246,17 @@ export async function getStatus(c: Context): Promise<Response> {
 
   return c.json({
     session_id: sessionId,
-    skills: skills.map((s: Record<string, unknown>) => s.skill_name),
+    skills: skills.map((s: Record<string, unknown>) => s["skill_name"]),
     skills_count: skills.length,
     workflow: workflow ? {
-      task_size: workflow.task_size,
-      impact_analyzer: workflow.impact_analyzer,
-      regression_guard: workflow.regression_guard,
-      skills_loaded: workflow.skills_loaded,
+      task_size: workflow["task_size"],
+      impact_analyzer: workflow["impact_analyzer"],
+      regression_guard: workflow["regression_guard"],
+      skills_loaded: workflow["skills_loaded"],
     } : null,
-    advisor: workflow?.advisor_reco || null,
-    advisor_fresh: workflow?.advisor_updated_at
-      ? Date.now() - new Date(workflow.advisor_updated_at as string).getTime() < 300_000
+    advisor: workflow?.["advisor_reco"] || null,
+    advisor_fresh: workflow?.["advisor_updated_at"]
+      ? Date.now() - new Date(workflow["advisor_updated_at"] as string).getTime() < 300_000
       : false,
   });
 }
@@ -282,7 +280,7 @@ export async function checkGate(c: Context): Promise<Response> {
   const skillRows = await sql`
     SELECT skill_name FROM session_skills WHERE session_id = ${sessionId}
   `;
-  const loadedSkills = new Set(skillRows.map((r: Record<string, unknown>) => r.skill_name as string));
+  const loadedSkills = new Set(skillRows.map((r: Record<string, unknown>) => r["skill_name"] as string));
 
   // Load workflow state + advisor (freshness check in SQL to avoid clock skew)
   const workflows = await sql`
@@ -291,8 +289,8 @@ export async function checkGate(c: Context): Promise<Response> {
     FROM session_workflow_state WHERE session_id = ${sessionId}
   `;
   const workflow = workflows[0] || null;
-  const reco = workflow?.advisor_reco as Record<string, unknown> | null;
-  const recoFresh = Boolean(workflow?.advisor_fresh);
+  const reco = workflow?.["advisor_reco"] as Record<string, unknown> | null;
+  const recoFresh = Boolean(workflow?.["advisor_fresh"]);
 
   // ---- 1. Base skill check (absolute rule) ----
   if (!loadedSkills.has("workflow-clean-code")) {
@@ -310,7 +308,7 @@ export async function checkGate(c: Context): Promise<Response> {
 
   // ---- 3. Advisor-based enforcement (priority if fresh) ----
   if (reco && recoFresh) {
-    const requiredSkills = (reco.required_skills as Array<{ skill: string; reason: string; priority: string }>) || [];
+    const requiredSkills = (reco["required_skills"] as Array<{ skill: string; reason: string; priority: string }>) || [];
     const missingMandatory = requiredSkills
       .filter(s => s.priority === "mandatory" && !loadedSkills.has(s.skill));
 
@@ -326,8 +324,8 @@ export async function checkGate(c: Context): Promise<Response> {
 
     // Agent enforcement via advisor
     if (toolType === "agent" && subagentType) {
-      const recommendedAgents = (reco.recommended_agents as Array<{ agent: string; reason: string; for_domain: string }>) || [];
-      const alternativeAgents = (reco.alternative_agents as string[]) || [];
+      const recommendedAgents = (reco["recommended_agents"] as Array<{ agent: string; reason: string; for_domain: string }>) || [];
+      const alternativeAgents = (reco["alternative_agents"] as string[]) || [];
 
       if (recommendedAgents.length > 0) {
         const allAllowed = [

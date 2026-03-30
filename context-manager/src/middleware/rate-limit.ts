@@ -39,7 +39,7 @@ function getClientIP(c: Context): string {
   const forwardedFor = c.req.header("x-forwarded-for");
   if (forwardedFor) {
     // Take only the first IP (client IP) from comma-separated list
-    const firstIP = forwardedFor.split(",")[0].trim();
+    const firstIP = (forwardedFor.split(",")[0] ?? "").trim();
     
     // Validate IPv4 (strict: each octet must be 0-255)
     const ipv4Regex = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;

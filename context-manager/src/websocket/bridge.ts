@@ -134,14 +134,14 @@ async function getMetricSnapshot(): Promise<MetricSnapshot> {
   ]);
 
   return {
-    active_sessions: Number(activeSessionsResult[0]?.count ?? 0),
-    active_agents: Number(activeAgentsResult[0]?.count ?? 0),
-    pending_tasks: Number(taskStatsResult[0]?.pending ?? 0),
-    running_tasks: Number(taskStatsResult[0]?.running ?? 0),
-    completed_tasks_last_hour: Number(taskStatsResult[0]?.completed_last_hour ?? 0),
-    messages_last_hour: Number(messageStatsResult[0]?.count ?? 0),
-    actions_per_minute: Number(actionsStatsResult[0]?.actions_per_minute ?? 0),
-    avg_task_duration_ms: Number(taskStatsResult[0]?.avg_duration_ms ?? 0),
+    active_sessions: Number(activeSessionsResult[0]?.["count"] ?? 0),
+    active_agents: Number(activeAgentsResult[0]?.["count"] ?? 0),
+    pending_tasks: Number(taskStatsResult[0]?.["pending"] ?? 0),
+    running_tasks: Number(taskStatsResult[0]?.["running"] ?? 0),
+    completed_tasks_last_hour: Number(taskStatsResult[0]?.["completed_last_hour"] ?? 0),
+    messages_last_hour: Number(messageStatsResult[0]?.["count"] ?? 0),
+    actions_per_minute: Number(actionsStatsResult[0]?.["actions_per_minute"] ?? 0),
+    avg_task_duration_ms: Number(taskStatsResult[0]?.["avg_duration_ms"] ?? 0),
     timestamp: Date.now(),
   };
 }

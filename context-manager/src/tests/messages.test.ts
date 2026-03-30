@@ -233,7 +233,7 @@ describe("Messages API Unit Tests", () => {
       const details = data["details"] as Record<string, string[]>;
       expect(details["topic"]).toBeDefined();
       // Zod v4 uses its own default error format for enums
-      expect(details["topic"][0]).toMatch(/topic|Invalid option|expected one of/);
+      expect((details["topic"] as string[])[0]).toMatch(/topic|Invalid option|expected one of/);
     });
 
     test("returns 400 when priority exceeds maximum of 10", async () => {
@@ -350,8 +350,8 @@ describe("Messages API Unit Tests", () => {
       expect(mockPublishEvent).toHaveBeenCalledTimes(2);
 
       // First call: global channel
-      const [globalChannel, globalEvent, globalData] =
-        mockPublishEvent.mock.calls[0];
+      const call0 = mockPublishEvent.mock.calls[0] as unknown[];
+      const [globalChannel, globalEvent, globalData] = call0;
       expect(globalChannel).toBe("global");
       expect(globalEvent).toBe("message.new");
       expect((globalData as Record<string, unknown>)["id"]).toBe(
@@ -359,8 +359,8 @@ describe("Messages API Unit Tests", () => {
       );
 
       // Second call: agent-specific channel
-      const [agentChannel, agentEvent, agentData] =
-        mockPublishEvent.mock.calls[1];
+      const call1 = mockPublishEvent.mock.calls[1] as unknown[];
+      const [agentChannel, agentEvent, agentData] = call1;
       expect(agentChannel).toBe("agents/agent-receiver-001");
       expect(agentEvent).toBe("message.new");
       expect((agentData as Record<string, unknown>)["priority"]).toBe(5);
@@ -375,7 +375,7 @@ describe("Messages API Unit Tests", () => {
 
       // Broadcast: only global channel = 1 call
       expect(mockPublishEvent).toHaveBeenCalledTimes(1);
-      expect(mockPublishEvent.mock.calls[0][0]).toBe("global");
+      expect((mockPublishEvent.mock.calls[0] as unknown[])[0]).toBe("global");
     });
   });
 
@@ -465,14 +465,16 @@ describe("Messages API Unit Tests", () => {
       expect(responseMessages.length).toBe(2);
 
       // First message: direct, not read by this agent
-      expect(responseMessages[0]["id"]).toBe("msg-1");
-      expect(responseMessages[0]["is_broadcast"]).toBe(false);
-      expect(responseMessages[0]["already_read"]).toBe(false);
+      const msg0 = responseMessages[0] as Record<string, unknown>;
+      expect(msg0["id"]).toBe("msg-1");
+      expect(msg0["is_broadcast"]).toBe(false);
+      expect(msg0["already_read"]).toBe(false);
 
       // Second message: broadcast (to_agent_id null), not read by this agent
-      expect(responseMessages[1]["id"]).toBe("msg-2");
-      expect(responseMessages[1]["is_broadcast"]).toBe(true);
-      expect(responseMessages[1]["already_read"]).toBe(false);
+      const msg1 = responseMessages[1] as Record<string, unknown>;
+      expect(msg1["id"]).toBe("msg-2");
+      expect(msg1["is_broadcast"]).toBe(true);
+      expect(msg1["already_read"]).toBe(false);
     });
 
     test("marks already_read=true when agent is in read_by array", async () => {
@@ -494,7 +496,8 @@ describe("Messages API Unit Tests", () => {
 
       expect(status).toBe(200);
       const responseMessages = data["messages"] as Record<string, unknown>[];
-      expect(responseMessages[0]["already_read"]).toBe(true);
+      const readMsg = responseMessages[0] as Record<string, unknown>;
+      expect(readMsg["already_read"]).toBe(true);
     });
 
     test("returns empty array when no messages exist", async () => {

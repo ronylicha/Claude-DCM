@@ -14,6 +14,10 @@ const summarySchema = z.object({
   status: z.string().optional(),
 });
 
+interface UpdatedIdRow {
+  id: string;
+}
+
 export async function postPreemptiveSummary(c: Context) {
   const body = await c.req.json();
   const parsed = summarySchema.safeParse(body);
@@ -36,7 +40,7 @@ export async function postPreemptiveSummary(c: Context) {
       `;
     } else {
       // Update generating record to ready, or insert new
-      const [updated] = await db`
+      const [updated] = await db<UpdatedIdRow[]>`
         UPDATE preemptive_summaries
         SET summary = ${summary}, status = ${finalStatus},
             context_tokens_at_trigger = ${context_tokens_at_trigger || null}
@@ -89,6 +93,38 @@ export async function getPreemptiveSummary(c: Context) {
   }
 }
 
+interface TaskRow {
+  status: string;
+  agent_id: string | null;
+  agent_type: string;
+  description: string;
+  wave_number: number;
+}
+
+interface WaveRow {
+  status: string;
+  wave_number: number;
+  completed_tasks: number;
+  total_tasks: number;
+}
+
+interface FileRow {
+  file_path: string;
+}
+
+interface MessageRow {
+  to_agent_id: string | null;
+  payload: string | Record<string, unknown>;
+  from_agent_id: string;
+}
+
+interface CapacityRow {
+  agent_id: string;
+  zone: string;
+  current_usage: number;
+  max_capacity: number;
+}
+
 // GET /api/compact/raw-context/:session_id — Assemble raw context as Markdown
 export async function getRawContext(c: Context) {
   const session_id = c.req.param("session_id");
@@ -97,7 +133,7 @@ export async function getRawContext(c: Context) {
   try {
     const [tasks, recentActions, messages, waves, capacities, files] = await Promise.all([
       // Active tasks
-      db`
+      db<TaskRow[]>`
         SELECT st.agent_type, st.agent_id, st.description, st.status, st.parent_agent_id,
                tl.wave_number
         FROM subtasks st
@@ -118,7 +154,7 @@ export async function getRawContext(c: Context) {
         LIMIT 50
       `,
       // Recent messages
-      db`
+      db<MessageRow[]>`
         SELECT from_agent_id, to_agent_id, topic, payload, created_at
         FROM agent_messages
         WHERE created_at > NOW() - INTERVAL '2 hours'
@@ -126,20 +162,20 @@ export async function getRawContext(c: Context) {
         LIMIT 20
       `,
       // Wave states
-      db`
+      db<WaveRow[]>`
         SELECT wave_number, status, total_tasks, completed_tasks, failed_tasks
         FROM wave_states
         WHERE session_id = ${session_id}
         ORDER BY wave_number
       `,
       // Agent capacities
-      db`
+      db<CapacityRow[]>`
         SELECT agent_id, current_usage, max_capacity, zone, model_id
         FROM agent_capacity
         WHERE session_id = ${session_id}
       `,
       // Modified files (from actions) — use a.session_id directly
-      db`
+      db<FileRow[]>`
         SELECT DISTINCT unnest(a.file_paths) as file_path
         FROM actions a
         WHERE a.session_id = ${session_id}

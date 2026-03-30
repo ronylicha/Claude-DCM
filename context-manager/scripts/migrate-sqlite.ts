@@ -64,7 +64,7 @@ async function migrate() {
 
   // Step 6: Check current PostgreSQL count
   const [pgBefore] = await sql`SELECT COUNT(*) as count FROM keyword_tool_scores`;
-  console.log(`[Migration] PostgreSQL records before: ${pgBefore.count}`);
+  console.log(`[Migration] PostgreSQL records before: ${pgBefore?.["count"]}`);
 
   // Step 7: Insert records in batches
   const BATCH_SIZE = 500;
@@ -99,7 +99,7 @@ async function migrate() {
               last_used = EXCLUDED.last_used
             RETURNING (xmax = 0) as is_insert
           `;
-          if (result[0]?.is_insert) {
+          if (result[0]?.["is_insert"]) {
             inserted++;
           } else {
             updated++;
@@ -125,7 +125,7 @@ async function migrate() {
 
   // Step 8: Verify counts match
   const [pgAfter] = await sql`SELECT COUNT(*) as count FROM keyword_tool_scores`;
-  const pgCount = Number(pgAfter.count);
+  const pgCount = Number(pgAfter?.["count"]);
 
   console.log(`[Migration] PostgreSQL records after: ${pgCount}`);
   console.log(`[Migration] Inserted: ${inserted}, Updated: ${updated}, Errors: ${errors}`);

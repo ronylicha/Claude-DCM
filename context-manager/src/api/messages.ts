@@ -32,7 +32,7 @@ const MessageInputSchema = z.object({
   from_agent: z.string().min(1, "from_agent is required"),
   to_agent: z.string().nullable().optional(), // null = broadcast
   topic: z.enum(VALID_TOPICS, {
-    errorMap: () => ({ message: `topic must be one of: ${VALID_TOPICS.join(", ")}` }),
+    error: `topic must be one of: ${VALID_TOPICS.join(", ")}`,
   }),
   content: z.record(z.string(), z.unknown()).or(z.string()), // Accept object or string
   priority: z.number().int().min(0).max(10).default(0),
@@ -98,7 +98,7 @@ export async function postMessage(c: Context): Promise<Response> {
         : input.content;
 
     // Insert the message
-    const [message] = await sql<MessageRow[]>`
+    const insertedRows = await sql<MessageRow[]>`
       INSERT INTO agent_messages (
         project_id,
         from_agent_id,
@@ -114,7 +114,7 @@ export async function postMessage(c: Context): Promise<Response> {
         ${input.to_agent || 'broadcast'},
         ${input.topic},
         ${input.topic},
-        ${sql.json(payload)},
+        ${sql.json(payload as Parameters<typeof sql.json>[0])},
         ${input.priority},
         ${expiresAt.toISOString()}
       )
@@ -123,6 +123,11 @@ export async function postMessage(c: Context): Promise<Response> {
         message_type, topic, payload, priority,
         read_by, created_at, expires_at
     `;
+    const message = insertedRows[0];
+
+    if (!message) {
+      return c.json({ error: "Failed to insert message" }, 500);
+    }
 
     // Publish real-time event via PostgreSQL NOTIFY
     await publishEvent("global", "message.new", {
@@ -293,7 +298,8 @@ export async function getAllMessages(c: Context): Promise<Response> {
       FROM agent_messages
       ORDER BY created_at DESC
       LIMIT ${limit} OFFSET ${offset}`;
-    const [{ total }] = await sql`SELECT COUNT(*) as total FROM agent_messages`;
+    const totalRows = await sql<[{ total: number }]>`SELECT COUNT(*) as total FROM agent_messages`;
+    const total = totalRows[0]?.total ?? 0;
     return c.json({ messages, count: Number(total), limit, offset });
   } catch (error) {
     log.error("GET /api/messages error:", error);

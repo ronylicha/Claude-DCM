@@ -18,7 +18,7 @@ export interface Channel {
 
 export function parseChannel(channel: string): Channel | null {
   if (channel === "global" || channel === "metrics") {
-    return { type: channel };
+    return { type: channel as ChannelType };
   }
 
   if (channel.startsWith("topics/")) {
@@ -26,7 +26,7 @@ export function parseChannel(channel: string): Channel | null {
   }
 
   const match = channel.match(/^(agents|sessions)\/(.+)$/);
-  if (match) {
+  if (match && match[1] && match[2]) {
     return { type: match[1] as ChannelType, id: match[2] };
   }
 

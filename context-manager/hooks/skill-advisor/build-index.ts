@@ -5,10 +5,9 @@
  * Re-run whenever skills are added/removed.
  */
 
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-const CLAUDE_DIR = join(import.meta.dir, "../..");
 const OUTPUT = join(import.meta.dir, "skill-index.json");
 
 interface SkillEntry {

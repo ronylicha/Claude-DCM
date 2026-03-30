@@ -106,14 +106,14 @@ export async function suggestRouting(c: Context): Promise<Response> {
 
     // Format response
     const suggestions: ToolSuggestion[] = results.map((r: Record<string, unknown>) => ({
-      tool_name: r.tool_name as string,
-      tool_type: r.tool_type as string,
-      score: Number(r.avg_score),
-      usage_count: Number(r.total_usage),
-      success_rate: Number(r.total_usage) > 0
-        ? Math.round((Number(r.total_success) / Number(r.total_usage)) * 100)
+      tool_name: r["tool_name"] as string,
+      tool_type: r["tool_type"] as string,
+      score: Number(r["avg_score"]),
+      usage_count: Number(r["total_usage"]),
+      success_rate: Number(r["total_usage"]) > 0
+        ? Math.round((Number(r["total_success"]) / Number(r["total_usage"])) * 100)
         : 0,
-      keyword_matches: r.matched_keywords as string[],
+      keyword_matches: r["matched_keywords"] as string[],
     }));
 
     // Compatibility format for shell scripts (like routing-suggest.sh)
@@ -187,11 +187,11 @@ export async function getRoutingStats(c: Context): Promise<Response> {
 
     return c.json({
       totals: {
-        total_records: Number(totals.total_records),
-        unique_keywords: Number(totals.unique_keywords),
-        unique_tools: Number(totals.unique_tools),
-        avg_score: Number(totals.avg_score),
-        avg_usage: Number(totals.avg_usage),
+        total_records: Number(totals?.["total_records"] ?? 0),
+        unique_keywords: Number(totals?.["unique_keywords"] ?? 0),
+        unique_tools: Number(totals?.["unique_tools"] ?? 0),
+        avg_score: Number(totals?.["avg_score"] ?? 0),
+        avg_usage: Number(totals?.["avg_usage"] ?? 0),
       },
       top_by_score: topByScore,
       top_by_usage: topByUsage,

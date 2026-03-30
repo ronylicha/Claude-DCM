@@ -791,6 +791,64 @@ export interface StatsAgentLeaderboard {
 }
 
 // ============================================
+// Pipeline types
+// ============================================
+
+export interface Pipeline {
+  id: string;
+  session_id: string;
+  name: string | null;
+  status: string;
+  input: Record<string, unknown>;
+  plan: Record<string, unknown> | null;
+  current_wave: number;
+  config: Record<string, unknown>;
+  synthesis: Record<string, unknown> | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface PipelineStep {
+  id: string;
+  pipeline_id: string;
+  wave_number: number;
+  step_order: number;
+  agent_type: string;
+  description: string | null;
+  skills: string[] | null;
+  model: string;
+  max_turns: number;
+  status: string;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  retry_count: number;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
+}
+
+export interface PipelinesResponse {
+  pipelines: Pipeline[];
+  count: number;
+}
+
+export interface PipelineDetailResponse {
+  pipeline: Pipeline;
+  steps: PipelineStep[];
+}
+
+export interface PipelineStepsResponse {
+  steps: PipelineStep[];
+  count: number;
+}
+
+export interface PipelineCreateResponse {
+  success: boolean;
+  pipeline: Pipeline;
+}
+
+// ============================================
 // API Error
 // ============================================
 
@@ -1376,6 +1434,35 @@ export const apiClient = {
 
     return { snapshots };
   },
+
+  // ==========================================
+  // Pipelines - /api/pipelines
+  // ==========================================
+  getPipelines: (sessionId?: string) => {
+    const params = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
+    return apiFetch<PipelinesResponse>(`/api/pipelines${params}`);
+  },
+  getPipeline: (id: string) =>
+    apiFetch<PipelineDetailResponse>(`/api/pipelines/${id}`),
+  getPipelineSteps: (id: string, waveNumber?: number) => {
+    const params = waveNumber !== undefined ? `?wave_number=${waveNumber}` : '';
+    return apiFetch<PipelineStepsResponse>(`/api/pipelines/${id}/steps${params}`);
+  },
+  createPipeline: (data: {
+    session_id: string;
+    instructions: string;
+    documents?: Array<{ name: string; content: string; type: string }>;
+    target_files?: string[];
+    target_directories?: string[];
+  }) =>
+    apiFetch<PipelineCreateResponse>('/api/pipelines', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  controlPipeline: (id: string, action: 'start' | 'pause' | 'cancel') =>
+    apiFetch<{ success: boolean }>(`/api/pipelines/${id}/${action}`, {
+      method: 'POST',
+    }),
 };
 
 export default apiClient;

@@ -417,15 +417,16 @@ export async function deleteTask(c: Context): Promise<Response> {
       RETURNING id, request_id, wave_number
     `;
 
-    if (results.length === 0) {
+    const deletedTask = results[0];
+    if (!deletedTask) {
       return c.json({ error: "Task not found" }, 404);
     }
 
     // Publish real-time event
     await publishEvent("global", "task.deleted", {
       id: taskId,
-      request_id: results[0].request_id,
-      wave_number: results[0].wave_number,
+      request_id: deletedTask.request_id,
+      wave_number: deletedTask.wave_number,
     });
 
     return new Response(null, { status: 204 });

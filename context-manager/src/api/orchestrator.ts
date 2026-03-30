@@ -4,6 +4,28 @@ import { createLogger } from "../lib/logger";
 
 const log = createLogger("Orchestrator");
 
+interface MessageRow {
+  from_agent_id: string;
+  to_agent_id: string | null;
+  topic: string;
+  payload: Record<string, unknown> | string;
+  created_at: string;
+  from_session: string | null;
+  to_session: string | null;
+}
+
+interface ConflictRow {
+  file_path: string;
+  session_count: number;
+  sessions: string[];
+  detected_at: string;
+}
+
+interface HeartbeatRow {
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
 // GET /api/orchestrator/topology — Full topology for 3D visualization
 export async function getOrchestratorTopology(c: Context) {
   const db = getDb();
@@ -11,7 +33,7 @@ export async function getOrchestratorTopology(c: Context) {
     const [sessions, messages, conflicts, heartbeat] = await Promise.all([
       getActiveSessionsWithCapacity(15),
       // Recent cross-project messages (directives)
-      db`
+      db<MessageRow[]>`
         SELECT from_agent_id, to_agent_id, topic, payload, created_at,
           (SELECT s.id FROM sessions s
            JOIN projects p ON s.project_id = p.id
@@ -23,7 +45,7 @@ export async function getOrchestratorTopology(c: Context) {
         LIMIT 50
       `,
       // File conflicts (2+ sessions editing same file in last 15 min)
-      db`
+      db<ConflictRow[]>`
         SELECT unnest(a.file_paths) as file_path,
           COUNT(DISTINCT a.session_id) as session_count,
           array_agg(DISTINCT a.session_id) as sessions,
@@ -37,7 +59,7 @@ export async function getOrchestratorTopology(c: Context) {
         HAVING COUNT(DISTINCT a.session_id) > 1
       `,
       // Latest orchestrator heartbeat
-      db`
+      db<HeartbeatRow[]>`
         SELECT payload, created_at FROM agent_messages
         WHERE from_agent_id = 'orchestrator-global' AND topic = 'orchestrator.heartbeat'
         ORDER BY created_at DESC LIMIT 1
@@ -58,7 +80,7 @@ export async function getOrchestratorTopology(c: Context) {
             : m.topic.includes('directive') ? 'directive' : 'info',
         topic: m.topic,
         message_preview: typeof m.payload === 'object'
-          ? (m.payload.message || JSON.stringify(m.payload)).slice(0, 100)
+          ? ((m.payload as Record<string, unknown>)["message"] as string || JSON.stringify(m.payload)).slice(0, 100)
           : String(m.payload).slice(0, 100),
         created_at: m.created_at,
       }));
@@ -71,13 +93,13 @@ export async function getOrchestratorTopology(c: Context) {
         total_conflicts: conflicts.length,
       },
       nodes: sessions.map(s => ({
-        session_id: s.session_id,
-        project_name: s.project_name || 'Unknown',
-        used_percentage: Number(s.used_percentage),
-        zone: s.zone,
-        model_id: s.model_id,
-        active_agents: Number(s.active_agents),
-        last_action_at: s.last_action_at,
+        session_id: s["session_id"] as string,
+        project_name: (s["project_name"] as string | null) || 'Unknown',
+        used_percentage: Number(s["used_percentage"]),
+        zone: s["zone"] as string,
+        model_id: s["model_id"] as string,
+        active_agents: Number(s["active_agents"]),
+        last_action_at: s["last_action_at"] as string | null,
       })),
       edges,
       conflicts: conflicts.map(c => ({
@@ -97,7 +119,7 @@ export async function getOrchestratorTopology(c: Context) {
 export async function getOrchestratorStatus(c: Context) {
   const db = getDb();
   try {
-    const [heartbeat] = await db`
+    const [heartbeat] = await db<HeartbeatRow[]>`
       SELECT payload, created_at FROM agent_messages
       WHERE from_agent_id = 'orchestrator-global' AND topic = 'orchestrator.heartbeat'
       ORDER BY created_at DESC LIMIT 1

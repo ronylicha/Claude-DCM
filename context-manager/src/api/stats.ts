@@ -199,43 +199,43 @@ export async function getStatsOverview(c: Context): Promise<Response> {
         : sql`SELECT 0 as total`,
     ]);
 
-    const totalActions = Number(actionStats[0]?.total ?? 0);
-    const successActions = Number(actionStats[0]?.success ?? 0);
-    const currentTokens = Number(tokenTotals[0]?.total ?? 0);
-    const prevTokens = Number(prevTokenTotals[0]?.total ?? 0);
-    const currentSessions = Number(sessionStats[0]?.total ?? 0);
-    const prevSessions = Number(prevSessionStats[0]?.total ?? 0);
-    const currentActionsTotal = Number(actionStats[0]?.total ?? 0);
-    const prevActionsTotal = Number(prevActionStats[0]?.total ?? 0);
+    const totalActions = Number(actionStats[0]?.["total"] ?? 0);
+    const successActions = Number(actionStats[0]?.["success"] ?? 0);
+    const currentTokens = Number(tokenTotals[0]?.["total"] ?? 0);
+    const prevTokens = Number(prevTokenTotals[0]?.["total"] ?? 0);
+    const currentSessions = Number(sessionStats[0]?.["total"] ?? 0);
+    const prevSessions = Number(prevSessionStats[0]?.["total"] ?? 0);
+    const currentActionsTotal = Number(actionStats[0]?.["total"] ?? 0);
+    const prevActionsTotal = Number(prevActionStats[0]?.["total"] ?? 0);
 
     return c.json({
       period,
       tokens: {
         total: currentTokens,
-        input: Number(tokenTotals[0]?.input ?? 0),
-        output: Number(tokenTotals[0]?.output ?? 0),
+        input: Number(tokenTotals[0]?.["input"] ?? 0),
+        output: Number(tokenTotals[0]?.["output"] ?? 0),
         byDay: tokensByDay.map((r: Record<string, unknown>) => ({
-          date: r.date instanceof Date ? r.date.toISOString() : r.date,
-          input: Number(r.input),
-          output: Number(r.output),
-          total: Number(r.total),
+          date: r["date"] instanceof Date ? r["date"].toISOString() : r["date"],
+          input: Number(r["input"]),
+          output: Number(r["output"]),
+          total: Number(r["total"]),
         })),
       },
       sessions: {
         total: currentSessions,
-        avgDuration: Number(sessionStats[0]?.avg_duration_ms ?? 0),
-        avgToolsUsed: Number(sessionStats[0]?.avg_tools_used ?? 0),
+        avgDuration: Number(sessionStats[0]?.["avg_duration_ms"] ?? 0),
+        avgToolsUsed: Number(sessionStats[0]?.["avg_tools_used"] ?? 0),
       },
       actions: {
         total: totalActions,
         successRate: totalActions > 0 ? Math.round((successActions / totalActions) * 100) : 0,
-        avgDuration: Number(actionStats[0]?.avg_duration_ms ?? 0),
-        uniqueTools: Number(actionStats[0]?.unique_tools ?? 0),
+        avgDuration: Number(actionStats[0]?.["avg_duration_ms"] ?? 0),
+        uniqueTools: Number(actionStats[0]?.["unique_tools"] ?? 0),
       },
       agents: {
-        totalUsed: Number(agentStats[0]?.total_used ?? 0),
-        topAgent: agentStats[0]?.top_agent ?? null,
-        avgSubtasksPerSession: Number(agentStats[0]?.avg_subtasks_per_session ?? 0),
+        totalUsed: Number(agentStats[0]?.["total_used"] ?? 0),
+        topAgent: agentStats[0]?.["top_agent"] ?? null,
+        avgSubtasksPerSession: Number(agentStats[0]?.["avg_subtasks_per_session"] ?? 0),
       },
       comparison: {
         tokensDelta: prevTokens > 0 ? Math.round(((currentTokens - prevTokens) / prevTokens) * 100) : 0,
@@ -442,30 +442,30 @@ export async function getStatsTokens(c: Context): Promise<Response> {
 
     return c.json({
       data: timeSeries.map((r: Record<string, unknown>) => ({
-        date: r.date instanceof Date ? r.date.toISOString() : r.date,
-        input_tokens: Number(r.input_tokens),
-        output_tokens: Number(r.output_tokens),
-        total_tokens: Number(r.total_tokens),
+        date: r["date"] instanceof Date ? r["date"].toISOString() : r["date"],
+        input_tokens: Number(r["input_tokens"]),
+        output_tokens: Number(r["output_tokens"]),
+        total_tokens: Number(r["total_tokens"]),
       })),
       byAgent: byAgent.map((r: Record<string, unknown>) => ({
-        agent_type: r.agent_type as string,
-        total_tokens: Number(r.total_tokens),
-        percentage: Number(r.percentage),
+        agent_type: r["agent_type"] as string,
+        total_tokens: Number(r["total_tokens"]),
+        percentage: Number(r["percentage"]),
       })),
       byTool: byTool.map((r: Record<string, unknown>) => ({
-        tool_name: r.tool_name as string,
-        total_tokens: Number(r.total_tokens),
-        percentage: Number(r.percentage),
+        tool_name: r["tool_name"] as string,
+        total_tokens: Number(r["total_tokens"]),
+        percentage: Number(r["percentage"]),
       })),
       byModel: byModel.map((r: Record<string, unknown>) => ({
-        model_id: r.model_id as string,
-        total_tokens: Number(r.total_tokens),
-        percentage: Number(r.percentage),
+        model_id: r["model_id"] as string,
+        total_tokens: Number(r["total_tokens"]),
+        percentage: Number(r["percentage"]),
       })),
       totals: {
-        input: Number(totals[0]?.input ?? 0),
-        output: Number(totals[0]?.output ?? 0),
-        total: Number(totals[0]?.total ?? 0),
+        input: Number(totals[0]?.["input"] ?? 0),
+        output: Number(totals[0]?.["output"] ?? 0),
+        total: Number(totals[0]?.["total"] ?? 0),
       },
     });
   } catch (error) {
@@ -522,7 +522,7 @@ export async function getStatsActivity(c: Context): Promise<Response> {
     ]);
 
     const countMap = new Map<string, number>();
-    for (const row of dailyCounts as Array<{ date: string; count: string | number }>) {
+    for (const row of dailyCounts as unknown as Array<{ date: string; count: string | number }>) {
       countMap.set(row.date, Number(row.count));
     }
 
@@ -555,8 +555,10 @@ export async function getStatsActivity(c: Context): Promise<Response> {
     let tempStreak = 0;
 
     for (let i = heatmap.length - 1; i >= 0; i--) {
-      if (heatmap[i].count > 0) {
-        if (i === heatmap.length - 1 || heatmap[i + 1].count > 0 || currentStreak === 0) {
+      const cur = heatmap[i];
+      const next = heatmap[i + 1];
+      if (cur && cur.count > 0) {
+        if (i === heatmap.length - 1 || (next && next.count > 0) || currentStreak === 0) {
           currentStreak++;
         }
       } else {
@@ -577,13 +579,15 @@ export async function getStatsActivity(c: Context): Promise<Response> {
     }
 
     const hourlyFull = Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 }));
-    for (const row of hourlyDist as Array<{ hour: number; count: string | number }>) {
-      hourlyFull[row.hour].count = Number(row.count);
+    for (const row of hourlyDist as unknown as Array<{ hour: number; count: string | number }>) {
+      const hourEntry = hourlyFull[row.hour];
+      if (hourEntry) hourEntry.count = Number(row.count);
     }
 
     const weekdayFull = Array.from({ length: 7 }, (_, d) => ({ day: d, count: 0 }));
-    for (const row of weekdayDist as Array<{ day: number; count: string | number }>) {
-      weekdayFull[row.day].count = Number(row.count);
+    for (const row of weekdayDist as unknown as Array<{ day: number; count: string | number }>) {
+      const dayEntry = weekdayFull[row.day];
+      if (dayEntry) dayEntry.count = Number(row.count);
     }
 
     return c.json({
@@ -723,7 +727,7 @@ export async function getStatsAgents(c: Context): Promise<Response> {
     ]);
 
     const prevMap = new Map<string, number>();
-    for (const row of prevPeriodCounts as Array<{ agent_type: string; tasks_completed: string | number }>) {
+    for (const row of prevPeriodCounts as unknown as Array<{ agent_type: string; tasks_completed: string | number }>) {
       if (row.agent_type) {
         prevMap.set(row.agent_type as string, Number(row.tasks_completed));
       }
@@ -761,22 +765,22 @@ export async function getStatsAgents(c: Context): Promise<Response> {
 
     return c.json({
       leaderboard: leaderboard.map((r: Record<string, unknown>) => {
-        const agentType = r.agent_type as string;
-        const completed = Number(r.tasks_completed);
-        const total = Number(r.tasks_total);
+        const agentType = r["agent_type"] as string;
+        const completed = Number(r["tasks_completed"]);
+        const total = Number(r["tasks_total"]);
         return {
           agent_type: agentType,
           display_name: getDisplayName(agentType),
           category: getCategory(agentType),
           tasks_completed: completed,
-          tasks_failed: Number(r.tasks_failed),
+          tasks_failed: Number(r["tasks_failed"]),
           success_rate: total > 0 ? Math.round((completed / total) * 100) : 0,
-          total_tokens: Number(r.total_tokens),
-          avg_duration_ms: Number(r.avg_duration_ms ?? 0),
+          total_tokens: Number(r["total_tokens"]),
+          avg_duration_ms: Number(r["avg_duration_ms"] ?? 0),
           trend: getTrend(agentType, completed),
         };
       }),
-      totalAgentTypes: Number(totalTypes[0]?.total ?? 0),
+      totalAgentTypes: Number(totalTypes[0]?.["total"] ?? 0),
     });
   } catch (error) {
     log.error("GET /api/stats/agents error:", error);

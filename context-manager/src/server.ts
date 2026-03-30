@@ -67,6 +67,16 @@ import { getOrchestratorTopology, getOrchestratorStatus } from "./api/orchestrat
 import { startOrchestrator, stopOrchestrator, getOrchestratorStats } from "./orchestrator";
 import { getStatsOverview, getStatsTokens, getStatsActivity, getStatsAgents } from "./api/stats";
 import { postSkill, postWorkflow, postAdvisor, getStatus, checkGate } from "./api/skill-gate";
+import {
+  postCreatePipeline,
+  postStartPipeline,
+  postPausePipeline,
+  postCancelPipeline,
+  patchStepStatus,
+  getListPipelines,
+  getPipelineDetail,
+  getPipelineStepsList,
+} from "./api/pipeline";
 
 // Version from package.json (single source of truth)
 import pkg from "../package.json";
@@ -550,6 +560,19 @@ app.post("/api/skill-gate/:session_id/workflow", postWorkflow);
 app.post("/api/skill-gate/:session_id/advisor", postAdvisor);
 app.get("/api/skill-gate/:session_id/status", getStatus);
 app.get("/api/skill-gate/:session_id/check", checkGate);
+
+// ============================================
+// Pipeline API - Phase 13 (DCM v5.1)
+// ============================================
+
+app.post("/api/pipelines", postCreatePipeline);
+app.get("/api/pipelines", getListPipelines);
+app.get("/api/pipelines/:id", getPipelineDetail);
+app.get("/api/pipelines/:id/steps", getPipelineStepsList);
+app.post("/api/pipelines/:id/start", postStartPipeline);
+app.post("/api/pipelines/:id/pause", postPausePipeline);
+app.post("/api/pipelines/:id/cancel", postCancelPipeline);
+app.patch("/api/pipelines/:id/steps/:stepId", patchStepStatus);
 
 // ============================================
 // Server Startup

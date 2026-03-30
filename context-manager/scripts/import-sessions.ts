@@ -7,8 +7,8 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, basename, dirname } from "node:path";
 
-const API_URL = process.env.DCM_API_URL || "http://127.0.0.1:3847";
-const CLAUDE_PROJECTS = process.env.CLAUDE_PROJECTS || `${process.env.HOME}/.claude/projects`;
+const API_URL = process.env["DCM_API_URL"] || "http://127.0.0.1:3847";
+const CLAUDE_PROJECTS = process.env["CLAUDE_PROJECTS"] || `${process.env["HOME"]}/.claude/projects`;
 
 interface SessionLine {
   type: string;
@@ -29,7 +29,7 @@ interface SessionInfo {
   projectPath: string;
   projectName: string;
   startedAt: Date;
-  endedAt?: Date;
+  endedAt?: Date | undefined;
   prompts: string[];
   toolsUsed: string[];
   totalTools: number;
@@ -181,15 +181,15 @@ async function importSession(session: SessionInfo): Promise<boolean> {
 
     let projectId: string;
     if (projectRes.ok) {
-      const project = await projectRes.json();
+      const project = await projectRes.json() as { id: string };
       projectId = project.id;
     } else {
       // Project might already exist, try to find it
       const findRes = await fetch(`${API_URL}/api/projects?path=${encodeURIComponent(session.projectPath)}`);
       if (findRes.ok) {
-        const projects = await findRes.json();
+        const projects = await findRes.json() as Array<{ id: string }>;
         if (projects.length > 0) {
-          projectId = projects[0].id;
+          projectId = (projects[0] as { id: string }).id;
         } else {
           console.error(`Failed to create/find project for ${session.projectPath}`);
           return false;
@@ -261,7 +261,7 @@ async function main() {
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--limit' && args[i + 1]) {
-      limit = parseInt(args[i + 1]);
+      limit = parseInt(args[i + 1] as string);
       i++;
     }
     if (args[i] === '--project' && args[i + 1]) {

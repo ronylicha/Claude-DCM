@@ -108,7 +108,7 @@ export async function postRequest(c: Context): Promise<Response> {
         ${body.prompt},
         ${body.prompt_type ?? null},
         ${body.status ?? "active"},
-        ${sql.json(body.metadata ?? {})}
+        ${sql.json((body.metadata ?? {}) as unknown as import("postgres").JSONValue)}
       )
       RETURNING id, project_id, session_id, prompt, prompt_type, status, created_at, completed_at, metadata
     `;
@@ -329,7 +329,7 @@ export async function patchRequest(c: Context): Promise<Response> {
         SET
           status = ${body.status},
           completed_at = NOW(),
-          metadata = metadata || ${sql.json(body.metadata ?? {})}
+          metadata = metadata || ${sql.json((body.metadata ?? {}) as unknown as import("postgres").JSONValue)}
         WHERE id = ${requestId}
         RETURNING id, project_id, session_id, prompt, prompt_type, status, created_at, completed_at, metadata
       `;
@@ -338,7 +338,7 @@ export async function patchRequest(c: Context): Promise<Response> {
         UPDATE requests
         SET
           status = ${body.status},
-          metadata = metadata || ${sql.json(body.metadata ?? {})}
+          metadata = metadata || ${sql.json((body.metadata ?? {}) as unknown as import("postgres").JSONValue)}
         WHERE id = ${requestId}
         RETURNING id, project_id, session_id, prompt, prompt_type, status, created_at, completed_at, metadata
       `;
@@ -346,7 +346,7 @@ export async function patchRequest(c: Context): Promise<Response> {
       results = await sql<RequestRow[]>`
         UPDATE requests
         SET
-          metadata = metadata || ${sql.json(body.metadata)}
+          metadata = metadata || ${sql.json(body.metadata as unknown as import("postgres").JSONValue)}
         WHERE id = ${requestId}
         RETURNING id, project_id, session_id, prompt, prompt_type, status, created_at, completed_at, metadata
       `;

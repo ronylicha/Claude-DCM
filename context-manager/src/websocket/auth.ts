@@ -2,7 +2,6 @@
  * WebSocket Authentication Module
  * Uses HMAC-SHA256 tokens for agent authentication
  */
-import { config } from "../config";
 import { createHmac, timingSafeEqual } from "crypto";
 
 const TOKEN_TTL_MS = 3600000; // 1 hour
@@ -60,7 +59,7 @@ export function generateToken(agentId: string, sessionId?: string): string {
   
   const payload: TokenPayload = {
     agent_id: agentId,
-    session_id: sessionId,
+    ...(sessionId !== undefined ? { session_id: sessionId } : {}),
     issued_at: Date.now(),
     expires_at: Date.now() + TOKEN_TTL_MS,
   };

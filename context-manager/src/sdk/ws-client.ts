@@ -13,7 +13,6 @@ export class DCMWebSocket {
   private state: ConnectionState = "disconnected";
   private handlers = new Map<string, Set<EventHandler>>();
   private globalHandlers = new Set<EventHandler>();
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
   private subscriptions = new Set<string>();
@@ -172,13 +171,13 @@ export class DCMWebSocket {
   }
 
   private handleMessage(msg: Record<string, unknown>): void {
-    switch (msg.type) {
+    switch (msg["type"]) {
       case "connected":
         this.state = "connected";
         break;
 
       case "ack":
-        if (msg.success) {
+        if (msg["success"]) {
           this.state = "authenticated";
           // Restore subscriptions after auth
           for (const channel of this.subscriptions) {
@@ -202,11 +201,11 @@ export class DCMWebSocket {
       default: {
         // Treat as event message
         const event: WSEvent = {
-          id: (msg.id as string) || "",
-          channel: (msg.channel as string) || "global",
-          event: (msg.event as string) || "unknown",
-          data: (msg.data as Record<string, unknown>) || {},
-          timestamp: (msg.timestamp as number) || Date.now(),
+          id: (msg["id"] as string) || "",
+          channel: (msg["channel"] as string) || "global",
+          event: (msg["event"] as string) || "unknown",
+          data: (msg["data"] as Record<string, unknown>) || {},
+          timestamp: (msg["timestamp"] as number) || Date.now(),
         };
 
         // Send acknowledgment
@@ -250,7 +249,7 @@ export class DCMWebSocket {
 
     console.log(`[DCM-WS] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
 
-    this.reconnectTimer = setTimeout(async () => {
+    setTimeout(async () => {
       try {
         await this.connect();
       } catch {

@@ -1,0 +1,317 @@
+/**
+ * Pipeline API - HTTP handlers for pipeline lifecycle management
+ * Manages creation, execution control, step updates, and querying of pipelines.
+ * @module api/pipeline
+ */
+
+import type { Context } from "hono";
+import { z } from "zod";
+import {
+  createPipeline,
+  startPipeline,
+  updateStepStatus,
+  getPipeline,
+  getPipelineSteps,
+  listPipelines,
+  pausePipeline,
+  cancelPipeline,
+} from "../pipeline";
+import type { PipelineInput, StepStatus } from "../pipeline";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("Pipeline");
+
+// ============================================
+// Validation Schemas
+// ============================================
+
+/** Zod schema for pipeline creation input */
+const CreatePipelineSchema = z.object({
+  session_id: z.string().min(1),
+  instructions: z.string().min(1),
+  documents: z.array(z.object({
+    name: z.string(),
+    content: z.string(),
+    type: z.enum(["markdown", "text", "json", "code"]),
+  })).optional().default([]),
+  target_files: z.array(z.string()).optional().default([]),
+  target_directories: z.array(z.string()).optional().default([]),
+  config: z.object({
+    max_retries: z.number().int().min(0).max(5).optional(),
+    strategy: z.enum(["sequential", "adaptive"]).optional(),
+    parallel_limit: z.number().int().min(1).max(10).optional(),
+  }).optional(),
+});
+
+/** Zod schema for step status update */
+const UpdateStepSchema = z.object({
+  status: z.enum(["running", "completed", "failed", "skipped"]),
+  result: z.record(z.string(), z.unknown()).optional(),
+  error: z.string().optional(),
+});
+
+// ============================================
+// Handlers
+// ============================================
+
+/**
+ * POST /api/pipelines - Create a new pipeline from instructions and documents
+ * @param c - Hono context
+ */
+export async function postCreatePipeline(c: Context): Promise<Response> {
+  try {
+    const body = await c.req.json();
+
+    const parseResult = CreatePipelineSchema.safeParse(body);
+    if (!parseResult.success) {
+      return c.json(
+        {
+          error: "Validation failed",
+          details: parseResult.error.flatten().fieldErrors,
+        },
+        400,
+      );
+    }
+
+    const { session_id, instructions, documents, target_files, target_directories, config } =
+      parseResult.data;
+
+    const input: PipelineInput = {
+      instructions,
+      documents,
+      target_files,
+      target_directories,
+    };
+
+    log.info(`Creating pipeline: session=${session_id}, instructions=${instructions.slice(0, 80)}...`);
+
+    const pipeline = await createPipeline(session_id, input, config as import("../pipeline/types").PipelineConfig | undefined);
+
+    return c.json({ success: true, pipeline }, 201);
+  } catch (error) {
+    log.error("POST /api/pipelines error:", error);
+    return c.json(
+      {
+        error: "Failed to create pipeline",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
+    );
+  }
+}
+
+/**
+ * POST /api/pipelines/:id/start - Start a pipeline that is ready or paused
+ * @param c - Hono context
+ */
+export async function postStartPipeline(c: Context): Promise<Response> {
+  try {
+    const id = c.req.param("id");
+    if (!id) {
+      return c.json({ error: "Missing pipeline ID" }, 400);
+    }
+
+    log.info(`Starting pipeline: ${id}`);
+    const pipeline = await startPipeline(id);
+
+    return c.json({ success: true, pipeline });
+  } catch (error) {
+    log.error("POST /api/pipelines/:id/start error:", error);
+    return c.json(
+      {
+        error: "Failed to start pipeline",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
+    );
+  }
+}
+
+/**
+ * POST /api/pipelines/:id/pause - Pause a running pipeline
+ * @param c - Hono context
+ */
+export async function postPausePipeline(c: Context): Promise<Response> {
+  try {
+    const id = c.req.param("id");
+    if (!id) {
+      return c.json({ error: "Missing pipeline ID" }, 400);
+    }
+
+    log.info(`Pausing pipeline: ${id}`);
+    await pausePipeline(id);
+
+    return c.json({ success: true });
+  } catch (error) {
+    log.error("POST /api/pipelines/:id/pause error:", error);
+    return c.json(
+      {
+        error: "Failed to pause pipeline",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
+    );
+  }
+}
+
+/**
+ * POST /api/pipelines/:id/cancel - Cancel a pipeline
+ * @param c - Hono context
+ */
+export async function postCancelPipeline(c: Context): Promise<Response> {
+  try {
+    const id = c.req.param("id");
+    if (!id) {
+      return c.json({ error: "Missing pipeline ID" }, 400);
+    }
+
+    log.info(`Cancelling pipeline: ${id}`);
+    await cancelPipeline(id);
+
+    return c.json({ success: true });
+  } catch (error) {
+    log.error("POST /api/pipelines/:id/cancel error:", error);
+    return c.json(
+      {
+        error: "Failed to cancel pipeline",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
+    );
+  }
+}
+
+/**
+ * PATCH /api/pipelines/:id/steps/:stepId - Update the status of a pipeline step
+ * @param c - Hono context
+ */
+export async function patchStepStatus(c: Context): Promise<Response> {
+  try {
+    const stepId = c.req.param("stepId");
+    if (!stepId) {
+      return c.json({ error: "Missing step ID" }, 400);
+    }
+
+    const body = await c.req.json();
+
+    const parseResult = UpdateStepSchema.safeParse(body);
+    if (!parseResult.success) {
+      return c.json(
+        {
+          error: "Validation failed",
+          details: parseResult.error.flatten().fieldErrors,
+        },
+        400,
+      );
+    }
+
+    const { status, result, error: stepError } = parseResult.data;
+
+    log.info(`Updating step ${stepId}: status=${status}`);
+    await updateStepStatus(stepId, status as StepStatus, result, stepError);
+
+    return c.json({ success: true });
+  } catch (error) {
+    log.error("PATCH /api/pipelines/:id/steps/:stepId error:", error);
+    return c.json(
+      {
+        error: "Failed to update step status",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
+    );
+  }
+}
+
+/**
+ * GET /api/pipelines - List pipelines with optional session_id and status filters
+ * @param c - Hono context
+ */
+export async function getListPipelines(c: Context): Promise<Response> {
+  try {
+    const sessionId = c.req.query("session_id");
+    const status = c.req.query("status");
+
+    const pipelines = await listPipelines(
+      sessionId || undefined,
+      status || undefined,
+    );
+
+    return c.json({ pipelines, count: pipelines.length });
+  } catch (error) {
+    log.error("GET /api/pipelines error:", error);
+    return c.json(
+      {
+        error: "Failed to list pipelines",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
+    );
+  }
+}
+
+/**
+ * GET /api/pipelines/:id - Get pipeline detail with its steps
+ * @param c - Hono context
+ */
+export async function getPipelineDetail(c: Context): Promise<Response> {
+  try {
+    const id = c.req.param("id");
+    if (!id) {
+      return c.json({ error: "Missing pipeline ID" }, 400);
+    }
+
+    const pipeline = await getPipeline(id);
+    if (!pipeline) {
+      return c.json({ error: "Pipeline not found" }, 404);
+    }
+
+    const steps = await getPipelineSteps(id);
+
+    return c.json({ pipeline, steps });
+  } catch (error) {
+    log.error("GET /api/pipelines/:id error:", error);
+    return c.json(
+      {
+        error: "Failed to fetch pipeline",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
+    );
+  }
+}
+
+/**
+ * GET /api/pipelines/:id/steps - Get pipeline steps, optionally filtered by wave_number
+ * @param c - Hono context
+ */
+export async function getPipelineStepsList(c: Context): Promise<Response> {
+  try {
+    const id = c.req.param("id");
+    if (!id) {
+      return c.json({ error: "Missing pipeline ID" }, 400);
+    }
+
+    const waveParam = c.req.query("wave_number");
+    const waveNumber = waveParam !== undefined && waveParam !== null && waveParam !== ""
+      ? parseInt(waveParam, 10)
+      : undefined;
+
+    if (waveNumber !== undefined && isNaN(waveNumber)) {
+      return c.json({ error: "Invalid wave_number: must be an integer" }, 400);
+    }
+
+    const steps = await getPipelineSteps(id, waveNumber);
+
+    return c.json({ steps, count: steps.length });
+  } catch (error) {
+    log.error("GET /api/pipelines/:id/steps error:", error);
+    return c.json(
+      {
+        error: "Failed to fetch pipeline steps",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
+    );
+  }
+}

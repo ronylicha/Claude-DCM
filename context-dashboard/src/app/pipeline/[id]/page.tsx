@@ -1,0 +1,528 @@
+'use client';
+
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useParams, useRouter } from 'next/navigation';
+import {
+  ArrowLeft,
+  GitBranch,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Pause,
+  Activity,
+  Play,
+  Square,
+  Loader2,
+  Timer,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { formatDuration } from '@/lib/utils';
+import apiClient from '@/lib/api-client';
+import type { Pipeline, PipelineStep } from '@/lib/api-client';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import type { WSEvent } from '@/hooks/useWebSocket';
+import { WaveStepper } from '@/components/pipeline/WaveStepper';
+import type { WaveStepData } from '@/components/pipeline/WaveStepper';
+import { StepCard } from '@/components/pipeline/StepCard';
+import { SynthesisPanel } from '@/components/pipeline/SynthesisPanel';
+
+// ============================================
+// Status helpers
+// ============================================
+
+interface PipelineStatusStyle {
+  color: string;
+  bg: string;
+  border: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+const PIPELINE_STATUS: Record<string, PipelineStatusStyle> = {
+  completed: {
+    color: 'text-[var(--dcm-zone-green)]',
+    bg: 'bg-[color-mix(in_srgb,var(--dcm-zone-green)_12%,transparent)]',
+    border: 'border-[color-mix(in_srgb,var(--dcm-zone-green)_30%,transparent)]',
+    label: 'Completed',
+    icon: CheckCircle2,
+  },
+  running: {
+    color: 'text-[var(--md-sys-color-primary)]',
+    bg: 'bg-[var(--md-sys-color-primary-container)]',
+    border: 'border-[var(--md-sys-color-outline-variant)]',
+    label: 'Running',
+    icon: Activity,
+  },
+  failed: {
+    color: 'text-[var(--dcm-zone-red)]',
+    bg: 'bg-[color-mix(in_srgb,var(--dcm-zone-red)_12%,transparent)]',
+    border: 'border-[color-mix(in_srgb,var(--dcm-zone-red)_30%,transparent)]',
+    label: 'Failed',
+    icon: XCircle,
+  },
+  paused: {
+    color: 'text-[var(--md-sys-color-on-surface-variant)]',
+    bg: 'bg-[var(--md-sys-color-surface-container)]',
+    border: 'border-[var(--md-sys-color-outline-variant)]',
+    label: 'Paused',
+    icon: Pause,
+  },
+  pending: {
+    color: 'text-[var(--md-sys-color-on-surface-variant)]',
+    bg: 'bg-[var(--md-sys-color-surface-container)]',
+    border: 'border-[var(--md-sys-color-outline-variant)]',
+    label: 'Pending',
+    icon: Clock,
+  },
+};
+
+function getStatus(status: string): PipelineStatusStyle {
+  return PIPELINE_STATUS[status] ?? PIPELINE_STATUS.pending;
+}
+
+// ============================================
+// Live elapsed time hook
+// ============================================
+
+function useElapsedTime(startedAt: string | null, completedAt: string | null): string {
+  const [now, setNow] = useState(Date.now());
+  const isRunning = startedAt !== null && completedAt === null;
+
+  useEffect(() => {
+    if (!isRunning) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [isRunning]);
+
+  if (!startedAt) return '--:--';
+
+  const start = new Date(startedAt).getTime();
+  const end = completedAt ? new Date(completedAt).getTime() : now;
+  return formatDuration(end - start);
+}
+
+// ============================================
+// Skeleton
+// ============================================
+
+function DetailSkeleton() {
+  return (
+    <div className="space-y-6" aria-busy="true" aria-label="Loading pipeline...">
+      <div className="h-12 w-64 rounded-[8px] bg-[var(--md-sys-color-surface-container)] animate-pulse" />
+      <div className="h-16 rounded-[12px] bg-[var(--md-sys-color-surface-container)] animate-pulse" />
+      <div className="h-[80px] rounded-[12px] bg-[var(--md-sys-color-surface-container)] animate-pulse" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-[160px] rounded-[12px] bg-[var(--md-sys-color-surface-container)] animate-pulse" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Pipeline Control Actions
+// ============================================
+
+function PipelineControls({
+  pipeline,
+  onAction,
+  isPending,
+}: {
+  pipeline: Pipeline;
+  onAction: (action: 'start' | 'pause' | 'cancel') => void;
+  isPending: boolean;
+}) {
+  const status = pipeline.status;
+
+  return (
+    <div className="flex items-center gap-2">
+      {(status === 'pending' || status === 'paused') && (
+        <button
+          type="button"
+          onClick={() => onAction('start')}
+          disabled={isPending}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-2 rounded-[8px] text-[12px] font-medium cursor-pointer',
+            'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]',
+            'hover:shadow-[var(--md-sys-elevation-1)]',
+            'focus-visible:outline-2 focus-visible:outline-[var(--md-sys-color-primary)]',
+            'disabled:opacity-40 disabled:cursor-not-allowed',
+            'transition-all duration-200',
+          )}
+          aria-label="Start pipeline"
+        >
+          {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+          Start
+        </button>
+      )}
+
+      {status === 'running' && (
+        <button
+          type="button"
+          onClick={() => onAction('pause')}
+          disabled={isPending}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-2 rounded-[8px] text-[12px] font-medium cursor-pointer',
+            'bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-on-surface)]',
+            'border border-[var(--md-sys-color-outline-variant)]',
+            'hover:bg-[var(--md-sys-color-surface-container)]',
+            'focus-visible:outline-2 focus-visible:outline-[var(--md-sys-color-primary)]',
+            'disabled:opacity-40 disabled:cursor-not-allowed',
+            'transition-all duration-200',
+          )}
+          aria-label="Pause pipeline"
+        >
+          {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pause className="h-3.5 w-3.5" />}
+          Pause
+        </button>
+      )}
+
+      {(status === 'running' || status === 'paused' || status === 'pending') && (
+        <button
+          type="button"
+          onClick={() => onAction('cancel')}
+          disabled={isPending}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-2 rounded-[8px] text-[12px] font-medium cursor-pointer',
+            'text-[var(--dcm-zone-red)]',
+            'border border-[color-mix(in_srgb,var(--dcm-zone-red)_30%,transparent)]',
+            'hover:bg-[color-mix(in_srgb,var(--dcm-zone-red)_8%,transparent)]',
+            'focus-visible:outline-2 focus-visible:outline-[var(--md-sys-color-primary)]',
+            'disabled:opacity-40 disabled:cursor-not-allowed',
+            'transition-all duration-200',
+          )}
+          aria-label="Cancel pipeline"
+        >
+          {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
+          Cancel
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// Pipeline Detail Page
+// ============================================
+
+export default function PipelineDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const pipelineId = params.id as string;
+
+  const [selectedWave, setSelectedWave] = useState<number>(0);
+  const [controlPending, setControlPending] = useState(false);
+  const initialWaveSet = useRef(false);
+
+  // Fetch pipeline data
+  const {
+    data: pipelineData,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ['pipeline', pipelineId],
+    queryFn: () => apiClient.getPipeline(pipelineId),
+    refetchInterval: (query) => {
+      const pipeline = query.state.data?.pipeline;
+      if (!pipeline) return 5000;
+      const isActive = pipeline.status === 'running' || pipeline.status === 'pending';
+      return isActive ? 3000 : false;
+    },
+  });
+
+  // Fetch steps for the selected wave
+  const { data: stepsData } = useQuery({
+    queryKey: ['pipeline-steps', pipelineId, selectedWave],
+    queryFn: () => apiClient.getPipelineSteps(pipelineId, selectedWave),
+    refetchInterval: (query) => {
+      const pipeline = pipelineData?.pipeline;
+      if (!pipeline) return 5000;
+      const isActive = pipeline.status === 'running' || pipeline.status === 'pending';
+      return isActive ? 3000 : false;
+    },
+    enabled: !!pipelineData,
+  });
+
+  const pipeline = pipelineData?.pipeline ?? null;
+  const allSteps = pipelineData?.steps ?? [];
+  const currentWaveSteps = stepsData?.steps ?? [];
+
+  // Auto-select current wave when data first arrives
+  useEffect(() => {
+    if (pipeline && !initialWaveSet.current) {
+      setSelectedWave(pipeline.current_wave);
+      initialWaveSet.current = true;
+    }
+  }, [pipeline]);
+
+  // WebSocket for real-time updates
+  const handleWSEvent = useCallback(
+    (event: WSEvent) => {
+      const eventStr = event.event as string;
+      if (
+        eventStr === 'pipeline.step.updated' ||
+        eventStr === 'pipeline.completed' ||
+        eventStr === 'pipeline.step.completed' ||
+        eventStr === 'pipeline.step.failed'
+      ) {
+        const data = event.data as Record<string, unknown> | null;
+        if (data && data.pipeline_id === pipelineId) {
+          queryClient.invalidateQueries({ queryKey: ['pipeline', pipelineId] });
+          queryClient.invalidateQueries({ queryKey: ['pipeline-steps', pipelineId] });
+        }
+      }
+    },
+    [pipelineId, queryClient],
+  );
+
+  useWebSocket({
+    channels: ['pipelines', `pipeline/${pipelineId}`],
+    onEvent: handleWSEvent,
+  });
+
+  // Build wave stepper data
+  const waveStepperData = useMemo((): WaveStepData[] => {
+    if (!allSteps.length) return [];
+
+    const waveMap = new Map<number, PipelineStep[]>();
+    for (const step of allSteps) {
+      const existing = waveMap.get(step.wave_number);
+      if (existing) {
+        existing.push(step);
+      } else {
+        waveMap.set(step.wave_number, [step]);
+      }
+    }
+
+    const waves: WaveStepData[] = [];
+    const sortedWaveNumbers = [...waveMap.keys()].sort((a, b) => a - b);
+
+    for (const wn of sortedWaveNumbers) {
+      const steps = waveMap.get(wn)!;
+      const allCompleted = steps.every((s) => s.status === 'completed');
+      const anyFailed = steps.some((s) => s.status === 'failed');
+      const anyRunning = steps.some((s) => s.status === 'running');
+
+      let status: WaveStepData['status'] = 'pending';
+      if (allCompleted) status = 'completed';
+      else if (anyFailed) status = 'failed';
+      else if (anyRunning) status = 'running';
+
+      waves.push({
+        waveNumber: wn,
+        status,
+        stepCount: steps.length,
+      });
+    }
+
+    return waves;
+  }, [allSteps]);
+
+  // Elapsed time
+  const elapsed = useElapsedTime(pipeline?.started_at ?? null, pipeline?.completed_at ?? null);
+
+  // Control actions
+  const handleControl = useCallback(
+    async (action: 'start' | 'pause' | 'cancel') => {
+      if (!pipeline) return;
+      setControlPending(true);
+      try {
+        await apiClient.controlPipeline(pipeline.id, action);
+        queryClient.invalidateQueries({ queryKey: ['pipeline', pipelineId] });
+      } finally {
+        setControlPending(false);
+      }
+    },
+    [pipeline, pipelineId, queryClient],
+  );
+
+  const isTerminal = pipeline?.status === 'completed' || pipeline?.status === 'failed';
+
+  if (isLoading) return <DetailSkeleton />;
+
+  if (error || !pipeline) {
+    return (
+      <div className="space-y-4">
+        <button
+          type="button"
+          onClick={() => router.push('/pipeline')}
+          className={cn(
+            'flex items-center gap-1.5 text-[13px] cursor-pointer',
+            'text-[var(--md-sys-color-primary)]',
+            'hover:text-[var(--md-sys-color-on-primary-container)]',
+            'focus-visible:outline-2 focus-visible:outline-[var(--md-sys-color-primary)]',
+            'rounded-[4px] px-1',
+          )}
+          aria-label="Back to pipelines"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Pipelines
+        </button>
+        <div
+          className={cn(
+            'flex flex-col items-center justify-center py-16 rounded-[16px]',
+            'bg-[color-mix(in_srgb,var(--dcm-zone-red)_6%,transparent)]',
+            'border border-[color-mix(in_srgb,var(--dcm-zone-red)_20%,transparent)]',
+          )}
+        >
+          <p className="text-[14px] text-[var(--dcm-zone-red)] font-medium">
+            Pipeline not found
+          </p>
+          <p className="text-[12px] text-[var(--md-sys-color-outline)] mt-1">
+            This pipeline may have been deleted or the ID is invalid.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const statusStyle = getStatus(pipeline.status);
+  const StatusIcon = statusStyle.icon;
+
+  return (
+    <div className="space-y-6">
+      {/* Back link */}
+      <button
+        type="button"
+        onClick={() => router.push('/pipeline')}
+        className={cn(
+          'flex items-center gap-1.5 text-[13px] cursor-pointer',
+          'text-[var(--md-sys-color-primary)]',
+          'hover:text-[var(--md-sys-color-on-primary-container)]',
+          'focus-visible:outline-2 focus-visible:outline-[var(--md-sys-color-primary)]',
+          'rounded-[4px] px-1',
+        )}
+        aria-label="Back to pipelines"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Pipelines
+      </button>
+
+      {/* Pipeline header */}
+      <div
+        className={cn(
+          'rounded-[16px] p-5',
+          'bg-[var(--md-sys-color-surface-container)]',
+          'border border-[var(--md-sys-color-outline-variant)]',
+        )}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className={cn(
+                'flex items-center justify-center w-10 h-10 rounded-[12px] shrink-0',
+                'bg-[var(--md-sys-color-primary-container)]',
+              )}
+            >
+              <GitBranch
+                className="h-5 w-5 text-[var(--md-sys-color-on-primary-container)]"
+                aria-hidden="true"
+              />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-[20px] font-semibold text-[var(--md-sys-color-on-surface)] truncate">
+                {pipeline.name ?? `Pipeline ${pipeline.id.slice(0, 8)}`}
+              </h1>
+              <div className="flex items-center gap-3 mt-0.5">
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border',
+                    statusStyle.color,
+                    statusStyle.bg,
+                    statusStyle.border,
+                  )}
+                >
+                  <StatusIcon
+                    className={cn('h-3 w-3', pipeline.status === 'running' && 'animate-pulse')}
+                    aria-hidden="true"
+                  />
+                  {statusStyle.label}
+                </span>
+                <span className="flex items-center gap-1 text-[12px] text-[var(--md-sys-color-outline)] tabular-nums">
+                  <Timer className="h-3.5 w-3.5" aria-hidden="true" />
+                  {elapsed}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {!isTerminal && (
+            <PipelineControls
+              pipeline={pipeline}
+              onAction={handleControl}
+              isPending={controlPending}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Wave stepper */}
+      {waveStepperData.length > 0 && (
+        <div
+          className={cn(
+            'rounded-[16px] p-4',
+            'bg-[var(--md-sys-color-surface-container)]',
+            'border border-[var(--md-sys-color-outline-variant)]',
+          )}
+        >
+          <h2 className="text-[13px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-3">
+            Waves
+          </h2>
+          <WaveStepper
+            waves={waveStepperData}
+            selectedWave={selectedWave}
+            onSelectWave={setSelectedWave}
+          />
+        </div>
+      )}
+
+      {/* Current wave panel: step cards */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-[14px] font-medium text-[var(--md-sys-color-on-surface)]">
+            Wave {selectedWave} Steps
+          </h2>
+          <span className="text-[12px] text-[var(--md-sys-color-outline)] tabular-nums">
+            {currentWaveSteps.length} {currentWaveSteps.length === 1 ? 'step' : 'steps'}
+          </span>
+        </div>
+
+        {currentWaveSteps.length === 0 ? (
+          <div
+            className={cn(
+              'flex flex-col items-center justify-center py-10 rounded-[12px]',
+              'bg-[var(--md-sys-color-surface-container)]',
+              'border border-[var(--md-sys-color-outline-variant)]',
+            )}
+          >
+            <Clock className="h-6 w-6 text-[var(--md-sys-color-outline)] mb-2" aria-hidden="true" />
+            <p className="text-[13px] text-[var(--md-sys-color-outline)]">
+              No steps in this wave
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {currentWaveSteps
+              .sort((a, b) => a.step_order - b.step_order)
+              .map((step) => (
+                <StepCard key={step.id} step={step} />
+              ))}
+          </div>
+        )}
+      </div>
+
+      {/* Synthesis panel (terminal state only) */}
+      {isTerminal && pipeline.synthesis && (
+        <SynthesisPanel pipeline={pipeline} steps={allSteps} />
+      )}
+
+      {/* Synthesis panel fallback: show stats even without synthesis data */}
+      {isTerminal && !pipeline.synthesis && allSteps.length > 0 && (
+        <SynthesisPanel pipeline={pipeline} steps={allSteps} />
+      )}
+    </div>
+  );
+}

@@ -15,8 +15,8 @@ const log = createLogger("API");
 /** Zod schema for subscription input validation */
 const SubscriptionInputSchema = z.object({
   agent_id: z.string().min(1, "agent_id is required"),
-  topic: z.enum(VALID_TOPICS, {
-    errorMap: () => ({ message: `topic must be one of: ${VALID_TOPICS.join(", ")}` }),
+  topic: z.enum([...VALID_TOPICS] as [string, ...string[]], {
+    error: `topic must be one of: ${VALID_TOPICS.join(", ")}`,
   }),
   callback_url: z.string().url().optional(),
 });
@@ -58,7 +58,7 @@ export async function postSubscription(c: Context): Promise<Response> {
     const sql = getDb();
 
     // Upsert subscription (create or update callback_url)
-    const [subscription] = await sql<SubscriptionRow[]>`
+    const subscriptionRows = await sql<SubscriptionRow[]>`
       INSERT INTO subscriptions (agent_id, topic, callback_url)
       VALUES (${input.agent_id}, ${input.topic}, ${input.callback_url ?? null})
       ON CONFLICT (agent_id, topic)
@@ -67,6 +67,10 @@ export async function postSubscription(c: Context): Promise<Response> {
         updated_at = NOW()
       RETURNING id, agent_id, topic, callback_url, created_at, updated_at
     `;
+    const subscription = subscriptionRows[0];
+    if (!subscription) {
+      return c.json({ error: "Failed to upsert subscription" }, 500);
+    }
 
     return c.json(
       {
@@ -212,16 +216,17 @@ export async function deleteSubscription(c: Context): Promise<Response> {
       RETURNING id, agent_id, topic
     `;
 
-    if (deleted.length === 0) {
+    const deletedRow = deleted[0];
+    if (!deletedRow) {
       return c.json({ error: "Subscription not found" }, 404);
     }
 
     return c.json({
       success: true,
       deleted: {
-        id: deleted[0].id,
-        agent_id: deleted[0].agent_id,
-        topic: deleted[0].topic,
+        id: deletedRow.id,
+        agent_id: deletedRow.agent_id,
+        topic: deletedRow.topic,
       },
     });
   } catch (error) {
@@ -269,16 +274,17 @@ export async function postUnsubscribe(c: Context): Promise<Response> {
       RETURNING id, agent_id, topic
     `;
 
-    if (deleted.length === 0) {
+    const deletedRow = deleted[0];
+    if (!deletedRow) {
       return c.json({ error: "Subscription not found" }, 404);
     }
 
     return c.json({
       success: true,
       deleted: {
-        id: deleted[0].id,
-        agent_id: deleted[0].agent_id,
-        topic: deleted[0].topic,
+        id: deletedRow.id,
+        agent_id: deletedRow.agent_id,
+        topic: deletedRow.topic,
       },
     });
   } catch (error) {
