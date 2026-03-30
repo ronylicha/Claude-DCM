@@ -159,6 +159,13 @@ if [[ -n "$task_id" ]]; then
     chmod 600 "$cache_file" 2>/dev/null || true
 fi
 
+# v4.2: Initialize Skill Gate workflow state for this session
+curl -s -X POST "${API_URL}/api/skill-gate/${session_id}/workflow" \
+    -H "Content-Type: application/json" \
+    -d '{"flag":"init","value":true}' \
+    --connect-timeout 0.3 --max-time 0.5 \
+    >/dev/null 2>&1 &
+
 # v4.1: Launch global orchestrator if not already running
 ORCH_PID_FILE="/tmp/.claude-context/orchestrator-global.pid"
 if [[ ! -f "$ORCH_PID_FILE" ]] || ! kill -0 "$(cat "$ORCH_PID_FILE" 2>/dev/null)" 2>/dev/null; then

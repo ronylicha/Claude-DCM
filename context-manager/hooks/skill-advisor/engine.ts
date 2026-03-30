@@ -420,16 +420,25 @@ async function main() {
 	}
 	Promise.allSettled(feedbackPromises); // don't await
 
-	// Atomic write (write to .tmp then rename)
+	// Write to DCM API (primary) + local file (fallback)
+	try {
+		await fetch(`${DCM_API_URL}/api/skill-gate/${sessionId}/advisor`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(reco),
+		});
+	} catch {
+		// API unavailable — fall through to local file
+	}
+
+	// Local file fallback (for environments without DCM API running)
 	const recoPath = join(sessionDir, "advisor-reco.json");
 	const tmpPath = `${recoPath}.tmp`;
-
 	try {
 		await writeFile(tmpPath, JSON.stringify(reco, null, 2));
 		await rename(tmpPath, recoPath);
 	} catch {
-		// Write failure = exit silently
-		process.exit(0);
+		// Write failure = continue silently
 	}
 }
 

@@ -78,12 +78,47 @@ HOOKS_JSON=$(cat <<HOOKS_EOF
 {
   "PreToolUse": [
     {
+      "matcher": "Edit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash ${HOOKS_DIR}/skill-gate-enforce.sh",
+          "timeout": 1
+        }
+      ]
+    },
+    {
+      "matcher": "Write",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash ${HOOKS_DIR}/skill-gate-enforce.sh",
+          "timeout": 1
+        }
+      ]
+    },
+    {
+      "matcher": "MultiEdit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash ${HOOKS_DIR}/skill-gate-enforce.sh",
+          "timeout": 1
+        }
+      ]
+    },
+    {
       "matcher": "Agent",
       "hooks": [
         {
           "type": "command",
           "command": "bash ${HOOKS_DIR}/track-agent-start.sh",
           "timeout": 3
+        },
+        {
+          "type": "command",
+          "command": "bash ${HOOKS_DIR}/skill-gate-enforce.sh",
+          "timeout": 1
         }
       ]
     }
@@ -203,6 +238,11 @@ HOOKS_JSON=$(cat <<HOOKS_EOF
   "UserPromptSubmit": [
     {
       "hooks": [
+        {
+          "type": "command",
+          "command": "bash ${HOOKS_DIR}/skill-gate-status.sh",
+          "timeout": 1
+        },
         {
           "type": "command",
           "command": "bash ${HOOKS_DIR}/suggest-skills.sh",

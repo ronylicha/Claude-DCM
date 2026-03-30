@@ -110,6 +110,38 @@ curl -s -X POST "${API_URL}/api/actions" \
     --max-time 2 \
     >/dev/null 2>&1 &
 
+# v4.2: Skill Gate integration — track skills loaded + detect workflow agents
+if [[ -n "$SESSION_ID" ]]; then
+    # If Skill call → register in session_skills via skill-gate API
+    if [[ "$TOOL_TYPE" == "skill" && -n "$EFFECTIVE_NAME" ]]; then
+        curl -s -X POST "${API_URL}/api/skill-gate/${SESSION_ID}/skills" \
+            -H "Content-Type: application/json" \
+            -d "{\"skill\":\"$EFFECTIVE_NAME\"}" \
+            --connect-timeout 0.3 --max-time 0.5 \
+            >/dev/null 2>&1 &
+    fi
+
+    # If Agent call → detect impact-analyzer / regression-guard
+    if [[ "$TOOL_TYPE" == "agent" ]]; then
+        case "$EFFECTIVE_NAME" in
+            impact-analyzer)
+                curl -s -X POST "${API_URL}/api/skill-gate/${SESSION_ID}/workflow" \
+                    -H "Content-Type: application/json" \
+                    -d '{"flag":"impact_analyzer","value":true}' \
+                    --connect-timeout 0.3 --max-time 0.5 \
+                    >/dev/null 2>&1 &
+                ;;
+            regression-guard)
+                curl -s -X POST "${API_URL}/api/skill-gate/${SESSION_ID}/workflow" \
+                    -H "Content-Type: application/json" \
+                    -d '{"flag":"regression_guard","value":true}' \
+                    --connect-timeout 0.3 --max-time 0.5 \
+                    >/dev/null 2>&1 &
+                ;;
+        esac
+    fi
+fi
+
 # v4.1: Detect model from transcript (the only reliable source)
 MODEL_ID=""
 TRANSCRIPT_PATH=$(echo "$RAW_INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || echo "")

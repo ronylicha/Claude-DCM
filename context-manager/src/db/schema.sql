@@ -501,6 +501,33 @@ COMMENT ON TABLE orchestration_batches IS 'Batches d orchestration par wave';
 COMMENT ON TABLE preemptive_summaries IS 'Pre-generated context summaries before compaction via headless agent';
 COMMENT ON TABLE calibration_ratios IS 'Calibration ratio between real (statusline) and estimated (hooks) tokens';
 
+-- ============================================
+-- Skill Gate (v4.2)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS session_skills (
+    session_id TEXT NOT NULL,
+    skill_name TEXT NOT NULL,
+    loaded_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (session_id, skill_name)
+);
+CREATE INDEX IF NOT EXISTS idx_session_skills_session ON session_skills(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_skills_name    ON session_skills(skill_name);
+
+CREATE TABLE IF NOT EXISTS session_workflow_state (
+    session_id         TEXT PRIMARY KEY,
+    task_size          TEXT NOT NULL DEFAULT 'unknown',
+    impact_analyzer    BOOLEAN NOT NULL DEFAULT false,
+    regression_guard   BOOLEAN NOT NULL DEFAULT false,
+    skills_loaded      INTEGER NOT NULL DEFAULT 0,
+    advisor_reco       JSONB,
+    advisor_updated_at TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE session_skills IS 'Skills charges par session pour le Skill Gate';
+COMMENT ON TABLE session_workflow_state IS 'Etat du workflow par session (impact/regression/advisor)';
+
 -- Schema version
 CREATE TABLE IF NOT EXISTS schema_version (
     version TEXT PRIMARY KEY,
@@ -511,4 +538,7 @@ INSERT INTO schema_version (version) VALUES ('3.1.0')
 ON CONFLICT (version) DO NOTHING;
 
 INSERT INTO schema_version (version) VALUES ('4.0.0')
+ON CONFLICT (version) DO NOTHING;
+
+INSERT INTO schema_version (version) VALUES ('4.2.0')
 ON CONFLICT (version) DO NOTHING;

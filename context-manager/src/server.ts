@@ -66,6 +66,7 @@ import { postPreemptiveSummary, getPreemptiveSummary, getRawContext } from "./ap
 import { getOrchestratorTopology, getOrchestratorStatus } from "./api/orchestrator";
 import { startOrchestrator, stopOrchestrator, getOrchestratorStats } from "./orchestrator";
 import { getStatsOverview, getStatsTokens, getStatsActivity, getStatsAgents } from "./api/stats";
+import { postSkill, postWorkflow, postAdvisor, getStatus, checkGate } from "./api/skill-gate";
 
 // Version from package.json (single source of truth)
 import pkg from "../package.json";
@@ -539,6 +540,16 @@ app.get("/api/stats/overview", getStatsOverview);
 app.get("/api/stats/tokens", getStatsTokens);
 app.get("/api/stats/activity", getStatsActivity);
 app.get("/api/stats/agents", getStatsAgents);
+
+// ============================================
+// Skill Gate API - Phase 12 (DCM v4.2)
+// ============================================
+
+app.post("/api/skill-gate/:session_id/skills", postSkill);
+app.post("/api/skill-gate/:session_id/workflow", postWorkflow);
+app.post("/api/skill-gate/:session_id/advisor", postAdvisor);
+app.get("/api/skill-gate/:session_id/status", getStatus);
+app.get("/api/skill-gate/:session_id/check", checkGate);
 
 // ============================================
 // Server Startup

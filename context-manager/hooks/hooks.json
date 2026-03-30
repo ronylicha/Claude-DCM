@@ -19,6 +19,31 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/safety-gate.sh",
             "timeout": 2
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/skill-gate-enforce.sh",
+            "timeout": 1
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/skill-gate-enforce.sh",
+            "timeout": 1
+          }
+        ]
+      },
+      {
+        "matcher": "MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/skill-gate-enforce.sh",
+            "timeout": 1
           }
         ]
       },
@@ -29,6 +54,11 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/track-agent-start.sh",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/skill-gate-enforce.sh",
+            "timeout": 1
           }
         ]
       }
@@ -195,6 +225,11 @@
     "UserPromptSubmit": [
       {
         "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/skill-gate-status.sh",
+            "timeout": 1
+          },
           {
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/suggest-skills.sh",

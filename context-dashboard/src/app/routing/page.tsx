@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import apiClient from "@/lib/api-client";
 import { PremiumKPICard } from "@/components/dashboard/PremiumKPICard";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3847";
 import {
   Table,
   TableBody,
@@ -611,6 +613,137 @@ export default function RoutingPage() {
       <div className="mt-6">
         <FeedbackStatsCard stats={stats} isLoading={isLoading} />
       </div>
+
+      {/* Skill Gate Section */}
+      <div className="mt-6">
+        <SkillGateSection />
+      </div>
     </PageContainer>
+  );
+}
+
+// ============================================
+// Skill Gate Section (integrated into Routing page)
+// ============================================
+
+function SkillGateSection() {
+  const [sessionId, setSessionId] = useState("");
+  const [searchSession, setSearchSession] = useState("");
+
+  const { data: sgStatus } = useQuery({
+    queryKey: ["skill-gate-status", searchSession],
+    queryFn: async () => {
+      if (!searchSession) return null;
+      const res = await fetch(`${API_BASE}/api/skill-gate/${searchSession}/status`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!searchSession,
+    refetchInterval: 5000,
+  });
+
+  const { data: activeSessions } = useQuery({
+    queryKey: ["active-sessions-sg"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/sessions?active_only=true&limit=5`);
+      return res.json();
+    },
+    refetchInterval: 15000,
+  });
+
+  const advisor = sgStatus?.advisor as Record<string, unknown> | null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Target className="h-5 w-5" />
+          Skill Gate — Session Enforcement
+        </CardTitle>
+        <CardDescription>
+          Etat des skills charges, workflow et advisor par session
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {/* Session search */}
+        <div className="flex gap-2 mb-4">
+          <Input
+            placeholder="Session ID..."
+            value={sessionId}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSessionId(e.target.value)}
+            onKeyDown={(e: React.KeyboardEvent) => e.key === "Enter" && setSearchSession(sessionId)}
+            className="flex-1"
+          />
+          <Button variant="outline" onClick={() => setSearchSession(sessionId)} disabled={!sessionId}>
+            <Search className="h-4 w-4 mr-1" /> Lookup
+          </Button>
+        </div>
+
+        {/* Quick session links */}
+        {activeSessions?.sessions?.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-4">
+            {activeSessions.sessions.map((s: { id: string }) => (
+              <Badge
+                key={s.id}
+                variant="outline"
+                className="cursor-pointer hover:bg-accent text-xs"
+                onClick={() => { setSessionId(s.id); setSearchSession(s.id); }}
+              >
+                {s.id.slice(0, 12)}
+              </Badge>
+            ))}
+          </div>
+        )}
+
+        {/* Session status */}
+        {sgStatus && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="text-center p-2 rounded bg-muted/50">
+                <div className="text-2xl font-bold">{sgStatus.skills_count}</div>
+                <div className="text-xs text-muted-foreground">Skills</div>
+              </div>
+              <div className="text-center p-2 rounded bg-muted/50">
+                <div className="text-2xl font-bold">{sgStatus.workflow?.impact_analyzer ? <CheckCircle className="h-6 w-6 text-green-500 mx-auto" /> : <XCircle className="h-6 w-6 text-red-500 mx-auto" />}</div>
+                <div className="text-xs text-muted-foreground">Impact</div>
+              </div>
+              <div className="text-center p-2 rounded bg-muted/50">
+                <div className="text-2xl font-bold">{sgStatus.workflow?.regression_guard ? <CheckCircle className="h-6 w-6 text-green-500 mx-auto" /> : <XCircle className="h-6 w-6 text-red-500 mx-auto" />}</div>
+                <div className="text-xs text-muted-foreground">Regression</div>
+              </div>
+              <div className="text-center p-2 rounded bg-muted/50">
+                <div className="text-2xl font-bold">{sgStatus.advisor_fresh ? <CheckCircle className="h-6 w-6 text-green-500 mx-auto" /> : <Clock className="h-6 w-6 text-yellow-500 mx-auto" />}</div>
+                <div className="text-xs text-muted-foreground">Advisor</div>
+              </div>
+            </div>
+
+            {/* Loaded skills */}
+            <div className="flex flex-wrap gap-1">
+              {sgStatus.skills?.map((s: string) => (
+                <Badge key={s} variant={s === "workflow-clean-code" ? "default" : "secondary"} className="text-xs">
+                  {s}
+                </Badge>
+              ))}
+            </div>
+
+            {/* Advisor agents */}
+            {advisor && (advisor.recommended_agents as Array<{agent: string; for_domain: string}>)?.length > 0 && (
+              <div>
+                <div className="text-sm font-medium mb-1">Agents imposes:</div>
+                <div className="flex flex-wrap gap-1">
+                  {(advisor.recommended_agents as Array<{agent: string; for_domain: string}>).map((a) => (
+                    <Badge key={a.agent} className="text-xs">{a.agent} <span className="opacity-60 ml-1">[{a.for_domain}]</span></Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!sgStatus && searchSession && (
+          <p className="text-sm text-muted-foreground">Session non trouvee</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
