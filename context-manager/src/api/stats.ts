@@ -306,16 +306,17 @@ export async function getStatsTokens(c: Context): Promise<Response> {
             WHERE consumed_at >= ${startDate}
           )
           SELECT
-            tc.agent_id as agent_type,
+            COALESCE(st.agent_type, tc.agent_id) as agent_type,
             COALESCE(SUM(tc.total_tokens), 0) as total_tokens,
             CASE WHEN t.grand_total > 0
               THEN ROUND((COALESCE(SUM(tc.total_tokens), 0)::numeric / t.grand_total) * 100, 1)
               ELSE 0
             END as percentage
           FROM token_consumption tc
+          LEFT JOIN subtasks st ON st.agent_id = tc.agent_id
           CROSS JOIN totals t
           WHERE tc.consumed_at >= ${startDate}
-          GROUP BY tc.agent_id, t.grand_total
+          GROUP BY COALESCE(st.agent_type, tc.agent_id), t.grand_total
           ORDER BY total_tokens DESC
           LIMIT 20
         `
@@ -325,15 +326,16 @@ export async function getStatsTokens(c: Context): Promise<Response> {
             FROM token_consumption
           )
           SELECT
-            tc.agent_id as agent_type,
+            COALESCE(st.agent_type, tc.agent_id) as agent_type,
             COALESCE(SUM(tc.total_tokens), 0) as total_tokens,
             CASE WHEN t.grand_total > 0
               THEN ROUND((COALESCE(SUM(tc.total_tokens), 0)::numeric / t.grand_total) * 100, 1)
               ELSE 0
             END as percentage
           FROM token_consumption tc
+          LEFT JOIN subtasks st ON st.agent_id = tc.agent_id
           CROSS JOIN totals t
-          GROUP BY tc.agent_id, t.grand_total
+          GROUP BY COALESCE(st.agent_type, tc.agent_id), t.grand_total
           ORDER BY total_tokens DESC
           LIMIT 20
         `,

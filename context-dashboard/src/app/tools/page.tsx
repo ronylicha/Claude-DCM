@@ -69,13 +69,7 @@ const TOOL_TYPE_BADGE: Record<string, string> = {
   unknown: "bg-[var(--md-sys-color-outline)]",
 };
 
-// Helper to format duration
-function formatDuration(ms: number | null): string {
-  if (ms === null) return "N/A";
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${(ms / 60000).toFixed(1)}min`;
-}
+import { formatDuration } from "@/lib/utils";
 
 // Helper to get hex color for charts
 function getToolHexColor(type: string): string {

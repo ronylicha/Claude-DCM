@@ -15,6 +15,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
+import { formatDuration } from '@/lib/utils';
 import { PremiumKPICard } from '@/components/dashboard/PremiumKPICard';
 import { GlassChartTooltip, BAR_COLORS } from '@/components/dashboard';
 import apiClient, {
@@ -134,7 +135,7 @@ export function CockpitDrawer({ open, onClose }: CockpitDrawerProps) {
   }, [routingStats]);
 
   const avgDuration = realtimeMetrics?.avg_task_duration_ms
-    ? `${Math.round(realtimeMetrics.avg_task_duration_ms)}ms`
+    ? formatDuration(realtimeMetrics.avg_task_duration_ms)
     : 'N/A';
 
   if (!open) return null;

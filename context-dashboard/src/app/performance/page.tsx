@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { formatDuration } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart as RechartsBarChart,
@@ -421,7 +422,7 @@ function RecentActionsDurationChart() {
               variant="outline"
               className={getLatencyColor(avgDuration)}
             >
-              avg {avgDuration}ms
+              avg {formatDuration(avgDuration)}
             </Badge>
           )}
         </div>
