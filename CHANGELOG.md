@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.1] - 2026-03-30
+
+### Added
+
+- **Comprehensive `/stats` page** — exhaustive usage analytics with token consumption by day/week/month/year, activity heatmap (GitHub-style 365-day grid), agent leaderboard, hourly distribution, and tool usage breakdown. 4 new backend endpoints: `/api/stats/{overview,tokens,activity,agents}` with period filtering and trend comparison. (`b9b0382`)
+- **3D Token Sphere** — React Three Fiber visualization with instanced particles orbiting a pulsing core. Input tokens = blue outer orbit, output tokens = green inner orbit. Auto-rotates, lazy-loaded via `next/dynamic`. (`b9b0382`)
+- **Remotion animated recap** — `@remotion/player` composition with spring-based animated counters, growing success bar, and gradient background. 6-second loop at 30fps. (`b9b0382`)
+- **Server-side aggregation endpoint** — `GET /api/actions/top-tools` replaces 500-row client-side fetch with SQL `GROUP BY`. (`0e1270c`)
+- **Shared `formatDuration()` utility** — human-readable durations (ms→s→min→h) in `lib/utils.ts`, used across cockpit, performance, tools, and stats pages. (`987c19d`)
+
+### Changed
+
+- **Singleton WebSocket** — single connection per browser tab instead of 5-6 independent connections. New `WebSocketProvider` context wraps the app; `useWebSocket` hook now uses the shared connection. (`0e1270c`)
+- **Batch cockpit grid queries** — `getCockpitGrid` reduced from N×5 queries to 5 batch queries using `ANY()` and `DISTINCT ON`. 93% DB query reduction. (`0e1270c`)
+- **Code splitting** — `CockpitDrawer` and `CockpitZoom` lazy-loaded via `next/dynamic` with `ssr: false`. ~100KB off initial bundle. (`0e1270c`)
+- **React.memo + useCallback** — `SessionMiniCockpit` memoized, `CockpitGrid` callbacks stabilized. Only changed sessions re-render. (`0e1270c`)
+- **Polling reduced** — `useSessionGrid` interval 8s→60s when WebSocket is connected (-87% HTTP calls). (`0e1270c`)
+- **Metrics broadcast guard** — `broadcastMetrics()` skips 5 DB queries when no WS clients are connected (-1050 queries/hour idle). (`0e1270c`)
+- **SELECT explicit columns** — `cockpit.ts` and `sessions.ts` no longer use `SELECT *` on hot tables. (`0e1270c`)
+- **SVG animations extracted** — `dashFlow` and `pulse` keyframes moved from inline `<style>` to `globals.css`. (`0e1270c`)
+- **Sessions COUNT parallelized** — `getSessions` runs data and count queries in `Promise.all()` instead of sequentially. Also fixed COUNT missing `activeOnly` filter. (`0e1270c`)
+
+### Fixed
+
+- **Remotion Sequence stacking** — `<Sequence>` wraps children in `AbsoluteFill`, causing overlap. Replaced with frame-based conditional rendering. (`80ab519`)
+- **Stats SQL joins** — `subtasks` has no `session_id` column; fixed to join through `task_lists→requests→sessions`. (`bf43673`)
+- **Token chart UUIDs** — `token_consumption.agent_id` is actually session_id. Changed to group by `tool_name` (Write, Edit, Bash, etc.). (`4b7e71a`)
+- **Heatmap tooltip clipped** — tooltip now appears below the cell with `z-50` and `overflow-y-visible`. (`4b7e71a`)
+- **Removed Three.js** then re-added for stats page — initially removed unused deps (-180KB), then added back for the 3D Token Sphere (lazy-loaded, only on `/stats`). (`0e1270c`, `b9b0382`)
+
+---
+
 ## [1.3.0] - 2026-03-29
 
 ### Added
