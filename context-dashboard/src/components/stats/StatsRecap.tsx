@@ -8,7 +8,6 @@ import {
   interpolate,
   spring,
   AbsoluteFill,
-  Sequence,
 } from 'remotion';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -246,7 +245,7 @@ function StatsComposition(props: StatsRecapProps) {
       </div>
 
       {/* ── KPI counters grid ── */}
-      <Sequence from={10} durationInFrames={durationInFrames - 10}>
+      {frame >= 10 && (
         <div
           style={{
             display: 'grid',
@@ -281,15 +280,15 @@ function StatsComposition(props: StatsRecapProps) {
             color="#fb923c"
           />
         </div>
-      </Sequence>
+      )}
 
       {/* ── Success-rate bar ── */}
-      <Sequence from={fps * 2} durationInFrames={durationInFrames - fps * 2}>
+      {frame >= fps * 2 && (
         <div
           style={{
             width: '100%',
             maxWidth: 600,
-            marginTop: 56,
+            marginTop: 48,
             display: 'flex',
             flexDirection: 'column',
             gap: 16,
@@ -303,7 +302,7 @@ function StatsComposition(props: StatsRecapProps) {
             delay={0}
           />
         </div>
-      </Sequence>
+      )}
 
       {/* ── Top agent badge ── */}
       <div
