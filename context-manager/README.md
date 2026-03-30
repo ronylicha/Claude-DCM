@@ -70,7 +70,8 @@ context-manager/
       messages.ts              #   Pub/sub messaging
       projects.ts              #   Project management
       requests.ts              #   User requests
-      routing.ts               #   Intelligent keyword routing
+      routing.ts               #   Intelligent keyword routing (skills + agents)
+      catalog.ts               #   Dynamic skill/agent/command discovery
       sessions.ts              #   Session management
       subscriptions.ts         #   Topic subscriptions
       subtasks.ts              #   Subtask management
@@ -96,8 +97,14 @@ context-manager/
     pre-compact-save.sh        # PreCompact - save state before compaction
     post-compact-restore.sh    # SessionStart(compact) - restore context
     save-agent-result.sh       # SubagentStop - broadcast agent results
+    suggest-skills.sh          # UserPromptSubmit - routing + catalog suggestions
     track-session.sh           # SessionStart(startup) - register session
     track-session-end.sh       # SessionEnd - close session
+    skill-advisor/             # AI-powered skill/agent advisor (background Haiku)
+      analyze.sh               # UserPromptSubmit - spawn engine.ts in background
+      engine.ts                # Haiku API call + DCM routing merge
+      build-index.ts           # Generates skill-index.json from docs
+      skill-index.json         # Compact index of skills/agents per domain
   scripts/
     setup-db.sh                # Database creation and schema setup
     setup-hooks.sh             # Inject hooks into Claude Code settings

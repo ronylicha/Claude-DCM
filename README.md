@@ -94,6 +94,8 @@ DCM tracks the full lifecycle of every subagent with parent/child hierarchy:
 | Agent completed | `track-agent-end.sh` | status update, cache cleanup |
 | Agent result | `save-agent-result.sh` | result summary broadcast, batch completion check |
 | Operation blocked | `safety-gate.sh` | blocked command, reason, session context |
+| Skill/agent suggestion | `suggest-skills.sh` | keyword extraction, routing query, catalog search, tiered recommendations |
+| AI skill analysis | `skill-advisor/analyze.sh` | background Haiku call, advisor-reco.json with imposed agents |
 
 ### Inter-Agent Communication
 
@@ -127,9 +129,29 @@ The monitoring dashboard at `http://localhost:3848` provides 11 pages of live vi
 
 Built with Next.js 16, React 19, shadcn/ui, Recharts, TanStack Query, Three.js, and Tailwind CSS 4. Full light/dark mode with glassmorphism cards.
 
-### Intelligent Routing
+### Intelligent Routing -- Skills, Agents & Commands
 
-DCM learns which tools work best for which tasks through a feedback-driven keyword scoring system. Scores adjust dynamically based on success rates.
+DCM provides a **3-layer routing system** that recommends the best skills, agents, and commands for each user request:
+
+| Layer | Source | Speed | What It Does |
+|-------|--------|-------|--------------|
+| **Routing API** | `keyword_tool_scores` table | <50ms | Learned scores from real usage. Adjusts dynamically via feedback loop. |
+| **Catalog API** | Filesystem scan (`~/.claude/`) | <200ms | Discovers all 1000+ skills, 111 agents, and commands dynamically. |
+| **Skill Advisor** | Haiku AI (background) | 1-3s | Semantic analysis of the request. Determines optimal skill/agent combo. |
+
+On every `UserPromptSubmit`, the `suggest-skills.sh` hook queries both the Routing API and Catalog API **in parallel**, then injects recommendations as `additionalContext`:
+
+- **Scores appris** -- skills and agents ranked by real usage data (score, usage count, success rate)
+- **Catalogue** -- newly discovered skills/agents/commands that match the request keywords
+- **Delegation rules** -- scoping reminders (1 agent = 1 file = 1 action, prompt < 200 words)
+
+The `skill-advisor/analyze.sh` hook spawns a background Haiku analysis that writes `advisor-reco.json` with:
+- Mandatory/recommended skills per detected domain
+- **Imposed agents** (wrong agent = BLOCKED by PreToolUse)
+- Alternative agents (acceptable fallbacks)
+- Orchestration recommendations (`/orchestrate` with template if complex)
+
+**Feedback loop**: When the advisor validates a skill/agent, it sends positive feedback to the Routing API, boosting its score for future sessions. Scores are clamped to `[0.1, 5.0]` and decay on negative feedback.
 
 ### Shared Utilities
 

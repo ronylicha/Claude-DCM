@@ -1,5 +1,5 @@
 {
-  "description": "DCM - Context tracking, guardian monitoring, compact save/restore, agent result sharing, stop guard",
+  "description": "DCM - Context tracking, guardian monitoring, compact save/restore, agent result sharing, stop guard, skill/agent routing",
   "hooks": {
     "PreToolUse": [
       {
@@ -198,6 +198,11 @@
           {
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/suggest-skills.sh",
+            "timeout": 1
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/skill-advisor/analyze.sh",
             "timeout": 1
           }
         ]
