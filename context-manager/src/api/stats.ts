@@ -142,43 +142,36 @@ export async function getStatsOverview(c: Context): Promise<Response> {
 
       startDate
         ? sql`
-          WITH session_agent_counts AS (
-            SELECT session_id, COUNT(DISTINCT agent_id) as agent_count
-            FROM subtasks
-            WHERE created_at >= ${startDate}
-            GROUP BY session_id
-          )
           SELECT
-            COUNT(DISTINCT agent_id) as total_used,
+            COUNT(DISTINCT st.agent_id) as total_used,
             (
-              SELECT agent_type FROM subtasks
-              WHERE created_at >= ${startDate}
-              GROUP BY agent_type
+              SELECT st2.agent_type FROM subtasks st2
+              WHERE st2.created_at >= ${startDate}
+              GROUP BY st2.agent_type
               ORDER BY COUNT(*) DESC
               LIMIT 1
             ) as top_agent,
             ROUND(COALESCE(AVG(s.total_tools_used), 0)::numeric, 1) as avg_subtasks_per_session
           FROM subtasks st
-          JOIN sessions s ON s.id = st.session_id
+          JOIN task_lists tl ON tl.id = st.task_list_id
+          JOIN requests r ON r.id = tl.request_id
+          JOIN sessions s ON s.id = r.session_id
           WHERE st.created_at >= ${startDate}
         `
         : sql`
-          WITH session_agent_counts AS (
-            SELECT session_id, COUNT(DISTINCT agent_id) as agent_count
-            FROM subtasks
-            GROUP BY session_id
-          )
           SELECT
-            COUNT(DISTINCT agent_id) as total_used,
+            COUNT(DISTINCT st.agent_id) as total_used,
             (
-              SELECT agent_type FROM subtasks
-              GROUP BY agent_type
+              SELECT st2.agent_type FROM subtasks st2
+              GROUP BY st2.agent_type
               ORDER BY COUNT(*) DESC
               LIMIT 1
             ) as top_agent,
             ROUND(COALESCE(AVG(s.total_tools_used), 0)::numeric, 1) as avg_subtasks_per_session
           FROM subtasks st
-          JOIN sessions s ON s.id = st.session_id
+          JOIN task_lists tl ON tl.id = st.task_list_id
+          JOIN requests r ON r.id = tl.request_id
+          JOIN sessions s ON s.id = r.session_id
         `,
 
       prevStartDate && startDate
@@ -272,35 +265,36 @@ export async function getStatsTokens(c: Context): Promise<Response> {
     const granularity = (c.req.query("granularity") ?? "day") as Granularity;
     const startDate = getStartDate(period);
 
-    const truncExpr = granularity === "hour"
-      ? "hour"
-      : granularity === "week"
-        ? "week"
-        : granularity === "month"
-          ? "month"
-          : "day";
+    // Build time-series query based on granularity
+    // postgres.js doesn't support parameterized identifiers in date_trunc,
+    // so we use sql.unsafe for the truncation part
+    const truncFn = (col: string) => {
+      const valid = ["hour", "day", "week", "month"];
+      const g = valid.includes(granularity) ? granularity : "day";
+      return sql.unsafe(`date_trunc('${g}', ${col})`);
+    };
 
     const [timeSeries, byAgent, byTool, byModel, totals] = await Promise.all([
       startDate
         ? sql`
           SELECT
-            date_trunc(${truncExpr}, consumed_at) as date,
+            ${truncFn("consumed_at")} as date,
             SUM(input_tokens) as input_tokens,
             SUM(output_tokens) as output_tokens,
             SUM(total_tokens) as total_tokens
           FROM token_consumption
           WHERE consumed_at >= ${startDate}
-          GROUP BY date_trunc(${truncExpr}, consumed_at)
+          GROUP BY 1
           ORDER BY date ASC
         `
         : sql`
           SELECT
-            date_trunc(${truncExpr}, consumed_at) as date,
+            ${truncFn("consumed_at")} as date,
             SUM(input_tokens) as input_tokens,
             SUM(output_tokens) as output_tokens,
             SUM(total_tokens) as total_tokens
           FROM token_consumption
-          GROUP BY date_trunc(${truncExpr}, consumed_at)
+          GROUP BY 1
           ORDER BY date ASC
         `,
 
@@ -312,17 +306,16 @@ export async function getStatsTokens(c: Context): Promise<Response> {
             WHERE consumed_at >= ${startDate}
           )
           SELECT
-            ac.agent_type,
+            tc.agent_id as agent_type,
             COALESCE(SUM(tc.total_tokens), 0) as total_tokens,
             CASE WHEN t.grand_total > 0
               THEN ROUND((COALESCE(SUM(tc.total_tokens), 0)::numeric / t.grand_total) * 100, 1)
               ELSE 0
             END as percentage
           FROM token_consumption tc
-          JOIN agent_capacity ac ON ac.agent_id = tc.agent_id AND ac.session_id = tc.session_id
           CROSS JOIN totals t
           WHERE tc.consumed_at >= ${startDate}
-          GROUP BY ac.agent_type, t.grand_total
+          GROUP BY tc.agent_id, t.grand_total
           ORDER BY total_tokens DESC
           LIMIT 20
         `
@@ -332,16 +325,15 @@ export async function getStatsTokens(c: Context): Promise<Response> {
             FROM token_consumption
           )
           SELECT
-            ac.agent_type,
+            tc.agent_id as agent_type,
             COALESCE(SUM(tc.total_tokens), 0) as total_tokens,
             CASE WHEN t.grand_total > 0
               THEN ROUND((COALESCE(SUM(tc.total_tokens), 0)::numeric / t.grand_total) * 100, 1)
               ELSE 0
             END as percentage
           FROM token_consumption tc
-          JOIN agent_capacity ac ON ac.agent_id = tc.agent_id AND ac.session_id = tc.session_id
           CROSS JOIN totals t
-          GROUP BY ac.agent_type, t.grand_total
+          GROUP BY tc.agent_id, t.grand_total
           ORDER BY total_tokens DESC
           LIMIT 20
         `,
@@ -646,12 +638,20 @@ export async function getStatsAgents(c: Context): Promise<Response> {
           ),
           agent_tokens AS (
             SELECT
-              ac.agent_type,
+              tc.agent_id,
               COALESCE(SUM(tc.total_tokens), 0) as total_tokens
             FROM token_consumption tc
-            JOIN agent_capacity ac ON ac.agent_id = tc.agent_id AND ac.session_id = tc.session_id
             WHERE tc.consumed_at >= ${startDate}
-            GROUP BY ac.agent_type
+            GROUP BY tc.agent_id
+          ),
+          agent_type_tokens AS (
+            SELECT
+              st.agent_type,
+              COALESCE(SUM(at2.total_tokens), 0) as total_tokens
+            FROM subtasks st
+            JOIN agent_tokens at2 ON at2.agent_id = st.agent_id
+            WHERE st.created_at >= ${startDate} AND st.agent_id IS NOT NULL
+            GROUP BY st.agent_type
           )
           SELECT
             s.agent_type,
@@ -661,7 +661,7 @@ export async function getStatsAgents(c: Context): Promise<Response> {
             ROUND(s.avg_duration_ms::numeric, 0) as avg_duration_ms,
             COALESCE(t.total_tokens, 0) as total_tokens
           FROM agent_stats s
-          LEFT JOIN agent_tokens t ON t.agent_type = s.agent_type
+          LEFT JOIN agent_type_tokens t ON t.agent_type = s.agent_type
           ORDER BY s.tasks_completed DESC
           LIMIT ${limit}
         `
@@ -680,11 +680,19 @@ export async function getStatsAgents(c: Context): Promise<Response> {
           ),
           agent_tokens AS (
             SELECT
-              ac.agent_type,
+              tc.agent_id,
               COALESCE(SUM(tc.total_tokens), 0) as total_tokens
             FROM token_consumption tc
-            JOIN agent_capacity ac ON ac.agent_id = tc.agent_id AND ac.session_id = tc.session_id
-            GROUP BY ac.agent_type
+            GROUP BY tc.agent_id
+          ),
+          agent_type_tokens AS (
+            SELECT
+              st.agent_type,
+              COALESCE(SUM(at2.total_tokens), 0) as total_tokens
+            FROM subtasks st
+            JOIN agent_tokens at2 ON at2.agent_id = st.agent_id
+            WHERE st.agent_id IS NOT NULL
+            GROUP BY st.agent_type
           )
           SELECT
             s.agent_type,
@@ -694,7 +702,7 @@ export async function getStatsAgents(c: Context): Promise<Response> {
             ROUND(s.avg_duration_ms::numeric, 0) as avg_duration_ms,
             COALESCE(t.total_tokens, 0) as total_tokens
           FROM agent_stats s
-          LEFT JOIN agent_tokens t ON t.agent_type = s.agent_type
+          LEFT JOIN agent_type_tokens t ON t.agent_type = s.agent_type
           ORDER BY s.tasks_completed DESC
           LIMIT ${limit}
         `,
