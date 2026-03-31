@@ -56,6 +56,9 @@ usage() {
     echo "  supervisor reload     Re-template & restart after update"
     echo "  supervisor uninstall  Remove supervisor completely"
     echo ""
+    echo "Deploy:"
+    echo "  deploy      Pull latest, rebuild dashboard, apply migrations, restart all"
+    echo ""
     echo "Advanced:"
     echo "  db:setup    Initialize database schema"
     echo "  db:reset    Drop and recreate database (DESTRUCTIVE)"
@@ -441,6 +444,68 @@ cmd_db_reset() {
 }
 
 # Route commands
+cmd_deploy() {
+    local project_root="$(dirname "$SCRIPT_DIR")"
+    local dashboard_dir="$project_root/context-dashboard"
+
+    echo -e "${BLUE}DCM Deploy — Pull, rebuild, migrate, restart${NC}"
+    echo ""
+
+    # Step 1: Git pull
+    echo -e "${YELLOW}[1/4]${NC} Pulling latest from git..."
+    cd "$project_root"
+    if git pull origin main; then
+        echo -e "  ${GREEN}Pull OK${NC}"
+    else
+        echo -e "  ${RED}Pull failed${NC}"
+        exit 1
+    fi
+
+    # Step 2: Apply migrations (all .sql files in src/db/migration-*)
+    echo -e "${YELLOW}[2/4]${NC} Applying database migrations..."
+    local migration_count=0
+    for migration in "$SCRIPT_DIR"/src/db/migration-*.sql; do
+        if [[ -f "$migration" ]]; then
+            psql -U "${PGUSER:-rony}" -d "${PGDATABASE:-claude_context}" -f "$migration" > /dev/null 2>&1
+            migration_count=$((migration_count + 1))
+        fi
+    done
+    echo -e "  ${GREEN}${migration_count} migration(s) applied${NC}"
+
+    # Step 3: Rebuild dashboard
+    echo -e "${YELLOW}[3/4]${NC} Rebuilding dashboard..."
+    if [[ -d "$dashboard_dir" ]]; then
+        cd "$dashboard_dir"
+        rm -rf .next 2>/dev/null || true
+        if npm run build > /tmp/dcm-dashboard-build.log 2>&1; then
+            echo -e "  ${GREEN}Dashboard built OK${NC}"
+        else
+            echo -e "  ${RED}Dashboard build failed${NC}"
+            tail -10 /tmp/dcm-dashboard-build.log
+            exit 1
+        fi
+    else
+        echo -e "  ${YELLOW}No dashboard directory found, skipping${NC}"
+    fi
+
+    # Step 4: Restart services
+    echo -e "${YELLOW}[4/4]${NC} Restarting services..."
+    cd "$SCRIPT_DIR"
+    if has_supervisor; then
+        systemctl --user restart dcm.target
+        sleep 3
+    else
+        cmd_stop
+        sleep 2
+        cmd_start
+    fi
+
+    echo ""
+    cmd_status
+    echo ""
+    echo -e "${GREEN}Deploy complete.${NC}"
+}
+
 case "${1:-}" in
     install)    cmd_install ;;
     start)      cmd_start ;;
@@ -463,6 +528,7 @@ case "${1:-}" in
     supervisor) shift; cmd_supervisor "$@" ;;
     snapshot)   shift; cmd_snapshot "$@" ;;
     context)    shift; cmd_context "$@" ;;
+    deploy)     cmd_deploy ;;
     db:setup)   cmd_db_setup ;;
     db:reset)   cmd_db_reset ;;
     version|-v|--version) echo "DCM v${VERSION}" ;;

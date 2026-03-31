@@ -479,7 +479,7 @@ export async function getPipelineStepsList(c: Context): Promise<Response> {
 // ============================================
 
 /**
- * GET /api/git/status - Check if GitHub CLI is authenticated and return user + repos
+ * GET /api/git/status - Check GitHub CLI auth, list user repos + org repos
  * @param c - Hono context
  */
 export async function getGitStatus(c: Context): Promise<Response> {
@@ -497,6 +497,7 @@ export async function getGitStatus(c: Context): Promise<Response> {
         authenticated: false,
         message: "GitHub CLI not authenticated. Run: gh auth login",
         user: null,
+        orgs: [],
         repos: [],
       });
     }
@@ -506,33 +507,64 @@ export async function getGitStatus(c: Context): Promise<Response> {
     const userMatch = authOutput.match(/account\s+(\S+)/i);
     const user = userMatch?.[1]?.replace(/[()]/g, "") ?? null;
 
-    // List repos (max 30)
-    const repoProc = Bun.spawn(
-      ["gh", "repo", "list", "--limit", "30", "--json", "nameWithOwner,url,isPrivate,pushedAt"],
-      { stdout: "pipe", stderr: "pipe" },
-    );
-    const repoCode = await repoProc.exited;
-    const repoStdout = await new Response(repoProc.stdout).text();
+    type RepoInfo = { name: string; url: string; isPrivate: boolean; defaultBranch: string; pushedAt: string; owner: string };
 
-    let repos: Array<{ name: string; url: string; isPrivate: boolean; defaultBranch: string; pushedAt: string }> = [];
-    if (repoCode === 0 && repoStdout.trim()) {
-      const parsed = JSON.parse(repoStdout) as Array<Record<string, unknown>>;
-      repos = parsed.map((r) => ({
+    // Helper to list repos for an owner
+    async function listRepos(owner?: string): Promise<RepoInfo[]> {
+      const args = ["gh", "repo", "list"];
+      if (owner) args.push(owner);
+      args.push("--limit", "30", "--json", "nameWithOwner,url,isPrivate,pushedAt");
+
+      const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+      const code = await proc.exited;
+      const stdout = await new Response(proc.stdout).text();
+
+      if (code !== 0 || !stdout.trim()) return [];
+
+      const parsed = JSON.parse(stdout) as Array<Record<string, unknown>>;
+      return parsed.map((r) => ({
         name: String(r["nameWithOwner"] ?? ""),
         url: String(r["url"] ?? ""),
         isPrivate: Boolean(r["isPrivate"]),
         defaultBranch: "main",
         pushedAt: String(r["pushedAt"] ?? ""),
+        owner: owner ?? user ?? "",
       }));
     }
 
-    return c.json({ authenticated: true, user, repos });
+    // List orgs
+    const orgProc = Bun.spawn(["gh", "org", "list"], { stdout: "pipe", stderr: "pipe" });
+    const orgCode = await orgProc.exited;
+    const orgStdout = await new Response(orgProc.stdout).text();
+    const orgs = orgCode === 0
+      ? orgStdout.trim().split("\n").filter(Boolean)
+      : [];
+
+    // Fetch repos in parallel: user + all orgs
+    const repoPromises = [listRepos()];
+    for (const org of orgs) {
+      repoPromises.push(listRepos(org));
+    }
+    const allRepoArrays = await Promise.all(repoPromises);
+
+    // Merge, deduplicate by name, sort by pushedAt desc
+    const repoMap = new Map<string, RepoInfo>();
+    for (const arr of allRepoArrays) {
+      for (const repo of arr) {
+        if (!repoMap.has(repo.name)) repoMap.set(repo.name, repo);
+      }
+    }
+    const repos = Array.from(repoMap.values())
+      .sort((a, b) => b.pushedAt.localeCompare(a.pushedAt));
+
+    return c.json({ authenticated: true, user, orgs, repos });
   } catch (error) {
     log.error("GET /api/git/status error:", error);
     return c.json({
       authenticated: false,
       message: "GitHub CLI (gh) not installed or not accessible",
       user: null,
+      orgs: [],
       repos: [],
     });
   }
