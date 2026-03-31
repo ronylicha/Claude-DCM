@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] - 2026-04-01
+
+### Added
+
+- **Pipeline Worker** — Intelligent background supervisor (10s cycle loop).
+  - Monitors planner/executor jobs via `pipeline_jobs` DB table
+  - Auto-detects completed `.done` files and injects plans / updates steps
+  - Recovers stuck pipelines from workspace files or orphaned outputs
+  - Relaunches queued steps without active executor processes
+  - Replaces fragile setInterval pollers with resilient DB-tracked jobs
+
+- **Job Tracking Table** (`pipeline_jobs`) — Persistent tracking of all CLI jobs.
+  - Links `job_id` to `pipeline_id` and `step_id`
+  - Stores `tmp_dir` for file recovery after service restart
+  - Worker picks up running jobs on startup
+
+- **DCM Deploy Step 5** — Auto rebuilds skill index + imports agent registry post-restart.
+
+### Changed
+
+- **Server startup** — Uses `startWorker()` instead of separate recovery functions.
+- **CLIPlannerProvider** — Registers jobs in DB before launching.
+- **Executor** — Registers jobs in DB before launching agents.
+
 ## [2.1.0] - 2026-03-31
 
 ### Added

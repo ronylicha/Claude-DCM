@@ -723,5 +723,32 @@ schema_version (version)
 | `migration-llm-providers.sql` | 5.3.0 | Adds llm_providers table with 3 seeded cloud providers |
 | `migration-planner-settings.sql` | 5.4.0 | Adds dcm_settings, planning_output tables, 3 CLI providers |
 | `migration-capacity-fields.sql` | 5.5.0 | Extends agent_capacity with cost, cache, and metrics fields |
+| `migration-pipeline-jobs.sql` | 5.6.0 | Adds pipeline_jobs table for CLI job tracking and worker recovery |
 
 All migrations use `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, and `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, making them idempotent and safe to re-run.
+
+---
+
+## pipeline_jobs
+
+Tracks detached CLI jobs (planner and executor) for recovery after service restarts. The pipeline worker (`pipeline/worker.ts`) polls this table every 10 seconds.
+
+```sql
+CREATE TABLE pipeline_jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    pipeline_id UUID NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+    step_id UUID REFERENCES pipeline_steps(id) ON DELETE CASCADE,
+    job_id TEXT NOT NULL,           -- Matches temp file prefix in tmp_dir
+    job_type TEXT NOT NULL,         -- 'planner' | 'executor'
+    tmp_dir TEXT NOT NULL,          -- '/tmp/dcm-planner' or '/tmp/dcm-executor'
+    status TEXT NOT NULL,           -- 'running' | 'completed'
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ
+);
+```
+
+Worker recovery flow:
+1. On startup, worker finds jobs with `status = 'running'`
+2. Checks if `{tmp_dir}/{job_id}.done` file exists
+3. If yes → reads output, parses result, updates pipeline/step
+4. If no → checks if process is alive, waits or relaunches

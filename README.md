@@ -9,7 +9,7 @@
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-f9f1e1.svg" alt="Bun"/></a>
   <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/database-PostgreSQL%2017+-336791.svg" alt="PostgreSQL 17+"/></a>
   <a href="https://hono.dev"><img src="https://img.shields.io/badge/framework-Hono-ff6633.svg" alt="Hono"/></a>
-  <img src="https://img.shields.io/badge/version-2.1.0-green.svg" alt="v2.1.0"/>
+  <img src="https://img.shields.io/badge/version-2.2.0-green.svg" alt="v2.2.0"/>
 </p>
 
 <p align="center">
@@ -54,9 +54,15 @@ Pipelines are organized into sprints. Each sprint groups consecutive waves, trac
 
 Plan pipelines using any of 6 providers: Claude CLI, Codex CLI, Gemini CLI (local CLIs, no API key needed), MiniMax, ZhipuAI, and Moonshot (cloud APIs). Configure provider API keys and select the active planner from the dashboard settings page or the API.
 
-### Smart Recovery
+### Pipeline Worker & Smart Recovery
 
-4-layer context defense protects against data loss during compaction. The pipeline decision engine handles step failures with configurable retry strategies: same prompt, enhanced prompt with error context, alternate agent, or task decomposition. Stuck planners and running agents are recovered automatically on server restart.
+The **pipeline worker** runs as a background supervisor loop (every 10s) ensuring no job is ever lost:
+- Monitors all CLI jobs via the `pipeline_jobs` DB table
+- Auto-detects completed planner outputs and injects plans into the pipeline
+- Auto-detects completed agent outputs and updates step statuses
+- Recovers stuck pipelines from workspace files or orphaned temp outputs
+- Relaunches queued steps without active executor processes
+- Decision engine handles failures with retry, alternate agent, or decomposition
 
 ### Context Tracking
 
@@ -187,7 +193,7 @@ Claude Code hooks (bash scripts)
         v
     DCM API (Hono)
         |
-        +--- Pipeline Engine --- LLM Planner --- Agent Executor
+        +--- Pipeline Engine --- LLM Planner --- Agent Executor --- Worker Supervisor
         |
         | Parameterized SQL        | Redis pub/sub
         v                          v
