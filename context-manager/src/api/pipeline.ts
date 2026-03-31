@@ -322,9 +322,14 @@ export async function postCreatePipelineWithFiles(c: Context): Promise<Response>
     const fileList = Array.isArray(rawFiles) ? rawFiles : rawFiles ? [rawFiles] : [];
 
     for (const file of fileList) {
-      if (file instanceof File) {
+      if (file instanceof File && file.name) {
         const content = await file.text();
         const name = file.name;
+        // Skip empty files
+        if (!content.trim()) {
+          log.warn(`Skipping empty file: ${name}`);
+          continue;
+        }
         const ext = name.split(".").pop()?.toLowerCase() ?? "";
 
         let type: "markdown" | "text" | "json" | "code" = "text";
