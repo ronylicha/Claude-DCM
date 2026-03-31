@@ -1524,7 +1524,7 @@ export const apiClient = {
   // ==========================================
   getProviders: () =>
     apiFetch<{ providers: LLMProvider[] }>('/api/settings/providers'),
-  configureProvider: (key: string, data: { api_key: string; model?: string; set_default?: boolean }) =>
+  configureProvider: (key: string, data: { api_key?: string; model?: string; set_default?: boolean }) =>
     apiFetch<{ success: boolean; message: string }>(`/api/settings/providers/${key}/configure`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -1533,6 +1533,33 @@ export const apiClient = {
     apiFetch<{ ok: boolean; error?: string }>(`/api/settings/providers/${key}/test`, { method: 'POST' }),
   deactivateProvider: (key: string) =>
     apiFetch<{ success: boolean }>(`/api/settings/providers/${key}/deactivate`, { method: 'POST' }),
+
+  // ==========================================
+  // Planning Output - /api/pipelines/:id/planning-output
+  // ==========================================
+  getPlanningOutput: (id: string, sinceIndex?: number) => {
+    const params = sinceIndex !== undefined ? `?since_index=${sinceIndex}` : '';
+    return apiFetch<{
+      chunks: Array<{ chunk: string; chunk_index: number; created_at: string }>;
+      full_text: string;
+      count: number;
+      latest_index: number;
+    }>(`/api/pipelines/${id}/planning-output${params}`);
+  },
+
+  // ==========================================
+  // Planner Settings - /api/settings/planner
+  // ==========================================
+  getPlannerSettings: () =>
+    apiFetch<{
+      current: { provider_key: string | null; model: string | null };
+      available_planners: LLMProvider[];
+    }>('/api/settings/planner'),
+  setPlannerSettings: (providerKey: string, model?: string) =>
+    apiFetch<{ success: boolean }>('/api/settings/planner', {
+      method: 'POST',
+      body: JSON.stringify({ provider_key: providerKey, model }),
+    }),
 };
 
 export default apiClient;

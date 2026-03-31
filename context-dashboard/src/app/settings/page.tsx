@@ -14,10 +14,168 @@ import {
   Star,
   Zap,
   AlertCircle,
+  Terminal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import apiClient from '@/lib/api-client';
 import type { LLMProvider } from '@/lib/api-client';
+
+// Planner configuration component
+function PlannerConfig() {
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['planner-settings'],
+    queryFn: () => apiClient.getPlannerSettings(),
+  });
+
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+
+  // Sync selection from server
+  const currentKey = data?.current?.provider_key ?? null;
+  const currentModel = data?.current?.model ?? null;
+  const activeKey = selectedKey ?? currentKey;
+  const planners = data?.available_planners ?? [];
+  const activePlanner = planners.find((p) => p.provider_key === activeKey);
+  const activeModel = selectedModel ?? currentModel ?? activePlanner?.default_model ?? null;
+
+  const setMutation = useMutation({
+    mutationFn: () => apiClient.setPlannerSettings(activeKey!, activeModel ?? undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['planner-settings'] });
+      setSelectedKey(null);
+      setSelectedModel(null);
+    },
+  });
+
+  const hasChanged = activeKey !== currentKey || activeModel !== (currentModel ?? activePlanner?.default_model);
+
+  return (
+    <div className={cn(
+      'rounded-[16px] p-5',
+      'bg-[var(--md-sys-color-surface-container)]',
+      'border border-[var(--md-sys-color-primary)]',
+    )}>
+      <div className="flex items-center gap-3 mb-4">
+        <div className={cn(
+          'flex items-center justify-center w-10 h-10 rounded-[12px]',
+          'bg-[var(--md-sys-color-primary-container)]',
+        )}>
+          <Brain className="h-5 w-5 text-[var(--md-sys-color-on-primary-container)]" />
+        </div>
+        <div>
+          <h2 className="text-[15px] font-semibold text-[var(--md-sys-color-on-surface)]">
+            Pipeline Planner
+          </h2>
+          <p className="text-[11px] text-[var(--md-sys-color-outline)]">
+            Select ONE provider and model for plan generation
+          </p>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="h-12 rounded-[8px] bg-[var(--md-sys-color-surface-container-high)] animate-pulse" />
+      ) : planners.length === 0 ? (
+        <p className="text-[12px] text-[var(--md-sys-color-outline)]">
+          No planners available. Configure an API key below or install a CLI tool (claude, codex, gemini).
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {/* Provider radio list */}
+          <fieldset>
+            <legend className="text-[11px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-2">Provider</legend>
+            <div className="space-y-1.5">
+              {planners.map((p) => {
+                const isSelected = activeKey === p.provider_key;
+                const isCli = p.provider_key.endsWith('-cli');
+                return (
+                  <label
+                    key={p.provider_key}
+                    className={cn(
+                      'flex items-center gap-3 px-4 py-2.5 rounded-[10px] cursor-pointer',
+                      'border transition-all duration-200',
+                      isSelected
+                        ? 'bg-[var(--md-sys-color-primary-container)] border-[var(--md-sys-color-primary)]'
+                        : 'bg-[var(--md-sys-color-surface)] border-[var(--md-sys-color-outline-variant)] hover:border-[var(--md-sys-color-primary)]',
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="planner-provider"
+                      value={p.provider_key}
+                      checked={isSelected}
+                      onChange={() => { setSelectedKey(p.provider_key); setSelectedModel(null); }}
+                      className="w-4 h-4 text-[var(--md-sys-color-primary)] cursor-pointer"
+                    />
+                    {isCli ? (
+                      <Terminal className={cn('h-4 w-4 shrink-0', isSelected ? 'text-[var(--md-sys-color-on-primary-container)]' : 'text-[var(--md-sys-color-outline)]')} />
+                    ) : (
+                      <Brain className={cn('h-4 w-4 shrink-0', isSelected ? 'text-[var(--md-sys-color-on-primary-container)]' : 'text-[var(--md-sys-color-outline)]')} />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className={cn('text-[13px] font-medium', isSelected ? 'text-[var(--md-sys-color-on-primary-container)]' : 'text-[var(--md-sys-color-on-surface)]')}>
+                        {p.display_name}
+                      </p>
+                    </div>
+                    {isCli && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-outline)]">CLI</span>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          {/* Model selector for selected provider */}
+          {activePlanner && activePlanner.available_models.length > 1 && (
+            <div>
+              <label className="block text-[11px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-1.5">
+                Model for {activePlanner.display_name}
+              </label>
+              <select
+                value={activeModel ?? activePlanner.default_model}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className={cn(
+                  'w-full px-3 py-2 rounded-[8px] text-[13px] font-mono',
+                  'bg-[var(--md-sys-color-surface)]',
+                  'border border-[var(--md-sys-color-outline-variant)]',
+                  'text-[var(--md-sys-color-on-surface)]',
+                  'focus:outline-2 focus:outline-[var(--md-sys-color-primary)]',
+                  'cursor-pointer',
+                )}
+              >
+                {activePlanner.available_models.map((m) => (
+                  <option key={m} value={m}>{m}{m === activePlanner.default_model ? ' (default)' : ''}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Save button */}
+          <button
+            type="button"
+            onClick={() => setMutation.mutate()}
+            disabled={!hasChanged || !activeKey || setMutation.isPending}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-[8px] text-[12px] font-medium cursor-pointer',
+              'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]',
+              'hover:shadow-[var(--md-sys-elevation-1)]',
+              'disabled:opacity-40 disabled:cursor-not-allowed',
+              'transition-all duration-200',
+            )}
+          >
+            {setMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+            Save Planner Choice
+          </button>
+
+          {setMutation.isSuccess && (
+            <p className="text-[11px] text-[var(--dcm-zone-green)]">Planner updated</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Provider card component
 function ProviderCard({ provider }: { provider: LLMProvider }) {
@@ -30,7 +188,7 @@ function ProviderCard({ provider }: { provider: LLMProvider }) {
 
   const configureMutation = useMutation({
     mutationFn: () => apiClient.configureProvider(provider.provider_key, {
-      api_key: apiKey,
+      ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
       model: selectedModel !== provider.default_model ? selectedModel : undefined,
       set_default: setAsDefault || undefined,
     }),
@@ -120,8 +278,22 @@ function ProviderCard({ provider }: { provider: LLMProvider }) {
         </div>
       </div>
 
-      {/* API Key input */}
+      {/* Configuration */}
       <div className="space-y-3">
+        {/* CLI providers: no API key, just check if installed */}
+        {provider.provider_key.endsWith('-cli') ? (
+          <div className={cn(
+            'flex items-center gap-2 px-3 py-2.5 rounded-[8px] text-[12px]',
+            provider.is_active
+              ? 'bg-[color-mix(in_srgb,var(--dcm-zone-green)_8%,transparent)] text-[var(--dcm-zone-green)]'
+              : 'bg-[var(--md-sys-color-surface-container-high)] text-[var(--md-sys-color-outline)]',
+          )}>
+            <CheckCircle2 className="h-4 w-4" />
+            {provider.is_active
+              ? 'CLI installed — authenticate via terminal (e.g. claude, codex auth, gemini auth)'
+              : 'Install the CLI and authenticate to use this provider'}
+          </div>
+        ) : (
         <div>
           <label className="block text-[11px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-1">
             API Key
@@ -155,6 +327,7 @@ function ProviderCard({ provider }: { provider: LLMProvider }) {
             </div>
           </div>
         </div>
+        )}
 
         {/* Model selector */}
         <div>
@@ -197,7 +370,7 @@ function ProviderCard({ provider }: { provider: LLMProvider }) {
           <button
             type="button"
             onClick={() => configureMutation.mutate()}
-            disabled={!apiKey.trim() || configureMutation.isPending}
+            disabled={configureMutation.isPending}
             className={cn(
               'flex items-center gap-1.5 px-4 py-2 rounded-[8px] text-[12px] font-medium cursor-pointer',
               'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]',
@@ -310,6 +483,9 @@ export default function SettingsPage() {
           </p>
         </div>
       </div>
+
+      {/* Planner Configuration */}
+      <PlannerConfig />
 
       {/* Providers */}
       {isLoading ? (

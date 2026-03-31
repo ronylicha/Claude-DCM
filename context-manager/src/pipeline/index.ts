@@ -3,7 +3,7 @@
  * @module pipeline
  */
 
-export { generatePlan, buildStepPrompt } from "./planner";
+export { generatePlan } from "./planner";
 export { makeDecision, analyzeWaveResults, getAlternateAgent, shouldRetryWithDifferentModel } from "./decisions";
 export {
   createPipeline,

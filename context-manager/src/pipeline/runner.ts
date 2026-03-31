@@ -24,7 +24,7 @@ import type {
   DecisionContext,
   SprintReport,
 } from "./types";
-import { generatePlan, buildFallbackPlan } from "./planner";
+import { generatePlan } from "./planner";
 import { makeDecision, analyzeWaveResults } from "./decisions";
 import { getDb, publishEvent } from "../db/client";
 import { createLogger } from "../lib/logger";
@@ -156,27 +156,25 @@ async function runPlanWorker(
 
   let plan: import("./types").PipelinePlan;
   try {
-    plan = await generatePlan(input, sessionId);
+    plan = await generatePlan(input, sessionId, pipelineId);
     log.info(
-      `Plan worker: Opus generated plan for ${pipelineId} — ` +
+      `Plan worker: LLM generated plan for ${pipelineId} — ` +
       `${plan.waves.length} waves, ${plan.sprints.length} sprints, ` +
       `${plan.waves.reduce((s, w) => s + w.steps.length, 0)} steps`,
     );
   } catch (error) {
-    log.error(`Plan worker: Opus failed for ${pipelineId}, using fallback:`, error);
+    log.error(`Plan worker failed for ${pipelineId}:`, error);
 
-    await recordEvent(sql, pipelineId, "planning_fallback", {
+    await sql`UPDATE pipelines SET status = 'failed', updated_at = NOW() WHERE id = ${pipelineId}`;
+    await recordEvent(sql, pipelineId, "planning_failed", {
+      message: error instanceof Error ? error.message : "Planning failed",
       reason: error instanceof Error ? error.message : "Unknown error",
     });
-
-    await publishEvent("global", "pipeline.planning.fallback", {
+    await publishEvent("global", "pipeline.failed", {
       pipeline_id: pipelineId,
-      message: "AI planner failed, using heuristic plan",
+      reason: error instanceof Error ? error.message : "Planning failed",
     });
-
-    // Use instant heuristic fallback (no claude CLI, <100ms)
-    plan = buildFallbackPlan(input);
-    log.info(`Plan worker: using heuristic fallback for ${pipelineId} (${plan.waves.length} waves)`);
+    return;
   }
 
   // Populate pipeline with plan, steps, sprints

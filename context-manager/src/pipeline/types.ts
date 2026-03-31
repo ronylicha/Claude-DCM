@@ -152,12 +152,14 @@ export interface PipelineWave {
   number: number;
   /** Human-readable wave name */
   name: string;
-  /** Steps within this wave (executed in parallel) */
+  /** Steps within this wave (executed in parallel if parallel=true) */
   steps: PipelineStepDef[];
-  /** Dependencies: wave numbers that must complete first */
+  /** Dependencies: wave numbers that must complete BEFORE this wave starts */
   depends_on: number[];
   /** Wave-level strategy on failure */
   on_failure: "abort" | "continue" | "retry";
+  /** Whether steps in this wave can run in parallel (default true) */
+  parallel?: boolean;
 }
 
 export interface PipelineStepDef {

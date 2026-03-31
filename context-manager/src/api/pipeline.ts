@@ -702,6 +702,41 @@ export async function getPipelineSprints(c: Context): Promise<Response> {
 }
 
 /**
+ * GET /api/pipelines/:id/planning-output - Get live planning output chunks
+ * Query: since_index (optional, for incremental polling)
+ * @param c - Hono context
+ */
+export async function getPlanningOutput(c: Context): Promise<Response> {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Missing pipeline ID" }, 400);
+
+    const sinceIndex = parseInt(c.req.query("since_index") ?? "0", 10);
+
+    const sql = (await import("../db/client")).getDb();
+    const chunks = await sql`
+      SELECT chunk, chunk_index, created_at
+      FROM planning_output
+      WHERE pipeline_id = ${id} AND chunk_index >= ${sinceIndex}
+      ORDER BY chunk_index ASC
+    `;
+
+    // Also return combined text for convenience
+    const fullText = chunks.map((row: Record<string, unknown>) => String(row["chunk"])).join("");
+
+    return c.json({
+      chunks,
+      full_text: fullText,
+      count: chunks.length,
+      latest_index: chunks.length > 0 ? Number(chunks[chunks.length - 1]?.["chunk_index"] ?? 0) : sinceIndex,
+    });
+  } catch (error) {
+    log.error("GET planning-output error:", error);
+    return c.json({ error: "Failed to fetch planning output" }, 500);
+  }
+}
+
+/**
  * GET /api/pipelines/:id/sprints/:number/report - Get sprint detail with report
  * @param c - Hono context
  */

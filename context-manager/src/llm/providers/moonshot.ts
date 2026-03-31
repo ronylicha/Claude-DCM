@@ -16,6 +16,8 @@ export class MoonshotProvider extends BaseLLMProvider {
       body["max_completion_tokens"] = body["max_tokens"];
       delete body["max_tokens"];
     }
+    // Kimi k2.5 only accepts temperature=1
+    body["temperature"] = 1;
     return body;
   }
 }

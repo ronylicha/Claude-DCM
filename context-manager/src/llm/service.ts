@@ -7,6 +7,7 @@ import type { ChatCompletionRequest, ChatCompletionResponse, LLMProvider, LLMPro
 import { MiniMaxProvider } from "./providers/minimax";
 import { ZhipuAIProvider } from "./providers/zhipuai";
 import { MoonshotProvider } from "./providers/moonshot";
+import { CLIPlannerProvider } from "./providers/cli-planner";
 import { getDb } from "../db/client";
 import { createLogger } from "../lib/logger";
 
@@ -20,6 +21,9 @@ const PROVIDER_REGISTRY: Record<string, ProviderConstructor> = {
   minimax: MiniMaxProvider,
   zhipuai: ZhipuAIProvider,
   moonshot: MoonshotProvider,
+  "claude-cli": CLIPlannerProvider,
+  "codex-cli": CLIPlannerProvider,
+  "gemini-cli": CLIPlannerProvider,
 };
 
 /**
@@ -98,11 +102,12 @@ export async function listProviders(): Promise<Array<Omit<LLMProviderRow, "api_k
 }
 
 /**
- * Save API key and activate a provider.
+ * Configure a provider: set API key, change model, set as default.
+ * API key is optional — if empty/null, keeps the existing key.
  */
 export async function configureProvider(
   providerKey: string,
-  apiKey: string,
+  apiKey?: string | null,
   options?: { model?: string; setDefault?: boolean },
 ): Promise<void> {
   const sql = getDb();
@@ -112,18 +117,31 @@ export async function configureProvider(
     await sql`UPDATE llm_providers SET is_default = false WHERE is_default = true`;
   }
 
-  await sql`
-    UPDATE llm_providers
-    SET
-      api_key_encrypted = ${apiKey},
-      is_active = true,
-      is_default = COALESCE(${options?.setDefault ?? false}, is_default),
-      default_model = COALESCE(${options?.model ?? null}, default_model),
-      updated_at = NOW()
-    WHERE provider_key = ${providerKey}
-  `;
+  if (apiKey && apiKey.trim().length > 0) {
+    // Update with new API key
+    await sql`
+      UPDATE llm_providers
+      SET
+        api_key_encrypted = ${apiKey},
+        is_active = true,
+        is_default = COALESCE(${options?.setDefault ?? false}, is_default),
+        default_model = COALESCE(${options?.model ?? null}, default_model),
+        updated_at = NOW()
+      WHERE provider_key = ${providerKey}
+    `;
+  } else {
+    // Update without changing API key (model change, set default, etc.)
+    await sql`
+      UPDATE llm_providers
+      SET
+        is_default = COALESCE(${options?.setDefault ?? false}, is_default),
+        default_model = COALESCE(${options?.model ?? null}, default_model),
+        updated_at = NOW()
+      WHERE provider_key = ${providerKey}
+    `;
+  }
 
-  log.info(`Provider configured: ${providerKey} (default: ${options?.setDefault ?? false})`);
+  log.info(`Provider configured: ${providerKey} (model: ${options?.model ?? 'unchanged'}, default: ${options?.setDefault ?? false})`);
 }
 
 /**
@@ -153,4 +171,39 @@ export async function chatComplete(
 export async function testProvider(providerKey: string): Promise<{ ok: boolean; error?: string }> {
   const provider = await getProvider(providerKey);
   return provider.testConnection();
+}
+
+/**
+ * Get the provider and model configured for planning.
+ * Reads from dcm_settings table.
+ */
+export async function getPlannerProvider(): Promise<{ provider: LLMProvider; model: string | null }> {
+  const sql = getDb();
+
+  const [setting] = await sql<Array<{ value: Record<string, unknown> }>>`
+    SELECT value FROM dcm_settings WHERE key = 'planner'
+  `;
+
+  const providerKey = setting?.value?.["provider_key"] as string | null | undefined;
+  const model = (setting?.value?.["model"] as string | null | undefined) ?? null;
+
+  if (providerKey) {
+    return { provider: await getProvider(providerKey), model };
+  }
+
+  return { provider: await getProvider(), model };
+}
+
+/**
+ * Set which provider + model to use for planning.
+ */
+export async function setPlannerProvider(providerKey: string, model?: string): Promise<void> {
+  const sql = getDb();
+  const settingValue = { provider_key: providerKey, model: model ?? null, timeout_ms: 0 };
+  await sql`
+    INSERT INTO dcm_settings (key, value, updated_at)
+    VALUES ('planner', ${sql.json(settingValue)}, NOW())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+  `;
+  log.info(`Planner provider set to: ${providerKey}`);
 }

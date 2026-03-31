@@ -219,6 +219,79 @@ function PipelineControls({
 }
 
 // ============================================
+// Planning Live View
+// ============================================
+
+function PlanningLiveView({ pipelineId }: { pipelineId: string }) {
+  const [output, setOutput] = useState('');
+  const [latestIndex, setLatestIndex] = useState(0);
+  const outputRef = useRef<HTMLDivElement>(null);
+
+  // Poll for new chunks every 1.5s
+  useEffect(() => {
+    let active = true;
+    const poll = async () => {
+      while (active) {
+        try {
+          const data = await apiClient.getPlanningOutput(pipelineId, latestIndex);
+          if (data.count > 0 && active) {
+            setOutput((prev) => prev + data.chunks.map((c) => c.chunk).join(''));
+            setLatestIndex(data.latest_index + 1);
+            // Auto-scroll
+            if (outputRef.current) {
+              outputRef.current.scrollTop = outputRef.current.scrollHeight;
+            }
+          }
+        } catch {
+          // ignore polling errors
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    };
+    poll();
+    return () => { active = false; };
+  }, [pipelineId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div
+      className={cn(
+        'rounded-[16px] overflow-hidden',
+        'bg-[var(--md-sys-color-surface-container)]',
+        'border border-[color-mix(in_srgb,var(--md-sys-color-tertiary)_20%,transparent)]',
+      )}
+    >
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-[var(--md-sys-color-outline-variant)]">
+        <Loader2 className="h-5 w-5 text-[var(--md-sys-color-tertiary)] animate-spin" />
+        <div>
+          <h3 className="text-[14px] font-semibold text-[var(--md-sys-color-on-surface)]">
+            Generating execution plan...
+          </h3>
+          <p className="text-[11px] text-[var(--md-sys-color-outline)]">
+            LLM is analyzing your instructions and documents
+          </p>
+        </div>
+      </div>
+
+      {/* Live output terminal */}
+      <div
+        ref={outputRef}
+        className={cn(
+          'p-4 max-h-[400px] overflow-y-auto',
+          'bg-[#1a1a2e] text-[#e0e0e0]',
+          'font-mono text-[12px] leading-relaxed whitespace-pre-wrap',
+        )}
+      >
+        {output || (
+          <span className="text-[#666] italic">Waiting for LLM output...</span>
+        )}
+        <span className="inline-block w-2 h-4 bg-[var(--md-sys-color-tertiary)] animate-pulse ml-0.5 align-text-bottom" />
+      </div>
+    </div>
+  );
+}
+
+// ============================================
 // Pipeline Detail Page
 // ============================================
 
@@ -488,23 +561,9 @@ export default function PipelineDetailPage() {
         </div>
       </div>
 
-      {/* Planning indicator */}
+      {/* Planning — live LLM output */}
       {pipeline.status === 'planning' && (
-        <div
-          className={cn(
-            'rounded-[16px] p-8 text-center',
-            'bg-[color-mix(in_srgb,var(--md-sys-color-tertiary)_6%,var(--md-sys-color-surface-container))]',
-            'border border-[color-mix(in_srgb,var(--md-sys-color-tertiary)_20%,transparent)]',
-          )}
-        >
-          <Loader2 className="h-8 w-8 mx-auto mb-3 text-[var(--md-sys-color-tertiary)] animate-spin" />
-          <h3 className="text-[16px] font-semibold text-[var(--md-sys-color-on-surface)] mb-1">
-            Generating execution plan...
-          </h3>
-          <p className="text-[13px] text-[var(--md-sys-color-outline)] max-w-md mx-auto">
-            Claude Opus is analyzing your instructions and documents to create an optimized multi-sprint execution plan. This usually takes 30-90 seconds.
-          </p>
-        </div>
+        <PlanningLiveView pipelineId={pipelineId} />
       )}
 
       {/* Wave stepper */}

@@ -67,7 +67,7 @@ import { getOrchestratorTopology, getOrchestratorStatus } from "./api/orchestrat
 import { startOrchestrator, stopOrchestrator, getOrchestratorStats } from "./orchestrator";
 import { getStatsOverview, getStatsTokens, getStatsActivity, getStatsAgents } from "./api/stats";
 import { postSkill, postWorkflow, postAdvisor, getStatus, checkGate } from "./api/skill-gate";
-import { getProviders, postConfigureProvider, postTestProvider, postDeactivateProvider } from "./api/settings";
+import { getProviders, postConfigureProvider, postTestProvider, postDeactivateProvider, getPlannerSettings, postPlannerSettings } from "./api/settings";
 import {
   postCreatePipeline,
   postCreatePipelineWithFiles,
@@ -86,6 +86,7 @@ import {
   getFsBrowse,
   postRetryPlanning,
   deletePipeline,
+  getPlanningOutput,
 } from "./api/pipeline";
 
 // Version from package.json (single source of truth)
@@ -579,6 +580,8 @@ app.get("/api/settings/providers", getProviders);
 app.post("/api/settings/providers/:key/configure", postConfigureProvider);
 app.post("/api/settings/providers/:key/test", postTestProvider);
 app.post("/api/settings/providers/:key/deactivate", postDeactivateProvider);
+app.get("/api/settings/planner", getPlannerSettings);
+app.post("/api/settings/planner", postPlannerSettings);
 
 // ============================================
 // Pipeline API - Phase 13 (DCM v5.1)
@@ -591,6 +594,7 @@ app.post("/api/pipelines", postCreatePipeline);
 app.get("/api/pipelines", getListPipelines);
 app.get("/api/pipelines/:id/live", getPipelineLive);
 app.get("/api/pipelines/:id/events", getPipelineEvents);
+app.get("/api/pipelines/:id/planning-output", getPlanningOutput);
 app.get("/api/pipelines/:id/sprints", getPipelineSprints);
 app.get("/api/pipelines/:id/sprints/:number/report", getSprintReport);
 app.get("/api/pipelines/:id", getPipelineDetail);

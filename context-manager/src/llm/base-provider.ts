@@ -104,8 +104,8 @@ export abstract class BaseLLMProvider implements LLMProvider {
   async testConnection(): Promise<{ ok: boolean; error?: string }> {
     try {
       const result = await this.complete({
-        messages: [{ role: "user", content: "Say OK" }],
-        max_tokens: 10,
+        messages: [{ role: "user", content: "Say OK in one word" }],
+        max_tokens: 5000,
       });
       return { ok: result.content.length > 0 };
     } catch (error) {
