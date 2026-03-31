@@ -15,6 +15,7 @@ import {
   listPipelines,
   pausePipeline,
   cancelPipeline,
+  retryPlanning,
 } from "../pipeline";
 import type { PipelineInput, StepStatus } from "../pipeline";
 import { createLogger } from "../lib/logger";
@@ -162,6 +163,28 @@ export async function postPausePipeline(c: Context): Promise<Response> {
       },
       500,
     );
+  }
+}
+
+/**
+ * POST /api/pipelines/:id/retry-planning - Retry plan generation for a stuck pipeline
+ * @param c - Hono context
+ */
+export async function postRetryPlanning(c: Context): Promise<Response> {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Missing pipeline ID" }, 400);
+
+    log.info(`Retrying planning: ${id}`);
+    await retryPlanning(id);
+
+    return c.json({ success: true, message: "Planning retry launched" });
+  } catch (error) {
+    log.error("POST /api/pipelines/:id/retry-planning error:", error);
+    return c.json({
+      error: "Failed to retry planning",
+      message: error instanceof Error ? error.message : "Unknown error",
+    }, 500);
   }
 }
 

@@ -255,6 +255,40 @@ async function runPlanWorker(
 }
 
 /**
+ * Retry planning for a pipeline stuck in 'planning' state.
+ * Re-launches the plan worker. Can be called from an API endpoint.
+ *
+ * @param pipelineId - Pipeline to retry planning for
+ */
+export async function retryPlanning(pipelineId: string): Promise<void> {
+  const sql = getDb();
+  const pipeline = await getPipeline(pipelineId);
+  if (!pipeline) throw new Error(`Pipeline not found: ${pipelineId}`);
+  if (pipeline.status !== "planning" && pipeline.status !== "failed") {
+    throw new Error(`Cannot retry planning: pipeline is '${pipeline.status}', expected 'planning' or 'failed'`);
+  }
+
+  // Reset status to planning
+  await sql`UPDATE pipelines SET status = 'planning', updated_at = NOW() WHERE id = ${pipelineId}`;
+
+  // Clean any stale steps/sprints from a previous attempt
+  await sql`DELETE FROM pipeline_steps WHERE pipeline_id = ${pipelineId}`;
+  await sql`DELETE FROM pipeline_sprints WHERE pipeline_id = ${pipelineId}`;
+
+  await recordEvent(sql, pipelineId, "planning_retry", { message: "Retrying plan generation" });
+  await publishEvent("global", "pipeline.planning", { pipeline_id: pipelineId, message: "Retrying plan generation..." });
+
+  const input = pipeline["input"] as PipelineInput;
+  const sessionId = pipeline["session_id"] as string;
+
+  runPlanWorker(pipelineId, input, sessionId).catch((error) => {
+    log.error(`Plan worker retry failed for pipeline ${pipelineId}:`, error);
+  });
+
+  log.info(`Planning retry launched for pipeline ${pipelineId}`);
+}
+
+/**
  * Retrieve a single pipeline by ID.
  *
  * @param pipelineId - Pipeline identifier

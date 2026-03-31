@@ -18,6 +18,7 @@ export {
   cancelPipeline,
   commitSprintChanges,
   generateSprintReport,
+  retryPlanning,
 } from "./runner";
 export type {
   PipelineInput,

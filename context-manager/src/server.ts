@@ -83,6 +83,7 @@ import {
   getSprintReport,
   getGitStatus,
   getFsBrowse,
+  postRetryPlanning,
 } from "./api/pipeline";
 
 // Version from package.json (single source of truth)
@@ -584,6 +585,7 @@ app.get("/api/pipelines/:id/sprints/:number/report", getSprintReport);
 app.get("/api/pipelines/:id", getPipelineDetail);
 app.get("/api/pipelines/:id/steps", getPipelineStepsList);
 app.post("/api/pipelines/:id/start", postStartPipeline);
+app.post("/api/pipelines/:id/retry-planning", postRetryPlanning);
 app.post("/api/pipelines/:id/pause", postPausePipeline);
 app.post("/api/pipelines/:id/cancel", postCancelPipeline);
 app.patch("/api/pipelines/:id/steps/:stepId", patchStepStatus);

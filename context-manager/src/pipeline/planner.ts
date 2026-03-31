@@ -83,50 +83,91 @@ export async function generatePlan(
 // ============================================
 
 /**
- * Call the Claude CLI in headless mode (--print) with model opus.
- * Returns the raw text output.
+ * Call Claude CLI headless in a fully detached process.
+ *
+ * Writes prompt to a temp file, launches a shell script that runs
+ * `claude --print` and writes output to another temp file, then
+ * polls for the result file using non-blocking setInterval.
+ * This ensures the Bun event loop is NEVER blocked — the API server
+ * stays responsive and systemd watchdog is satisfied.
  */
 async function callClaudeHeadless(prompt: string): Promise<string> {
-  log.info(`Calling claude --print (prompt: ${prompt.length} chars)`);
+  const { writeFile, readFile, unlink } = await import("node:fs/promises");
+  const { randomUUID } = await import("node:crypto");
 
-  const proc = Bun.spawn(
-    [
-      "claude",
-      "--print",
-      "--model", "claude-opus-4-6",
-      "--output-format", "text",
-      "-p", prompt,
-    ],
-    {
-      stdout: "pipe",
-      stderr: "pipe",
-      env: { ...process.env },
-    },
-  );
+  const jobId = randomUUID().slice(0, 8);
+  const tmpDir = "/tmp/dcm-planner";
+  await Bun.spawn(["mkdir", "-p", tmpDir]).exited;
 
-  // Set timeout
-  const timeout = setTimeout(() => {
-    proc.kill();
-    log.error("Claude headless timed out after 5 minutes");
-  }, PLANNER_TIMEOUT_MS);
+  const promptFile = `${tmpDir}/${jobId}.prompt`;
+  const outputFile = `${tmpDir}/${jobId}.output`;
+  const errorFile = `${tmpDir}/${jobId}.error`;
+  const doneFile = `${tmpDir}/${jobId}.done`;
 
-  const exitCode = await proc.exited;
-  clearTimeout(timeout);
+  // Write prompt to file
+  await writeFile(promptFile, prompt, "utf-8");
 
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
+  log.info(`Planner job ${jobId}: launching detached claude process (prompt: ${prompt.length} chars)`);
 
-  if (exitCode !== 0) {
-    log.error(`Claude headless failed (exit ${exitCode}): ${stderr.slice(0, 500)}`);
-    throw new Error(`Planner agent failed: ${stderr.slice(0, 200)}`);
-  }
+  // Launch fully detached shell script — does NOT block Bun's event loop
+  const script = `claude --print --model claude-opus-4-6 --output-format text -p "$(cat "${promptFile}")" > "${outputFile}" 2> "${errorFile}"; echo $? > "${doneFile}"`;
+  Bun.spawn(["bash", "-c", script], {
+    stdout: "ignore",
+    stderr: "ignore",
+    stdin: "ignore",
+  });
 
-  if (!stdout.trim()) {
-    throw new Error("Planner agent returned empty output");
-  }
+  // Poll for completion (non-blocking, 2s interval)
+  return new Promise<string>((resolve, reject) => {
+    const startTime = Date.now();
+    const pollInterval = setInterval(async () => {
+      try {
+        const doneExists = await Bun.file(doneFile).exists();
+        if (!doneExists) {
+          // Check timeout
+          if (Date.now() - startTime > PLANNER_TIMEOUT_MS) {
+            clearInterval(pollInterval);
+            log.error(`Planner job ${jobId}: timed out after ${PLANNER_TIMEOUT_MS / 1000}s`);
+            cleanup();
+            reject(new Error("Planner timed out"));
+          }
+          return; // Still running — check again in 2s
+        }
 
-  log.info(`Claude headless returned ${stdout.length} chars`);
-  return stdout;
+        clearInterval(pollInterval);
+
+        const exitCode = (await readFile(doneFile, "utf-8")).trim();
+        const stdout = await readFile(outputFile, "utf-8").catch(() => "");
+        const stderr = await readFile(errorFile, "utf-8").catch(() => "");
+
+        cleanup();
+
+        if (exitCode !== "0") {
+          log.error(`Planner job ${jobId}: claude failed (exit ${exitCode}): ${stderr.slice(0, 300)}`);
+          reject(new Error(`Planner agent failed: ${stderr.slice(0, 200)}`));
+          return;
+        }
+
+        if (!stdout.trim()) {
+          reject(new Error("Planner agent returned empty output"));
+          return;
+        }
+
+        log.info(`Planner job ${jobId}: completed, ${stdout.length} chars output`);
+        resolve(stdout);
+      } catch (error) {
+        clearInterval(pollInterval);
+        cleanup();
+        reject(error);
+      }
+    }, 2000);
+
+    async function cleanup() {
+      for (const f of [promptFile, outputFile, errorFile, doneFile]) {
+        await unlink(f).catch(() => {});
+      }
+    }
+  });
 }
 
 // ============================================
