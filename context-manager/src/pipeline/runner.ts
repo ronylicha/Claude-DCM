@@ -281,6 +281,42 @@ export async function retryPlanning(pipelineId: string): Promise<void> {
 }
 
 /**
+ * Recover pipelines stuck in 'planning' state after a service restart.
+ * Checks /tmp/dcm-planner for completed jobs (*.done files) and
+ * re-triggers plan parsing for any that finished while the service was down.
+ */
+export async function recoverStuckPlanners(): Promise<void> {
+  const sql = getDb();
+
+  const stuck = await sql<PipelineRow[]>`
+    SELECT * FROM pipelines WHERE status = 'planning' AND created_at > NOW() - INTERVAL '24 hours'
+  `;
+
+  if (stuck.length === 0) return;
+  log.info(`Recovery: found ${stuck.length} pipeline(s) stuck in planning state`);
+
+  for (const pipeline of stuck) {
+    const pipelineId = pipeline["id"] as string;
+    const input = pipeline["input"] as PipelineInput;
+    const sessionId = pipeline["session_id"] as string;
+
+    // Check if there's a completed job file in /tmp/dcm-planner/
+    // that produced output we can recover
+    try {
+      const { generatePlan } = await import("./planner");
+      // tryRecoverPlanFromWorkspace is called inside generatePlan → parsePlanOutput
+      // Just re-run the worker — it will find the workspace files
+      log.info(`Recovery: relaunching plan worker for pipeline ${pipelineId}`);
+      runPlanWorker(pipelineId, input, sessionId).catch((error) => {
+        log.error(`Recovery failed for ${pipelineId}:`, error);
+      });
+    } catch (error) {
+      log.error(`Recovery error for ${pipelineId}:`, error);
+    }
+  }
+}
+
+/**
  * Retrieve a single pipeline by ID.
  *
  * @param pipelineId - Pipeline identifier

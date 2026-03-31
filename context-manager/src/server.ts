@@ -629,6 +629,11 @@ async function startServer() {
   // Start global orchestrator (inter-project coordination)
   startOrchestrator();
 
+  // Recover any pipelines stuck in 'planning' after restart
+  import("./pipeline").then(({ recoverStuckPlanners }) => {
+    recoverStuckPlanners().catch((err) => log.warn("Pipeline recovery check failed:", err));
+  });
+
   // Start HTTP server with Bun
   const server = Bun.serve({
     hostname: config.server.host,
