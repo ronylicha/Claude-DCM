@@ -177,10 +177,28 @@ export const SessionMiniCockpit = memo(function SessionMiniCockpit({ session, on
             </p>
           )}
           {preemptive_summary.status === 'ready' && (
-            <p className="text-[11px] text-[var(--dcm-zone-green)]">Resume pret ✓</p>
+            <p className="text-[11px] text-[var(--dcm-zone-green)]">Resume pret</p>
           )}
         </div>
       </div>
+
+      {/* ── Cost & Lines ── */}
+      {(context.cost_usd !== undefined && context.cost_usd > 0) || (context.lines_added !== undefined && context.lines_added > 0) ? (
+        <div className="flex items-center gap-3 text-[11px] text-[var(--md-sys-color-outline)]">
+          {context.cost_usd !== undefined && context.cost_usd > 0 && (
+            <span>${context.cost_usd.toFixed(2)}</span>
+          )}
+          {context.lines_added !== undefined && context.lines_added > 0 && (
+            <span className="text-[var(--dcm-zone-green)]">+{context.lines_added}</span>
+          )}
+          {context.lines_removed !== undefined && context.lines_removed > 0 && (
+            <span className="text-[var(--dcm-zone-red)]">-{context.lines_removed}</span>
+          )}
+          {context.cache_read_tokens !== undefined && context.cache_read_tokens > 0 && (
+            <span title="Cache read tokens">cache {formatTokens(context.cache_read_tokens)}</span>
+          )}
+        </div>
+      ) : null}
 
       {/* ── Wave progress ── */}
       {wave !== null && (

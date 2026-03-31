@@ -160,6 +160,16 @@ export async function getCockpitGlobal(c: Context) {
           COALESCE(best_ac.current_usage, 0) as current_usage,
           COALESCE(best_ac.max_capacity, 200000) as max_capacity,
           COALESCE(best_ac.source, 'estimated') as source,
+          best_ac.model_name,
+          best_ac.version,
+          COALESCE(best_ac.cache_creation_tokens, 0) as cache_creation_tokens,
+          COALESCE(best_ac.cache_read_tokens, 0) as cache_read_tokens,
+          COALESCE(best_ac.cost_usd, 0) as cost_usd,
+          COALESCE(best_ac.duration_ms, 0) as duration_ms,
+          COALESCE(best_ac.api_duration_ms, 0) as api_duration_ms,
+          COALESCE(best_ac.lines_added, 0) as lines_added,
+          COALESCE(best_ac.lines_removed, 0) as lines_removed,
+          COALESCE(best_ac.exceeds_200k, false) as exceeds_200k,
           (SELECT COUNT(*) FROM subtasks st
            JOIN task_lists tl ON st.task_list_id = tl.id
            JOIN requests r ON tl.request_id = r.id
@@ -170,11 +180,14 @@ export async function getCockpitGlobal(c: Context) {
         LEFT JOIN projects p ON s.project_id = p.id
         LEFT JOIN (
           SELECT DISTINCT ON (session_id)
-            session_id, model_id, current_usage, max_capacity, zone,
-            predicted_exhaustion_minutes, consumption_rate, source
+            session_id, model_id, model_name, version, current_usage, max_capacity, zone,
+            predicted_exhaustion_minutes, consumption_rate, source,
+            cache_creation_tokens, cache_read_tokens, cost_usd, duration_ms, api_duration_ms,
+            lines_added, lines_removed, exceeds_200k
           FROM agent_capacity
           ORDER BY session_id,
-            CASE WHEN source = 'statusline' THEN 0 ELSE 1 END,
+            CASE WHEN source = 'statusline' AND current_usage > 0 THEN 0 ELSE 1 END,
+            current_usage DESC NULLS LAST,
             last_updated_at DESC NULLS LAST
         ) best_ac ON best_ac.session_id = s.id
         WHERE s.ended_at IS NULL
@@ -338,6 +351,8 @@ export async function getCockpitGrid(c: Context) {
         project_name: sess["project_name"] as string | null,
         project_path: sess["project_path"] as string | null,
         model_id: sess["model_id"] as string,
+        model_name: (sess["model_name"] as string) || null,
+        version: (sess["version"] as string) || null,
         started_at: sess["started_at"] as string,
         context: {
           used_percentage: Number(sess["used_percentage"] || 0),
@@ -348,6 +363,14 @@ export async function getCockpitGrid(c: Context) {
           predicted_exhaustion_minutes: sess["predicted_exhaustion_minutes"] as number | null,
           source: (sess["source"] as string) || 'estimated',
           model_id: (sess["model_id"] as string) || 'unknown',
+          cache_creation_tokens: Number(sess["cache_creation_tokens"] || 0),
+          cache_read_tokens: Number(sess["cache_read_tokens"] || 0),
+          cost_usd: Number(sess["cost_usd"] || 0),
+          duration_ms: Number(sess["duration_ms"] || 0),
+          api_duration_ms: Number(sess["api_duration_ms"] || 0),
+          lines_added: Number(sess["lines_added"] || 0),
+          lines_removed: Number(sess["lines_removed"] || 0),
+          exceeds_200k: Boolean(sess["exceeds_200k"]),
         },
         wave: wave ? {
           current_number: wave.wave_number,

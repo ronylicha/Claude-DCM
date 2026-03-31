@@ -5,15 +5,27 @@ import { createLogger } from "../lib/logger";
 
 const log = createLogger("TokensRealtime");
 
-// Schema for statusline data
+// Schema for statusline data — accepts all HookInput fields
 const realtimeTokenSchema = z.object({
   session_id: z.string().min(1),
-  agent_id: z.string().optional().default("orchestrator"),
-  total_input_tokens: z.number().int().min(0),
-  total_output_tokens: z.number().int().min(0),
-  context_window_size: z.number().int().min(1),
-  used_percentage: z.number().min(0).max(100),
-  model_id: z.string().optional().default("unknown"),
+  agent_id: z.string().optional(),
+  total_input_tokens: z.number().min(0).default(0),
+  total_output_tokens: z.number().min(0).default(0),
+  context_window_size: z.number().min(1).default(1000000),
+  current_input_tokens: z.number().min(0).optional(),
+  current_output_tokens: z.number().min(0).optional(),
+  cache_creation_tokens: z.number().min(0).optional(),
+  cache_read_tokens: z.number().min(0).optional(),
+  used_percentage: z.number().min(0).max(100).default(0),
+  exceeds_200k: z.boolean().optional(),
+  model_id: z.string().default("unknown"),
+  model_name: z.string().optional(),
+  version: z.string().optional(),
+  cost_usd: z.number().min(0).optional(),
+  duration_ms: z.number().min(0).optional(),
+  api_duration_ms: z.number().min(0).optional(),
+  lines_added: z.number().min(0).optional(),
+  lines_removed: z.number().min(0).optional(),
 });
 
 // EMA smoothing factor
@@ -40,16 +52,25 @@ export async function postTokensRealtime(c: Context) {
     return c.json({ error: "Invalid input", details: parsed.error.issues }, 400);
   }
 
-  const {
-    session_id,
-    agent_id,
-    total_input_tokens,
-    total_output_tokens,
-    context_window_size,
-    used_percentage,
-    model_id,
-  } = parsed.data;
-  const total_tokens = total_input_tokens + total_output_tokens;
+  const d = parsed.data;
+  const session_id = d.session_id;
+  // Use session_id as agent_id so cockpit query by session_id finds the right row
+  const agent_id = d.agent_id ?? d.session_id;
+  const total_input_tokens = d.total_input_tokens;
+  const total_output_tokens = d.total_output_tokens;
+  const context_window_size = d.context_window_size;
+  const model_id = d.model_id;
+
+  // Use current_usage tokens if available (more accurate than totals)
+  const currentInput = d.current_input_tokens ?? 0;
+  const currentOutput = d.current_output_tokens ?? 0;
+  const total_tokens = (currentInput + currentOutput) > 0
+    ? currentInput + currentOutput
+    : total_input_tokens + total_output_tokens;
+
+  const used_percentage = context_window_size > 0 && total_tokens > 0
+    ? Math.round(total_tokens / context_window_size * 1000) / 10
+    : d.used_percentage;
   const zone = calculateZone(used_percentage);
 
   log.info(`Realtime: session=${session_id.slice(0,8)} model=${model_id} tokens=${total_tokens} window=${context_window_size} pct=${used_percentage}%`);
@@ -81,16 +102,22 @@ export async function postTokensRealtime(c: Context) {
     const remainingTokens = context_window_size - total_tokens;
     const predictedMinutes = newRate > 0 ? remainingTokens / newRate : null;
 
-    // 2. Upsert agent_capacity with real data
+    // 2. Upsert agent_capacity with ALL real data
     await db`
       INSERT INTO agent_capacity (
         agent_id, session_id, max_capacity, current_usage, consumption_rate,
         predicted_exhaustion_minutes, zone, real_input_tokens, real_output_tokens,
-        model_id, source, last_statusline_at, last_updated_at
+        model_id, model_name, version, source, last_statusline_at, last_updated_at,
+        cache_creation_tokens, cache_read_tokens, cost_usd, duration_ms, api_duration_ms,
+        lines_added, lines_removed, exceeds_200k
       ) VALUES (
         ${agent_id}, ${session_id}, ${context_window_size}, ${total_tokens}, ${newRate},
         ${predictedMinutes}, ${zone}, ${total_input_tokens}, ${total_output_tokens},
-        ${model_id}, 'statusline', NOW(), NOW()
+        ${model_id}, ${d.model_name ?? null}, ${d.version ?? null},
+        'statusline', NOW(), NOW(),
+        ${d.cache_creation_tokens ?? 0}, ${d.cache_read_tokens ?? 0},
+        ${d.cost_usd ?? 0}, ${d.duration_ms ?? 0}, ${d.api_duration_ms ?? 0},
+        ${d.lines_added ?? 0}, ${d.lines_removed ?? 0}, ${d.exceeds_200k ?? false}
       )
       ON CONFLICT (agent_id) DO UPDATE SET
         session_id = EXCLUDED.session_id,
@@ -102,15 +129,25 @@ export async function postTokensRealtime(c: Context) {
         real_input_tokens = EXCLUDED.real_input_tokens,
         real_output_tokens = EXCLUDED.real_output_tokens,
         model_id = EXCLUDED.model_id,
+        model_name = EXCLUDED.model_name,
+        version = EXCLUDED.version,
         source = EXCLUDED.source,
         last_statusline_at = NOW(),
-        last_updated_at = NOW()
+        last_updated_at = NOW(),
+        cache_creation_tokens = EXCLUDED.cache_creation_tokens,
+        cache_read_tokens = EXCLUDED.cache_read_tokens,
+        cost_usd = EXCLUDED.cost_usd,
+        duration_ms = EXCLUDED.duration_ms,
+        api_duration_ms = EXCLUDED.api_duration_ms,
+        lines_added = EXCLUDED.lines_added,
+        lines_removed = EXCLUDED.lines_removed,
+        exceeds_200k = EXCLUDED.exceeds_200k
     `;
 
     // 3. Check for threshold crossing and publish events
     const previousZone = (existing?.["zone"] as string) || "green";
 
-    // Broadcast capacity update via WebSocket
+    // Broadcast capacity update via WebSocket with all available data
     await publishEvent("global", "capacity.update", {
       session_id,
       agent_id,
@@ -121,10 +158,22 @@ export async function postTokensRealtime(c: Context) {
       real_tokens: {
         input: total_input_tokens,
         output: total_output_tokens,
+        current_input: currentInput,
+        current_output: currentOutput,
+        cache_creation: d.cache_creation_tokens ?? 0,
+        cache_read: d.cache_read_tokens ?? 0,
         total: total_tokens,
       },
       context_window_size,
       model_id,
+      model_name: d.model_name ?? null,
+      version: d.version ?? null,
+      cost_usd: d.cost_usd ?? null,
+      duration_ms: d.duration_ms ?? null,
+      api_duration_ms: d.api_duration_ms ?? null,
+      lines_added: d.lines_added ?? null,
+      lines_removed: d.lines_removed ?? null,
+      exceeds_200k: d.exceeds_200k ?? false,
       source: "statusline",
     });
 

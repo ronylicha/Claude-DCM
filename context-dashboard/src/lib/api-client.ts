@@ -616,6 +616,8 @@ export interface MiniCockpitData {
   project_name: string;
   project_path: string;
   model_id: string;
+  model_name?: string;
+  version?: string;
   started_at: string;
   context: {
     used_percentage: number;
@@ -625,6 +627,14 @@ export interface MiniCockpitData {
     consumption_rate: number;
     predicted_exhaustion_minutes: number | null;
     source: string;
+    cache_creation_tokens?: number;
+    cache_read_tokens?: number;
+    cost_usd?: number;
+    duration_ms?: number;
+    api_duration_ms?: number;
+    lines_added?: number;
+    lines_removed?: number;
+    exceeds_200k?: boolean;
   };
   wave: {
     current_number: number;

@@ -36,6 +36,8 @@ export function useSessionGrid() {
             if (s.session_id !== payload.session_id) return s;
             return {
               ...s,
+              model_name: (payload.model_name as string) ?? s.model_name,
+              version: (payload.version as string) ?? s.version,
               context: {
                 ...s.context,
                 used_percentage: payload.used_percentage as number,
@@ -44,6 +46,12 @@ export function useSessionGrid() {
                 predicted_exhaustion_minutes: payload.predicted_exhaustion_minutes as number | null,
                 current_usage: realTokens?.total ?? s.context.current_usage,
                 source: (payload.source as string) ?? s.context.source,
+                cache_creation_tokens: realTokens?.cache_creation ?? s.context.cache_creation_tokens,
+                cache_read_tokens: realTokens?.cache_read ?? s.context.cache_read_tokens,
+                cost_usd: (payload.cost_usd as number) ?? s.context.cost_usd,
+                lines_added: (payload.lines_added as number) ?? s.context.lines_added,
+                lines_removed: (payload.lines_removed as number) ?? s.context.lines_removed,
+                exceeds_200k: (payload.exceeds_200k as boolean) ?? s.context.exceeds_200k,
               },
             };
           })
