@@ -381,26 +381,26 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
         ...(gitRepoUrl.trim() ? { git_repo_url: gitRepoUrl.trim() } : {}),
         ...(gitBranch.trim() !== 'main' ? { git_branch: gitBranch.trim() } : {}),
       };
-      if (files.length > 0) {
-        const formData = new FormData();
-        formData.append('session_id', sessionId);
-        formData.append('instructions', instructions.trim());
-        formData.append('workspace_path', workspacePath.trim());
-        if (gitRepoUrl.trim()) formData.append('git_repo_url', gitRepoUrl.trim());
-        if (gitBranch.trim() !== 'main') formData.append('git_branch', gitBranch.trim());
-        for (const file of files) {
-          formData.append('files', file);
-        }
-        const res = await fetch(`${API_BASE_URL}/api/pipelines/upload`, {
-          method: 'POST',
-          body: formData,
-        });
-        return res.json();
+
+      // Read file contents client-side (reliable — no FormData file reference issues)
+      const documents: Array<{ name: string; content: string; type: string }> = [];
+      for (const file of files) {
+        const content = await file.text();
+        if (!content.trim()) continue;
+        const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+        let type = 'text';
+        if (ext === 'md' || ext === 'markdown') type = 'markdown';
+        else if (ext === 'json') type = 'json';
+        else if (['ts', 'tsx', 'js', 'jsx', 'py', 'php', 'sh', 'sql'].includes(ext)) type = 'code';
+        documents.push({ name: file.name, content, type });
       }
+
+      // Always use JSON — more reliable than multipart
       return apiClient.createPipeline({
         session_id: sessionId,
         instructions: instructions.trim(),
         workspace,
+        documents: documents.length > 0 ? documents : undefined,
       });
     },
     onSuccess: (data) => {
