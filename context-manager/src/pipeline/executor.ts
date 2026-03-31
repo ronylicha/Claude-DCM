@@ -219,22 +219,36 @@ async function launchAgent(
 // ============================================
 
 /**
- * On startup, check for steps stuck in 'running' state.
- * Mark them as failed so the decision engine can retry.
+ * On startup, recover pipelines with queued or running steps:
+ * - 'queued' steps: re-launch them (they never started)
+ * - 'running' steps (old): mark as failed for retry
  */
 export async function recoverRunningAgents(): Promise<void> {
   const sql = getDb();
 
+  // 1. Find running pipelines with queued steps (executor died before launching)
+  const pipelinesWithQueued = await sql<Array<{ pipeline_id: string }>>`
+    SELECT DISTINCT ps.pipeline_id FROM pipeline_steps ps
+    JOIN pipelines p ON p.id = ps.pipeline_id
+    WHERE ps.status = 'queued' AND p.status = 'running'
+  `;
+
+  for (const row of pipelinesWithQueued) {
+    const pid = row["pipeline_id"] as string;
+    log.info(`Recovery: re-launching queued agents for pipeline ${pid.slice(0, 8)}`);
+    executeQueuedSteps(pid).catch((err) => log.error(`Recovery execute failed for ${pid}:`, err));
+  }
+
+  // 2. Find stuck running steps (agent process died)
   const stuck = await sql<PipelineStepRow[]>`
     SELECT ps.* FROM pipeline_steps ps
     JOIN pipelines p ON p.id = ps.pipeline_id
     WHERE ps.status = 'running'
       AND p.status = 'running'
-      AND ps.started_at < NOW() - INTERVAL '2 minutes'
+      AND ps.started_at < NOW() - INTERVAL '5 minutes'
   `;
 
-  if (stuck.length === 0) return;
-  log.info(`Recovery: found ${stuck.length} agent(s) stuck in running state`);
+  if (stuck.length === 0 && pipelinesWithQueued.length === 0) return;
 
   for (const step of stuck) {
     log.warn(`Recovery: marking step ${step.id.slice(0, 8)} (${step.agent_type}) as failed for retry`);
@@ -245,6 +259,8 @@ export async function recoverRunningAgents(): Promise<void> {
       "Agent process lost after service restart",
     ).catch(() => {});
   }
+
+  log.info(`Recovery: ${pipelinesWithQueued.length} pipeline(s) with queued steps, ${stuck.length} stuck agent(s)`);
 }
 
 // ============================================
