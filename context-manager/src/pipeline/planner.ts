@@ -65,9 +65,20 @@ export async function generatePlan(
   const prompt = buildPlannerPrompt(input, catalog);
 
   // 3. Call the configured planner provider
-  const rawOutput = await callClaudeHeadless(prompt, pipelineId);
+  let rawOutput = await callClaudeHeadless(prompt, pipelineId);
 
-  // 4. Parse the JSON response (throws on invalid output)
+  // 4. If output is not valid JSON, check for a written file in workspace
+  if (!looksLikeJson(rawOutput)) {
+    rawOutput = await tryRecoverPlanFromWorkspace(rawOutput, input);
+  }
+
+  // 5. If still not valid JSON, post-process with a fast LLM to extract the plan
+  if (!looksLikeJson(rawOutput)) {
+    log.info("Raw output is not JSON — post-processing with fast LLM to extract plan...");
+    rawOutput = await postProcessWithLLM(rawOutput, pipelineId);
+  }
+
+  // 6. Parse the JSON response (throws on invalid output)
   const plan = parsePlanOutput(rawOutput, input);
 
   const elapsed = Math.round(performance.now() - startMs);
@@ -118,6 +129,105 @@ async function callClaudeHeadless(prompt: string, pipelineId?: string): Promise<
   const response = await provider.complete(request);
   log.info(`Planner: ${response.provider} responded in ${response.duration_ms}ms (${response.usage.total_tokens} tokens)`);
   return response.content;
+}
+
+// ============================================
+// Post-Processing Helpers
+// ============================================
+
+/** Quick check if a string looks like it contains JSON */
+function looksLikeJson(text: string): boolean {
+  const trimmed = text.trim();
+  // Direct JSON
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return true;
+  // JSON in markdown fences
+  if (trimmed.includes("```json") || trimmed.includes("```\n{")) return true;
+  return false;
+}
+
+/**
+ * If the planner wrote a JSON file in the workspace, read it.
+ * Scans the raw output for file paths like "/path/to/plan.json"
+ */
+async function tryRecoverPlanFromWorkspace(rawOutput: string, input: PipelineInput): Promise<string> {
+  // Look for JSON file references in the output
+  const fileMatch = rawOutput.match(/`?([/\w.-]+\.json)`?/);
+  if (!fileMatch?.[1]) return rawOutput;
+
+  const filePath = fileMatch[1];
+  try {
+    const file = Bun.file(filePath);
+    if (await file.exists()) {
+      const content = await file.text();
+      if (content.trim().startsWith("{")) {
+        log.info(`Recovered plan from file: ${filePath} (${content.length} chars)`);
+        return content;
+      }
+    }
+  } catch {
+    // File not readable — fall through
+  }
+
+  // Also check workspace directory for common plan file names
+  const workspace = input.workspace?.path;
+  if (workspace) {
+    for (const name of ["execution-plan.json", "EXECUTION_PLAN.json", "plan.json"]) {
+      try {
+        const file = Bun.file(`${workspace}/${name}`);
+        if (await file.exists()) {
+          const content = await file.text();
+          if (content.trim().startsWith("{")) {
+            log.info(`Recovered plan from workspace: ${workspace}/${name} (${content.length} chars)`);
+            return content;
+          }
+        }
+      } catch {
+        // Skip
+      }
+    }
+  }
+
+  return rawOutput;
+}
+
+/**
+ * Post-process raw output with a fast LLM (Sonnet) to extract valid JSON.
+ * Called when the planner output is text/mixed format instead of pure JSON.
+ */
+async function postProcessWithLLM(rawOutput: string, pipelineId?: string): Promise<string> {
+  try {
+    const { chatComplete } = await import("../llm");
+
+    const response = await chatComplete({
+      messages: [
+        {
+          role: "system",
+          content: `Tu es un extracteur JSON. Tu recois le resultat brut d'un planificateur AI qui a genere un plan d'execution.
+Le plan peut etre dans un fichier mentionne, dans du texte libre, dans des blocs de code, ou en JSON direct.
+
+Ta seule tache : extraire le JSON du plan et le retourner PROPREMENT.
+- Si le plan est deja en JSON valide, retourne-le tel quel
+- Si le plan est dans du texte, extrait la structure JSON
+- Si le plan mentionne qu'il a ecrit un fichier, reconstruit le JSON a partir des informations disponibles
+
+Retourne UNIQUEMENT le JSON valide du plan, rien d'autre. Pas de texte, pas de markdown.`,
+        },
+        {
+          role: "user",
+          content: `Voici l'output brut du planificateur. Extrait le JSON du plan:\n\n${truncate(rawOutput, 15000)}`,
+        },
+      ],
+      max_tokens: 16384,
+      temperature: 0,
+      _pipeline_id: pipelineId,
+    } as import("../llm").ChatCompletionRequest & { _pipeline_id?: string });
+
+    log.info(`Post-processor: extracted ${response.content.length} chars in ${response.duration_ms}ms`);
+    return response.content;
+  } catch (error) {
+    log.error("Post-processing failed:", error);
+    return rawOutput;
+  }
 }
 
 // ============================================

@@ -115,13 +115,13 @@ export class CLIPlannerProvider implements LLMProvider {
   private buildCliArgs(promptFile: string, userMsg: string, model?: string): string[] {
     switch (this.command) {
       case "claude":
-        // text output with no tools — Claude can only produce text, no file writes
+        // Let Claude use all tools (it needs them to work properly)
+        // Output is text — the post-processor will extract JSON from any format
         return [
           "-p", userMsg,
           "--system-prompt-file", promptFile,
           "--model", model ?? this.config.default_model,
           "--output-format", "text",
-          "--allowedTools", "",
         ];
       case "codex":
         return [
