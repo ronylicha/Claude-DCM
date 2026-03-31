@@ -20,7 +20,6 @@ import {
   Globe,
   AlertCircle,
   CheckCircle2,
-  ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import apiClient from '@/lib/api-client';
@@ -315,17 +314,22 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
   const [gitRepoUrl, setGitRepoUrl] = useState('');
   const [gitBranch, setGitBranch] = useState('main');
   const [showGitConfig, setShowGitConfig] = useState(false);
+  const [showDirBrowser, setShowDirBrowser] = useState(false);
+  const [browsingPath, setBrowsingPath] = useState('');
+  const [browseDirs, setBrowseDirs] = useState<Array<{ name: string; path: string }>>([]);
+  const [browseParent, setBrowseParent] = useState<string | null>(null);
+  const [browseLoading, setBrowseLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dirInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
   const ALLOWED_EXTENSIONS = ['md', 'txt', 'json', 'ts', 'tsx', 'js', 'py', 'php', 'sql', 'sh', 'markdown'];
 
+  // File handlers (for attachments only)
   const handleFiles = (newFiles: FileList | null) => {
     if (!newFiles) return;
     const valid = Array.from(newFiles).filter((f) => {
       const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
-      return ALLOWED_EXTENSIONS.includes(ext);
+      return ALLOWED_EXTENSIONS.includes(ext) && f.size > 0;
     });
     setFiles((prev) => [...prev, ...valid]);
   };
@@ -334,27 +338,37 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleDirSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    if (!fileList || fileList.length === 0) return;
-    // webkitdirectory gives files with webkitRelativePath like "mydir/sub/file.ts"
-    const first = fileList[0];
-    if (!first) return;
-    const relPath = (first as File & { webkitRelativePath?: string }).webkitRelativePath ?? '';
-    const dirName = relPath.split('/')[0] ?? '';
-    if (dirName) {
-      setWorkspacePath(dirName);
-      if (!sessionName.trim()) {
-        setSessionName(dirName);
+  // Directory browser (for workspace only)
+  const browseTo = async (path?: string) => {
+    setBrowseLoading(true);
+    try {
+      const params = path ? `?path=${encodeURIComponent(path)}` : '';
+      const res = await fetch(`${API_BASE_URL}/api/fs/browse${params}`);
+      const data = await res.json();
+      if (data.current) {
+        setBrowsingPath(data.current);
+        setBrowseDirs(data.dirs ?? []);
+        setBrowseParent(data.parent ?? null);
       }
+    } catch {
+      // ignore
+    } finally {
+      setBrowseLoading(false);
     }
-    // Also add the files from the directory to the file list
-    const validFiles = Array.from(fileList).filter((f) => {
-      const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
-      return ALLOWED_EXTENSIONS.includes(ext) && f.size > 0;
-    });
-    if (validFiles.length > 0) {
-      setFiles((prev) => [...prev, ...validFiles]);
+  };
+
+  const openDirBrowser = () => {
+    setShowDirBrowser(true);
+    browseTo(workspacePath || undefined);
+  };
+
+  const selectDirectory = (path: string) => {
+    setWorkspacePath(path);
+    setShowDirBrowser(false);
+    // Auto-fill session name from directory name
+    const dirName = path.split('/').filter(Boolean).pop() ?? '';
+    if (!sessionName.trim() && dirName) {
+      setSessionName(dirName);
     }
   };
 
@@ -372,12 +386,8 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
         formData.append('session_id', sessionId);
         formData.append('instructions', instructions.trim());
         formData.append('workspace_path', workspacePath.trim());
-        if (gitRepoUrl.trim()) {
-          formData.append('git_repo_url', gitRepoUrl.trim());
-        }
-        if (gitBranch.trim() !== 'main') {
-          formData.append('git_branch', gitBranch.trim());
-        }
+        if (gitRepoUrl.trim()) formData.append('git_repo_url', gitRepoUrl.trim());
+        if (gitBranch.trim() !== 'main') formData.append('git_branch', gitBranch.trim());
         for (const file of files) {
           formData.append('files', file);
         }
@@ -447,10 +457,7 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
         <div className="p-5 space-y-4 overflow-y-auto flex-1">
           {/* Session Name */}
           <div>
-            <label
-              htmlFor="pipeline-session-name"
-              className="block text-[12px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-1.5"
-            >
+            <label htmlFor="pipeline-session-name" className="block text-[12px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-1.5">
               Session Name
             </label>
             <input
@@ -458,7 +465,7 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
               type="text"
               value={sessionName}
               onChange={(e) => setSessionName(e.target.value)}
-              placeholder="My awesome project"
+              placeholder="My project"
               className={cn(
                 'w-full px-3 py-2.5 rounded-[8px] text-[14px]',
                 'bg-[var(--md-sys-color-surface-container)]',
@@ -466,17 +473,15 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
                 'text-[var(--md-sys-color-on-surface)]',
                 'placeholder:text-[var(--md-sys-color-outline)]',
                 'focus:outline-2 focus:outline-[var(--md-sys-color-primary)]',
-                'focus:border-[var(--md-sys-color-primary)]',
                 'transition-colors duration-200',
               )}
             />
-            {/* Auto-generated session ID (read-only info) */}
             <p className="text-[10px] text-[var(--md-sys-color-outline)] mt-1 font-mono select-all">
               ID: {sessionId}
             </p>
           </div>
 
-          {/* Workspace (required) */}
+          {/* Workspace Directory */}
           <div>
             <label htmlFor="pipeline-workspace" className="block text-[12px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-1.5">
               Workspace Directory <span className="text-[var(--dcm-zone-red)]">*</span>
@@ -489,7 +494,7 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
                 onChange={(e) => setWorkspacePath(e.target.value)}
                 placeholder="/home/user/projects/my-project"
                 className={cn(
-                  'flex-1 px-3 py-2.5 rounded-[8px] text-[14px]',
+                  'flex-1 px-3 py-2.5 rounded-[8px] text-[14px] font-mono',
                   'bg-[var(--md-sys-color-surface-container)]',
                   'border border-[var(--md-sys-color-outline-variant)]',
                   'text-[var(--md-sys-color-on-surface)]',
@@ -498,38 +503,93 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
                   'transition-colors duration-200',
                 )}
               />
-              {/* Hidden directory picker */}
-              <input
-                ref={dirInputRef}
-                type="file"
-                /* @ts-expect-error webkitdirectory is a non-standard but widely supported attribute */
-                webkitdirectory=""
-                className="hidden"
-                onChange={handleDirSelect}
-              />
               <button
                 type="button"
-                onClick={() => dirInputRef.current?.click()}
+                onClick={openDirBrowser}
                 className={cn(
                   'flex items-center gap-1.5 px-3 py-2 rounded-[8px] text-[12px] font-medium cursor-pointer shrink-0',
                   'text-[var(--md-sys-color-primary)]',
                   'border border-[var(--md-sys-color-outline-variant)]',
                   'hover:bg-[var(--md-sys-color-surface-container-high)]',
-                  'focus-visible:outline-2 focus-visible:outline-[var(--md-sys-color-primary)]',
                   'transition-colors duration-200',
                 )}
-                aria-label="Browse for workspace directory"
+                aria-label="Browse directories"
               >
                 <FolderOpen className="h-4 w-4" />
                 Browse
               </button>
             </div>
-            <p className="text-[11px] text-[var(--md-sys-color-outline)] mt-1">
-              Full absolute path (e.g. /home/user/projects/my-app). Browse auto-detects files and name.
-            </p>
+
+            {/* Inline directory browser */}
+            {showDirBrowser && (
+              <div className="mt-2 rounded-[8px] border border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container)] overflow-hidden">
+                {/* Current path */}
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container-high)]">
+                  <FolderOpen className="h-3.5 w-3.5 text-[var(--md-sys-color-primary)] shrink-0" />
+                  <span className="text-[11px] font-mono text-[var(--md-sys-color-on-surface)] truncate flex-1">
+                    {browsingPath}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => selectDirectory(browsingPath)}
+                    className={cn(
+                      'px-2 py-1 rounded-[6px] text-[10px] font-semibold cursor-pointer shrink-0',
+                      'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]',
+                      'hover:shadow-sm transition-all duration-150',
+                    )}
+                  >
+                    Select this folder
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowDirBrowser(false)}
+                    className="p-1 cursor-pointer hover:bg-[var(--md-sys-color-surface-container)] rounded-full"
+                    aria-label="Close browser"
+                  >
+                    <X className="h-3 w-3 text-[var(--md-sys-color-outline)]" />
+                  </button>
+                </div>
+
+                {browseLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin text-[var(--md-sys-color-primary)]" />
+                  </div>
+                ) : (
+                  <div className="max-h-[180px] overflow-y-auto">
+                    {/* Parent directory */}
+                    {browseParent && (
+                      <button
+                        type="button"
+                        onClick={() => browseTo(browseParent)}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left cursor-pointer hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_6%,transparent)] transition-colors duration-150"
+                      >
+                        <ChevronUp className="h-3.5 w-3.5 text-[var(--md-sys-color-outline)]" />
+                        <span className="text-[12px] text-[var(--md-sys-color-outline)] italic">..</span>
+                      </button>
+                    )}
+                    {/* Subdirectories */}
+                    {browseDirs.map((dir) => (
+                      <button
+                        key={dir.path}
+                        type="button"
+                        onClick={() => browseTo(dir.path)}
+                        onDoubleClick={() => selectDirectory(dir.path)}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left cursor-pointer hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_6%,transparent)] transition-colors duration-150"
+                      >
+                        <FolderOpen className="h-3.5 w-3.5 text-[var(--md-sys-color-primary)] shrink-0" />
+                        <span className="text-[12px] text-[var(--md-sys-color-on-surface)] truncate">{dir.name}</span>
+                      </button>
+                    ))}
+                    {browseDirs.length === 0 && !browseParent && (
+                      <p className="px-3 py-3 text-[11px] text-[var(--md-sys-color-outline)] text-center">Empty directory</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Git configuration (optional, toggleable) */}
+          {/* Git configuration */}
           <GitSection
             showGitConfig={showGitConfig}
             setShowGitConfig={setShowGitConfig}
@@ -545,10 +605,7 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
 
           {/* Instructions */}
           <div>
-            <label
-              htmlFor="pipeline-instructions"
-              className="block text-[12px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-1.5"
-            >
+            <label htmlFor="pipeline-instructions" className="block text-[12px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-1.5">
               Instructions
             </label>
             <textarea
@@ -564,35 +621,27 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
                 'text-[var(--md-sys-color-on-surface)]',
                 'placeholder:text-[var(--md-sys-color-outline)]',
                 'focus:outline-2 focus:outline-[var(--md-sys-color-primary)]',
-                'focus:border-[var(--md-sys-color-primary)]',
                 'transition-colors duration-200',
               )}
             />
           </div>
 
-          {/* File upload drop zone */}
+          {/* File attachments (separate from workspace) */}
           <div>
             <label className="block text-[12px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-1.5">
               Attachments
             </label>
             <div
               className={cn(
-                'relative rounded-[12px] border-2 border-dashed p-6 text-center transition-all duration-200',
+                'relative rounded-[12px] border-2 border-dashed p-5 text-center transition-all duration-200',
                 isDragging
                   ? 'border-[var(--md-sys-color-primary)] bg-[var(--md-sys-color-primary-container)]'
                   : 'border-[var(--md-sys-color-outline-variant)] bg-[var(--md-sys-color-surface-container)]',
                 'hover:border-[var(--md-sys-color-primary)] hover:bg-[color-mix(in_srgb,var(--md-sys-color-primary)_4%,transparent)]',
               )}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
-              }}
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setIsDragging(false);
-                handleFiles(e.dataTransfer.files);
-              }}
+              onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleFiles(e.dataTransfer.files); }}
             >
               <input
                 ref={fileInputRef}
@@ -602,50 +651,35 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
                 onChange={(e) => handleFiles(e.target.files)}
                 className="hidden"
               />
-              <Upload className="h-8 w-8 mx-auto mb-2 text-[var(--md-sys-color-outline)]" />
-              <p className="text-[13px] text-[var(--md-sys-color-on-surface-variant)]">
-                Drop .md, .txt or code files here
+              <Upload className="h-6 w-6 mx-auto mb-1.5 text-[var(--md-sys-color-outline)]" />
+              <p className="text-[12px] text-[var(--md-sys-color-on-surface-variant)]">
+                Drop files here or{' '}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-[var(--md-sys-color-primary)] font-medium cursor-pointer hover:underline"
+                >
+                  browse
+                </button>
               </p>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className={cn(
-                  'mt-2 px-3 py-1.5 rounded-[8px] text-[12px] font-medium cursor-pointer',
-                  'text-[var(--md-sys-color-primary)]',
-                  'border border-[var(--md-sys-color-outline-variant)]',
-                  'hover:bg-[var(--md-sys-color-surface-container-high)]',
-                  'transition-colors duration-200',
-                )}
-              >
-                Browse files
-              </button>
+              <p className="text-[10px] text-[var(--md-sys-color-outline)] mt-0.5">
+                .md, .txt, .json, code files
+              </p>
             </div>
           </div>
 
-          {/* File list */}
+          {/* Attached files list */}
           {files.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-[12px] font-medium text-[var(--md-sys-color-on-surface-variant)]">
+            <div className="space-y-1">
+              <p className="text-[11px] font-medium text-[var(--md-sys-color-on-surface-variant)]">
                 {files.length} file{files.length > 1 ? 's' : ''} attached
               </p>
               {files.map((file, i) => (
-                <div
-                  key={`${file.name}-${i}`}
-                  className="flex items-center gap-2 py-1 px-2 rounded-[6px] bg-[var(--md-sys-color-surface-container)]"
-                >
+                <div key={`${file.name}-${i}`} className="flex items-center gap-2 py-1 px-2 rounded-[6px] bg-[var(--md-sys-color-surface-container)]">
                   <FileText className="h-3.5 w-3.5 text-[var(--md-sys-color-outline)] shrink-0" />
-                  <span className="text-[12px] text-[var(--md-sys-color-on-surface)] truncate flex-1">
-                    {file.name}
-                  </span>
-                  <span className="text-[10px] text-[var(--md-sys-color-outline)] tabular-nums shrink-0">
-                    {(file.size / 1024).toFixed(1)}KB
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removeFile(i)}
-                    className="cursor-pointer p-0.5 hover:bg-[var(--md-sys-color-surface-container-high)] rounded-full"
-                    aria-label={`Remove ${file.name}`}
-                  >
+                  <span className="text-[12px] text-[var(--md-sys-color-on-surface)] truncate flex-1">{file.name}</span>
+                  <span className="text-[10px] text-[var(--md-sys-color-outline)] tabular-nums shrink-0">{(file.size / 1024).toFixed(1)}KB</span>
+                  <button type="button" onClick={() => removeFile(i)} className="cursor-pointer p-0.5 hover:bg-[var(--md-sys-color-surface-container-high)] rounded-full" aria-label={`Remove ${file.name}`}>
                     <X className="h-3 w-3 text-[var(--md-sys-color-outline)]" />
                   </button>
                 </div>
@@ -661,18 +695,8 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-[var(--md-sys-color-outline-variant)]">
-          <button
-            type="button"
-            onClick={onClose}
-            className={cn(
-              'px-4 py-2.5 rounded-[8px] text-[13px] font-medium cursor-pointer',
-              'text-[var(--md-sys-color-on-surface-variant)]',
-              'hover:bg-[var(--md-sys-color-surface-container-high)]',
-              'focus-visible:outline-2 focus-visible:outline-[var(--md-sys-color-primary)]',
-              'transition-colors duration-200',
-            )}
-          >
+        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-[var(--md-sys-color-outline-variant)] shrink-0">
+          <button type="button" onClick={onClose} className={cn('px-4 py-2.5 rounded-[8px] text-[13px] font-medium cursor-pointer', 'text-[var(--md-sys-color-on-surface-variant)]', 'hover:bg-[var(--md-sys-color-surface-container-high)]', 'transition-colors duration-200')}>
             Cancel
           </button>
           <button
@@ -683,8 +707,6 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
               'flex items-center gap-2 px-5 py-2.5 rounded-[8px] text-[13px] font-medium cursor-pointer',
               'bg-[var(--md-sys-color-primary)] text-[var(--md-sys-color-on-primary)]',
               'hover:shadow-[var(--md-sys-elevation-1)]',
-              'focus-visible:outline-2 focus-visible:outline-[var(--md-sys-color-primary)]',
-              'focus-visible:outline-offset-2',
               'disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none',
               'transition-all duration-200',
             )}

@@ -480,6 +480,61 @@ export async function getPipelineStepsList(c: Context): Promise<Response> {
 }
 
 // ============================================
+// Filesystem Browse Handler
+// ============================================
+
+/**
+ * GET /api/fs/browse - Browse local filesystem directories
+ * Query params: path (defaults to user home)
+ * Returns: { current, parent, dirs[] }
+ * @param c - Hono context
+ */
+export async function getFsBrowse(c: Context): Promise<Response> {
+  try {
+    const requestedPath = c.req.query("path") || process.env["HOME"] || "/home";
+
+    // Resolve to absolute path
+    const { resolve, dirname, basename } = await import("node:path");
+    const absPath = resolve(requestedPath);
+
+    // Check if path exists and is a directory
+    const { stat, readdir } = await import("node:fs/promises");
+    let pathStat;
+    try {
+      pathStat = await stat(absPath);
+    } catch {
+      return c.json({ error: "Path not found", path: absPath }, 404);
+    }
+
+    if (!pathStat.isDirectory()) {
+      return c.json({ error: "Not a directory", path: absPath }, 400);
+    }
+
+    // List subdirectories only (no files, no hidden dirs)
+    const entries = await readdir(absPath, { withFileTypes: true });
+    const dirs = entries
+      .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+      .map((e) => ({
+        name: e.name,
+        path: resolve(absPath, e.name),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    return c.json({
+      current: absPath,
+      name: basename(absPath),
+      parent: dirname(absPath) !== absPath ? dirname(absPath) : null,
+      dirs,
+    });
+  } catch (error) {
+    return c.json({
+      error: "Failed to browse filesystem",
+      message: error instanceof Error ? error.message : "Unknown error",
+    }, 500);
+  }
+}
+
+// ============================================
 // Git Integration Handlers
 // ============================================
 
