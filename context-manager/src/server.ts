@@ -85,6 +85,7 @@ import {
   getGitStatus,
   getFsBrowse,
   postRetryPlanning,
+  deletePipeline,
 } from "./api/pipeline";
 
 // Version from package.json (single source of truth)
@@ -599,6 +600,7 @@ app.post("/api/pipelines/:id/retry-planning", postRetryPlanning);
 app.post("/api/pipelines/:id/pause", postPausePipeline);
 app.post("/api/pipelines/:id/cancel", postCancelPipeline);
 app.patch("/api/pipelines/:id/steps/:stepId", patchStepStatus);
+app.delete("/api/pipelines/:id", deletePipeline);
 
 // ============================================
 // Server Startup

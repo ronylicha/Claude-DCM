@@ -1506,6 +1506,14 @@ export const apiClient = {
     apiFetch<{ success: boolean }>(`/api/pipelines/${id}/${action}`, {
       method: 'POST',
     }),
+  deletePipeline: (id: string) =>
+    apiFetch<{ success: boolean }>(`/api/pipelines/${id}`, {
+      method: 'DELETE',
+    }),
+  retryPlanning: (id: string) =>
+    apiFetch<{ success: boolean }>(`/api/pipelines/${id}/retry-planning`, {
+      method: 'POST',
+    }),
   getPipelineSprints: (id: string) =>
     apiFetch<{ sprints: PipelineSprint[]; count: number }>(`/api/pipelines/${id}/sprints`),
   getSprintReport: (id: string, sprintNumber: number) =>

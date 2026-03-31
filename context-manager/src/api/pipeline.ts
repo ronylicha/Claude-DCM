@@ -189,6 +189,29 @@ export async function postRetryPlanning(c: Context): Promise<Response> {
 }
 
 /**
+ * DELETE /api/pipelines/:id - Delete a pipeline and all related data
+ * @param c - Hono context
+ */
+export async function deletePipeline(c: Context): Promise<Response> {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Missing pipeline ID" }, 400);
+
+    const sql = (await import("../db/client")).getDb();
+
+    // Cascade delete handles steps, events, sprints via FK
+    const result = await sql`DELETE FROM pipelines WHERE id = ${id} RETURNING id`;
+    if (result.length === 0) return c.json({ error: "Pipeline not found" }, 404);
+
+    log.info(`Pipeline deleted: ${id}`);
+    return c.json({ success: true });
+  } catch (error) {
+    log.error("DELETE pipeline error:", error);
+    return c.json({ error: "Failed to delete pipeline", message: error instanceof Error ? error.message : "Unknown" }, 500);
+  }
+}
+
+/**
  * POST /api/pipelines/:id/cancel - Cancel a pipeline
  * @param c - Hono context
  */
