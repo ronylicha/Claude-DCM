@@ -658,46 +658,59 @@ export async function evaluateWaveProgress(
       message: analysis.summary,
     });
 
-    // Advance to next wave
-    const nextWave = waveNumber + 1;
-    const nextWaveSteps = await sql<PipelineStepRow[]>`
-      SELECT * FROM pipeline_steps
-      WHERE pipeline_id = ${pipelineId} AND wave_number = ${nextWave}
-    `;
+    // Run regression guard after implementation waves (not after explore/review/guard waves)
+    const pipeline = await getPipeline(pipelineId);
+    const plan = pipeline?.plan as import("./types").PipelinePlan | null;
+    const completedWaveDef = plan?.waves.find(w => w.number === waveNumber);
+    const isImplementationWave = completedWaveDef?.steps.some(s =>
+      !["Explore", "code-reviewer", "regression-guard", "security-specialist", "technical-writer"].includes(s.agent_type),
+    );
 
-    if (nextWaveSteps.length > 0) {
-      // Update pipeline to next wave
+    if (isImplementationWave && completedWaveDef) {
+      await runRegressionGuard(sql, pipelineId, waveNumber, completedWaveDef.name);
+    }
+
+    // Find ALL waves whose dependencies are now fully satisfied
+    const readyWaves = await findReadyWaves(sql, pipelineId);
+
+    if (readyWaves.length > 0) {
+      // Update pipeline current_wave to the highest queued wave
+      const maxWave = Math.max(...readyWaves.map(w => w.wave_number));
       const now = nowISO();
       await sql`
         UPDATE pipelines
-        SET current_wave = ${nextWave}, updated_at = ${now}
+        SET current_wave = ${maxWave}, updated_at = ${now}
         WHERE id = ${pipelineId}
       `;
 
-      // Queue next wave steps
+      // Queue all ready waves at once
+      const waveNumbers = readyWaves.map(w => w.wave_number);
       await sql`
         UPDATE pipeline_steps
         SET status = 'queued'
-        WHERE pipeline_id = ${pipelineId} AND wave_number = ${nextWave} AND status = 'pending'
+        WHERE pipeline_id = ${pipelineId} AND wave_number = ANY(${waveNumbers}) AND status = 'pending'
       `;
 
-      await recordEvent(sql, pipelineId, "wave_start", {
-        wave: nextWave,
-        message: `Wave ${nextWave} started with ${nextWaveSteps.length} steps`,
-      });
+      for (const wave of readyWaves) {
+        await recordEvent(sql, pipelineId, "wave_start", {
+          wave: wave.wave_number,
+          message: `Wave ${wave.wave_number} started with ${wave.step_count} steps`,
+        });
+      }
 
-      await publishEvent("global", "pipeline.wave.started", {
+      const totalNewSteps = readyWaves.reduce((s, w) => s + w.step_count, 0);
+      await publishEvent("global", "pipeline.waves.started", {
         pipeline_id: pipelineId,
-        wave_number: nextWave,
-        total_steps: nextWaveSteps.length,
+        wave_numbers: waveNumbers,
+        total_steps: totalNewSteps,
       });
 
-      // Launch agents for the newly queued steps
+      // Launch agents for ALL newly queued steps
       import("./executor").then(({ executeQueuedSteps }) => {
         executeQueuedSteps(pipelineId).catch((err) => log.error("Executor launch failed:", err));
       });
 
-      log.info(`Advanced to wave ${nextWave}: ${nextWaveSteps.length} steps queued`);
+      log.info(`Advanced: ${readyWaves.length} wave(s) queued [${waveNumbers.join(",")}] (${totalNewSteps} steps)`);
 
       // Check if the completed wave ends a sprint
       const completedSprints = await sql`
@@ -737,8 +750,17 @@ export async function evaluateWaveProgress(
         await publishEvent("global", "pipeline.sprint.started", { pipeline_id: pipelineId, sprint_number: sprint["sprint_number"] });
       }
     } else {
-      // No more waves -- pipeline is complete
-      await completePipeline(pipelineId, "completed");
+      // No more waves to queue — but are there still active waves?
+      const activeWaveSteps = await sql<PipelineStepRow[]>`
+        SELECT * FROM pipeline_steps
+        WHERE pipeline_id = ${pipelineId} AND status IN ('queued', 'running', 'retrying')
+      `;
+      if (activeWaveSteps.length === 0) {
+        // Nothing queued, nothing running — pipeline is truly done
+        await completePipeline(pipelineId, "completed");
+      } else {
+        log.debug(`No new waves to queue, but ${activeWaveSteps.length} steps still active — waiting`);
+      }
     }
   } else {
     // Wave has failures that need decisions
@@ -884,6 +906,147 @@ async function handleFailedSteps(
       await evaluateWaveProgress(pipelineId, waveNumber);
     }
   }
+}
+
+// ============================================
+// Regression Guard (auto-injected after waves)
+// ============================================
+
+/**
+ * Run a regression guard after an implementation wave completes.
+ * Injects a temporary step that verifies the wave's output is consistent
+ * with the plan and doesn't break existing functionality.
+ */
+async function runRegressionGuard(
+  sql: ReturnType<typeof getDb>,
+  pipelineId: string,
+  waveNumber: number,
+  waveName: string,
+): Promise<void> {
+  log.info(`Regression guard: checking wave ${waveNumber} (${waveName})`);
+
+  // Get the completed steps from this wave for context
+  const waveSteps = await sql<PipelineStepRow[]>`
+    SELECT agent_type, description, status, result FROM pipeline_steps
+    WHERE pipeline_id = ${pipelineId} AND wave_number = ${waveNumber}
+  `;
+
+  const stepSummaries = waveSteps.map(s => {
+    const result = s.result as Record<string, unknown> | null;
+    const summary = result?.["summary"] ? String(result["summary"]).slice(0, 300) : "";
+    return `- ${s.agent_type} (${s.status}): ${s.description ?? ""}${summary ? ` → ${summary}` : ""}`;
+  }).join("\n");
+
+  const pipeline = await getPipeline(pipelineId);
+  const workspacePath = (pipeline?.["workspace_path"] as string) || "/tmp";
+
+  // Create a guard prompt
+  const guardPrompt = `Tu es un regression guard. Verifie que le travail de la wave ${waveNumber} "${waveName}" est correct.
+
+Resultats de la wave:
+${stepSummaries}
+
+Workspace: ${workspacePath}
+
+Verifie:
+1. Les fichiers crees/modifies existent et sont syntaxiquement corrects
+2. Pas de fichiers manquants references dans les imports
+3. La structure suit le plan d'architecture
+4. Pas de regressions visibles (fichiers supprimes qui ne devraient pas l'etre)
+
+Reponds avec un resume court: OK si tout va bien, ou liste les problemes trouves.`;
+
+  // Insert a temporary regression-guard step
+  await sql`
+    INSERT INTO pipeline_steps (
+      pipeline_id, wave_number, step_order, agent_type, description,
+      skills, prompt, model, max_turns, status, retry_strategy, max_retries
+    ) VALUES (
+      ${pipelineId}, ${waveNumber}, 99, 'regression-guard',
+      ${"Regression guard: validate wave " + waveNumber},
+      ARRAY['workflow-clean-code'], ${guardPrompt}, 'sonnet', 5,
+      'queued', 'same', 1
+    )
+  `;
+
+  // Launch it
+  import("./executor").then(({ executeQueuedSteps }) => {
+    executeQueuedSteps(pipelineId).catch((err) => log.error("Guard executor failed:", err));
+  });
+
+  log.info(`Regression guard queued for wave ${waveNumber}`);
+}
+
+// ============================================
+// Dependency-Aware Wave Scheduling
+// ============================================
+
+interface ReadyWave {
+  wave_number: number;
+  step_count: number;
+}
+
+/**
+ * Find all waves whose dependencies are fully satisfied (all depends_on
+ * waves are completed/skipped) and that haven't started yet (all steps pending).
+ *
+ * This is the core of the parallel wave execution:
+ * - Wave 1 depends_on [0] → ready when wave 0 completed
+ * - Wave 2 depends_on [0] → also ready when wave 0 completed → runs parallel with wave 1
+ * - Wave 3 depends_on [1, 2] → ready only when BOTH 1 and 2 completed
+ */
+async function findReadyWaves(
+  sql: ReturnType<typeof getDb>,
+  pipelineId: string,
+): Promise<ReadyWave[]> {
+  // Get the plan to read depends_on
+  const pipeline = await getPipeline(pipelineId);
+  if (!pipeline?.plan) return [];
+
+  const plan = pipeline.plan as import("./types").PipelinePlan;
+
+  // Get completed wave numbers
+  const completedWaves = new Set<number>();
+  const allSteps = await sql<PipelineStepRow[]>`
+    SELECT wave_number, status FROM pipeline_steps WHERE pipeline_id = ${pipelineId}
+  `;
+
+  // Group steps by wave
+  const stepsByWave = new Map<number, string[]>();
+  for (const step of allSteps) {
+    const wn = step.wave_number;
+    if (!stepsByWave.has(wn)) stepsByWave.set(wn, []);
+    stepsByWave.get(wn)!.push(step.status);
+  }
+
+  // A wave is "completed" if all its steps are terminal (completed/skipped/failed)
+  for (const [wn, statuses] of stepsByWave.entries()) {
+    const allTerminal = statuses.every(s => isTerminal(s));
+    if (allTerminal) completedWaves.add(wn);
+  }
+
+  // Find waves that are pending (all steps pending) AND whose deps are all completed
+  const readyWaves: ReadyWave[] = [];
+
+  for (const wave of plan.waves) {
+    const waveStatuses = stepsByWave.get(wave.number) ?? [];
+
+    // Skip if wave already started (has non-pending steps)
+    const allPending = waveStatuses.every(s => s === "pending");
+    if (!allPending || waveStatuses.length === 0) continue;
+
+    // Check all dependencies are completed
+    const deps = wave.depends_on ?? [];
+    const allDepsMet = deps.every(dep => completedWaves.has(dep));
+    if (!allDepsMet && deps.length > 0) continue;
+
+    readyWaves.push({
+      wave_number: wave.number,
+      step_count: waveStatuses.length,
+    });
+  }
+
+  return readyWaves;
 }
 
 // ============================================

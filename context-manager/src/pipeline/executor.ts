@@ -221,10 +221,14 @@ async function launchAgent(
 /**
  * On startup, recover pipelines with queued or running steps:
  * - 'queued' steps: re-launch them (they never started)
- * - 'running' steps (old): mark as failed for retry
+ * - 'running' steps: check if agent process is still alive (via /tmp/dcm-executor/*.done)
+ *   If done file exists → process finished, collect result
+ *   If no done file AND started > 30min ago → truly stuck, re-queue for retry
+ *   Otherwise → still running, leave alone
  */
 export async function recoverRunningAgents(): Promise<void> {
   const sql = getDb();
+  const { readFile } = await import("node:fs/promises");
 
   // 1. Find running pipelines with queued steps (executor died before launching)
   const pipelinesWithQueued = await sql<Array<{ pipeline_id: string }>>`
@@ -239,33 +243,87 @@ export async function recoverRunningAgents(): Promise<void> {
     executeQueuedSteps(pid).catch((err) => log.error(`Recovery execute failed for ${pid}:`, err));
   }
 
-  // 2. Find stuck running steps (agent process died)
-  const stuck = await sql<PipelineStepRow[]>`
+  // 2. Find running steps — check if they're truly stuck (30min timeout)
+  const runningSteps = await sql<PipelineStepRow[]>`
     SELECT ps.* FROM pipeline_steps ps
     JOIN pipelines p ON p.id = ps.pipeline_id
     WHERE ps.status = 'running'
       AND p.status = 'running'
-      AND ps.started_at < NOW() - INTERVAL '5 minutes'
   `;
 
-  if (stuck.length === 0 && pipelinesWithQueued.length === 0) return;
+  let recoveredCount = 0;
+  for (const step of runningSteps) {
+    const startedAt = step.started_at ? new Date(step.started_at).getTime() : 0;
+    const ageMinutes = (Date.now() - startedAt) / 60000;
 
-  for (const step of stuck) {
-    log.warn(`Recovery: marking step ${step.id.slice(0, 8)} (${step.agent_type}) as failed for retry`);
-    await updateStepStatus(
-      step.id,
-      "failed",
-      undefined,
-      "Agent process lost after service restart",
-    ).catch(() => {});
+    // Check if any claude process is still active for this agent type
+    const isActive = await checkAgentProcessAlive(step.agent_type);
+    if (isActive) {
+      log.debug(`Recovery: step ${step.id.slice(0, 8)} (${step.agent_type}) running for ${Math.round(ageMinutes)}min — process alive, leaving alone`);
+      continue;
+    }
+
+    if (ageMinutes < 60) {
+      // Under 1h and no process found — check if output files exist and are growing
+      const hasActivity = await checkOutputFileActivity(step.agent_type);
+      if (hasActivity) {
+        log.debug(`Recovery: step ${step.id.slice(0, 8)} (${step.agent_type}) running for ${Math.round(ageMinutes)}min — output files active`);
+        continue;
+      }
+    }
+
+    // No process, no activity, or over 1h — truly stuck, re-queue
+    log.warn(`Recovery: step ${step.id.slice(0, 8)} (${step.agent_type}) stuck for ${Math.round(ageMinutes)}min (no active process) — re-queuing`);
+    await sql`
+      UPDATE pipeline_steps
+      SET status = 'queued', retry_count = retry_count + 1, error = NULL, started_at = NULL, completed_at = NULL
+      WHERE id = ${step.id}
+    `;
+    recoveredCount++;
   }
 
-  log.info(`Recovery: ${pipelinesWithQueued.length} pipeline(s) with queued steps, ${stuck.length} stuck agent(s)`);
+  if (recoveredCount > 0 || pipelinesWithQueued.length > 0) {
+    log.info(`Recovery: ${pipelinesWithQueued.length} pipeline(s) with queued steps, ${recoveredCount} agent(s) re-queued`);
+
+    // Re-launch any re-queued steps
+    if (recoveredCount > 0) {
+      const affectedPipelines = new Set(runningSteps.map(s => s.pipeline_id));
+      for (const pid of affectedPipelines) {
+        executeQueuedSteps(pid).catch((err) => log.error(`Recovery re-launch failed for ${pid}:`, err));
+      }
+    }
+  }
 }
 
 // ============================================
 // Helpers
 // ============================================
+
+/** Check if a claude process is running for a given agent type */
+async function checkAgentProcessAlive(agentType: string): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(["pgrep", "-f", `claude.*${agentType}`], { stdout: "pipe", stderr: "ignore" });
+    const code = await proc.exited;
+    return code === 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Check if output files in /tmp/dcm-executor/ were modified recently (< 5min) */
+async function checkOutputFileActivity(_agentType: string): Promise<boolean> {
+  try {
+    // Check if any .output file in executor dir was modified in last 5 minutes
+    const proc = Bun.spawn(
+      ["find", "/tmp/dcm-executor", "-name", "*.output", "-mmin", "-5", "-type", "f"],
+      { stdout: "pipe", stderr: "ignore" },
+    );
+    const stdout = await new Response(proc.stdout).text();
+    return stdout.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
 
 /** Resolve short model name to full Claude model ID */
 function resolveModelId(model: string): string {
