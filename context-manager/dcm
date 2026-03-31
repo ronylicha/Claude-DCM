@@ -529,7 +529,7 @@ cmd_deploy() {
     echo ""
 
     # Step 1: Git pull
-    echo -e "${YELLOW}[1/4]${NC} Pulling latest from git..."
+    echo -e "${YELLOW}[1/5]${NC} Pulling latest from git..."
     cd "$project_root"
     if git pull origin main; then
         echo -e "  ${GREEN}Pull OK${NC}"
@@ -539,7 +539,7 @@ cmd_deploy() {
     fi
 
     # Step 2: Apply migrations (all .sql files in src/db/migration-*)
-    echo -e "${YELLOW}[2/4]${NC} Applying database migrations..."
+    echo -e "${YELLOW}[2/5]${NC} Applying database migrations..."
     local migration_count=0
     for migration in "$SCRIPT_DIR"/src/db/migration-*.sql; do
         if [[ -f "$migration" ]]; then
@@ -550,7 +550,7 @@ cmd_deploy() {
     echo -e "  ${GREEN}${migration_count} migration(s) applied${NC}"
 
     # Step 3: Rebuild dashboard
-    echo -e "${YELLOW}[3/4]${NC} Rebuilding dashboard..."
+    echo -e "${YELLOW}[3/5]${NC} Rebuilding dashboard..."
     if [[ -d "$dashboard_dir" ]]; then
         cd "$dashboard_dir"
         rm -rf .next 2>/dev/null || true
@@ -566,7 +566,7 @@ cmd_deploy() {
     fi
 
     # Step 4: Restart services
-    echo -e "${YELLOW}[4/4]${NC} Restarting services..."
+    echo -e "${YELLOW}[4/5]${NC} Restarting services..."
     cd "$SCRIPT_DIR"
     if has_supervisor; then
         systemctl --user restart dcm.target
@@ -575,6 +575,21 @@ cmd_deploy() {
         cmd_stop
         sleep 2
         cmd_start
+    fi
+
+    # Step 5: Post-deploy setup (skill index + agent registry)
+    echo -e "${YELLOW}[5/5]${NC} Updating skill index & agent registry..."
+    cd "$SCRIPT_DIR"
+    if [[ -f "$SCRIPT_DIR/hooks/skill-advisor/build-index.ts" ]]; then
+        bun run hooks/skill-advisor/build-index.ts 2>/dev/null && echo -e "  ${GREEN}Skill index rebuilt${NC}" || true
+    fi
+    sleep 2
+    local catalog_count=$(curl -s "http://127.0.0.1:${API_PORT:-3847}/api/registry/catalog?type=agents" 2>/dev/null | jq '.agents | length' 2>/dev/null || echo "0")
+    if [[ "$catalog_count" -gt 0 ]]; then
+        curl -s -X POST "http://127.0.0.1:${API_PORT:-3847}/api/registry/import" \
+            -H "Content-Type: application/json" \
+            -d "{\"source\": \"catalog\"}" 2>/dev/null
+        echo -e "  ${GREEN}${catalog_count} agents imported${NC}"
     fi
 
     echo ""
