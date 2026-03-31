@@ -62,36 +62,88 @@ export class CLIPlannerProvider implements LLMProvider {
     });
 
     // Stream stdout chunks to DB and collect full output
-    const chunks: string[] = [];
+    const contentParts: string[] = [];
     let chunkIndex = 0;
     const sql = getDb();
     const decoder = new TextDecoder();
+    const isStreamJson = this.command === "claude"; // Claude uses stream-json
 
     const reader = proc.stdout.getReader();
+    let lineBuffer = "";
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const text = decoder.decode(value, { stream: true });
-        chunks.push(text);
+        const raw = decoder.decode(value, { stream: true });
 
-        // Store chunk in DB for live viewing
-        if (pipelineId && text.trim()) {
-          try {
-            await sql`
-              INSERT INTO planning_output (pipeline_id, chunk, chunk_index)
-              VALUES (${pipelineId}, ${text}, ${chunkIndex++})
-            `;
-            // Broadcast via WebSocket
-            await publishEvent("global", "pipeline.planning.chunk", {
-              pipeline_id: pipelineId,
-              chunk: text,
-              chunk_index: chunkIndex - 1,
-            });
-          } catch {
-            // Don't let DB errors break the stream
+        if (isStreamJson) {
+          // Claude stream-json: each line is a JSON object with type + content
+          lineBuffer += raw;
+          const lines = lineBuffer.split("\n");
+          lineBuffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const event = JSON.parse(line) as Record<string, unknown>;
+              // Extract text content from assistant messages
+              if (event["type"] === "content_block_delta" || event["type"] === "assistant") {
+                const content = event["type"] === "content_block_delta"
+                  ? String((event["delta"] as Record<string, unknown>)?.["text"] ?? "")
+                  : "";
+                // For assistant type, extract from content array
+                let text = content;
+                if (!text && event["type"] === "assistant") {
+                  const msgContent = event["content"] as Array<Record<string, unknown>> | undefined;
+                  text = msgContent?.map(b => String(b["text"] ?? "")).join("") ?? "";
+                }
+                if (text) {
+                  contentParts.push(text);
+                  await storeChunk(sql, pipelineId, text, chunkIndex++);
+                }
+              }
+              // Also handle the result message with full content
+              if (event["type"] === "result") {
+                const result = event["result"] as string | undefined;
+                if (result && contentParts.length === 0) {
+                  contentParts.push(result);
+                  await storeChunk(sql, pipelineId, result, chunkIndex++);
+                }
+              }
+            } catch {
+              // Not valid JSON — treat as raw text
+              if (line.trim()) {
+                contentParts.push(line);
+                await storeChunk(sql, pipelineId, line, chunkIndex++);
+              }
+            }
           }
+        } else {
+          // Codex/Gemini: raw text output, stream directly
+          contentParts.push(raw);
+          if (raw.trim()) {
+            await storeChunk(sql, pipelineId, raw, chunkIndex++);
+          }
+        }
+      }
+      // Process remaining buffer
+      if (lineBuffer.trim()) {
+        if (isStreamJson) {
+          try {
+            const event = JSON.parse(lineBuffer) as Record<string, unknown>;
+            if (event["type"] === "result") {
+              const result = event["result"] as string | undefined;
+              if (result && contentParts.length === 0) {
+                contentParts.push(result);
+                await storeChunk(sql, pipelineId, result, chunkIndex++);
+              }
+            }
+          } catch {
+            contentParts.push(lineBuffer);
+          }
+        } else {
+          contentParts.push(lineBuffer);
         }
       }
     } finally {
@@ -100,7 +152,7 @@ export class CLIPlannerProvider implements LLMProvider {
 
     const exitCode = await proc.exited;
     const stderr = await new Response(proc.stderr).text();
-    const fullOutput = chunks.join("");
+    const fullOutput = contentParts.join("");
 
     // Cleanup temp file
     await unlink(promptFile).catch(() => {});
@@ -130,26 +182,25 @@ export class CLIPlannerProvider implements LLMProvider {
   private buildCliArgs(promptFile: string, userMsg: string, model?: string): string[] {
     switch (this.command) {
       case "claude":
+        // stream-json gives us incremental output (not buffered like text)
         return [
           "-p", userMsg,
           "--system-prompt-file", promptFile,
           "--model", model ?? this.config.default_model,
-          "--output-format", "text",
+          "--output-format", "stream-json",
         ];
       case "codex":
-        // Codex CLI uses -q for quiet/non-interactive and reads from prompt
         return [
           "--quiet",
-          "--model", model ?? "codex",
+          "--model", model ?? this.config.default_model,
           "-p", userMsg,
           "--system-prompt-file", promptFile,
         ];
       case "gemini":
-        // Gemini CLI
         return [
           "-p", userMsg,
           "--system-prompt-file", promptFile,
-          "--model", model ?? "gemini",
+          "--model", model ?? this.config.default_model,
         ];
       default:
         return ["-p", userMsg, "--system-prompt-file", promptFile];
@@ -157,6 +208,7 @@ export class CLIPlannerProvider implements LLMProvider {
   }
 
   async testConnection(): Promise<{ ok: boolean; error?: string }> {
+    // testConnection doesn't need streaming
     try {
       // Check if the CLI binary exists
       const which = Bun.spawn(["which", this.command], { stdout: "pipe", stderr: "pipe" });
@@ -168,5 +220,28 @@ export class CLIPlannerProvider implements LLMProvider {
     } catch {
       return { ok: false, error: `Failed to check ${this.command}` };
     }
+  }
+}
+
+/** Store a streaming chunk in DB and broadcast via WebSocket */
+async function storeChunk(
+  sql: ReturnType<typeof getDb>,
+  pipelineId: string | undefined,
+  text: string,
+  index: number,
+): Promise<void> {
+  if (!pipelineId || !text.trim()) return;
+  try {
+    await sql`
+      INSERT INTO planning_output (pipeline_id, chunk, chunk_index)
+      VALUES (${pipelineId}, ${text}, ${index})
+    `;
+    await publishEvent("global", "pipeline.planning.chunk", {
+      pipeline_id: pipelineId,
+      chunk: text,
+      chunk_index: index,
+    });
+  } catch {
+    // Don't let DB errors break the stream
   }
 }
