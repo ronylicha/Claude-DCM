@@ -182,12 +182,14 @@ export class CLIPlannerProvider implements LLMProvider {
   private buildCliArgs(promptFile: string, userMsg: string, model?: string): string[] {
     switch (this.command) {
       case "claude":
-        // stream-json gives us incremental output (not buffered like text)
+        // stream-json gives incremental output; --allowedTools "" disables tools
+        // so Claude outputs text only (no file writes)
         return [
           "-p", userMsg,
           "--system-prompt-file", promptFile,
           "--model", model ?? this.config.default_model,
           "--output-format", "stream-json",
+          "--allowedTools", "",
         ];
       case "codex":
         return [
