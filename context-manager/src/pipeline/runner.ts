@@ -457,6 +457,11 @@ export async function startPipeline(pipelineId: string): Promise<PipelineRow> {
     WHERE pipeline_id = ${pipelineId} AND wave_start = 0 AND status = 'pending'
   `;
 
+  // Launch agents for queued steps
+  import("./executor").then(({ executeQueuedSteps }) => {
+    executeQueuedSteps(pipelineId).catch((err) => log.error("Executor launch failed:", err));
+  });
+
   await recordEvent(sql, pipelineId, "pipeline_start", {
     wave: 0,
     message: "Pipeline started, wave 0 queued",
@@ -687,6 +692,11 @@ export async function evaluateWaveProgress(
         total_steps: nextWaveSteps.length,
       });
 
+      // Launch agents for the newly queued steps
+      import("./executor").then(({ executeQueuedSteps }) => {
+        executeQueuedSteps(pipelineId).catch((err) => log.error("Executor launch failed:", err));
+      });
+
       log.info(`Advanced to wave ${nextWave}: ${nextWaveSteps.length} steps queued`);
 
       // Check if the completed wave ends a sprint
@@ -816,6 +826,11 @@ async function handleFailedSteps(
         });
 
         log.info(`Retrying step ${failedStep.agent_type} (attempt ${failedStep.retry_count + 1})`);
+
+        // Re-launch the agent
+        import("./executor").then(({ executeQueuedSteps }) => {
+          executeQueuedSteps(pipelineId).catch((err) => log.error("Retry executor failed:", err));
+        });
         break;
       }
 

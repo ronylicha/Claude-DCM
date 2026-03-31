@@ -21,6 +21,10 @@ export {
   retryPlanning,
   recoverStuckPlanners,
 } from "./runner";
+export {
+  executeQueuedSteps,
+  recoverRunningAgents,
+} from "./executor";
 export type {
   PipelineInput,
   PipelineDocument,
