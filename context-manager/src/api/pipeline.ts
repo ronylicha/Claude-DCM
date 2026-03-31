@@ -475,6 +475,70 @@ export async function getPipelineStepsList(c: Context): Promise<Response> {
 }
 
 // ============================================
+// Git Integration Handlers
+// ============================================
+
+/**
+ * GET /api/git/status - Check if GitHub CLI is authenticated and return user + repos
+ * @param c - Hono context
+ */
+export async function getGitStatus(c: Context): Promise<Response> {
+  try {
+    // Check gh auth status
+    const authProc = Bun.spawn(["gh", "auth", "status", "--hostname", "github.com"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const authCode = await authProc.exited;
+    const authStderr = await new Response(authProc.stderr).text();
+
+    if (authCode !== 0) {
+      return c.json({
+        authenticated: false,
+        message: "GitHub CLI not authenticated. Run: gh auth login",
+        user: null,
+        repos: [],
+      });
+    }
+
+    // Parse username from auth status output
+    const userMatch = authStderr.match(/Logged in to github\.com account (\S+)/i)
+      ?? authStderr.match(/account (\S+)/i);
+    const user = userMatch?.[1] ?? null;
+
+    // List repos (max 30, sorted by last push)
+    const repoProc = Bun.spawn(
+      ["gh", "repo", "list", "--limit", "30", "--sort", "pushed", "--json", "nameWithOwner,url,isPrivate,pushedAt,defaultBranchRef"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const repoCode = await repoProc.exited;
+    const repoStdout = await new Response(repoProc.stdout).text();
+
+    let repos: Array<{ name: string; url: string; isPrivate: boolean; defaultBranch: string; pushedAt: string }> = [];
+    if (repoCode === 0 && repoStdout.trim()) {
+      const parsed = JSON.parse(repoStdout) as Array<Record<string, unknown>>;
+      repos = parsed.map((r) => ({
+        name: String(r["nameWithOwner"] ?? ""),
+        url: String(r["url"] ?? ""),
+        isPrivate: Boolean(r["isPrivate"]),
+        defaultBranch: String((r["defaultBranchRef"] as Record<string, unknown>)?.["name"] ?? "main"),
+        pushedAt: String(r["pushedAt"] ?? ""),
+      }));
+    }
+
+    return c.json({ authenticated: true, user, repos });
+  } catch (error) {
+    log.error("GET /api/git/status error:", error);
+    return c.json({
+      authenticated: false,
+      message: "GitHub CLI (gh) not installed or not accessible",
+      user: null,
+      repos: [],
+    });
+  }
+}
+
+// ============================================
 // Sprint Handlers
 // ============================================
 

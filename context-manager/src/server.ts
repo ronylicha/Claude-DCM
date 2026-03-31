@@ -81,6 +81,7 @@ import {
   getPipelineEvents,
   getPipelineSprints,
   getSprintReport,
+  getGitStatus,
 } from "./api/pipeline";
 
 // Version from package.json (single source of truth)
@@ -570,6 +571,7 @@ app.get("/api/skill-gate/:session_id/check", checkGate);
 // Pipeline API - Phase 13 (DCM v5.1)
 // ============================================
 
+app.get("/api/git/status", getGitStatus);
 app.post("/api/pipelines/upload", postCreatePipelineWithFiles);
 app.post("/api/pipelines", postCreatePipeline);
 app.get("/api/pipelines", getListPipelines);
