@@ -182,7 +182,6 @@ function ProviderCard({ provider }: { provider: LLMProvider }) {
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [selectedModel, setSelectedModel] = useState(provider.default_model);
-  const [setAsDefault, setSetAsDefault] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
   const queryClient = useQueryClient();
 
@@ -190,7 +189,6 @@ function ProviderCard({ provider }: { provider: LLMProvider }) {
     mutationFn: () => apiClient.configureProvider(provider.provider_key, {
       ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
       model: selectedModel !== provider.default_model ? selectedModel : undefined,
-      set_default: setAsDefault || undefined,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['providers'] });
@@ -351,19 +349,6 @@ function ProviderCard({ provider }: { provider: LLMProvider }) {
             ))}
           </select>
         </div>
-
-        {/* Set as default checkbox */}
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={setAsDefault}
-            onChange={(e) => setSetAsDefault(e.target.checked)}
-            className="w-4 h-4 rounded border-[var(--md-sys-color-outline-variant)] text-[var(--md-sys-color-primary)] cursor-pointer"
-          />
-          <span className="text-[12px] text-[var(--md-sys-color-on-surface-variant)]">
-            Set as default provider for pipeline planning
-          </span>
-        </label>
 
         {/* Actions */}
         <div className="flex items-center gap-2 pt-1">
