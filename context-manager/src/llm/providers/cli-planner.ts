@@ -35,7 +35,7 @@ export class CLIPlannerProvider implements LLMProvider {
     const userMsg = request.messages.find(m => m.role === "user")?.content ?? "";
 
     // Write system prompt to temp file
-    const { writeFile, unlink } = await import("node:fs/promises");
+    const { writeFile } = await import("node:fs/promises");
     const { randomUUID } = await import("node:crypto");
     const jobId = randomUUID().slice(0, 8);
     const tmpDir = "/tmp/dcm-planner";
@@ -54,53 +54,76 @@ export class CLIPlannerProvider implements LLMProvider {
 
     log.info(`CLI planner: ${this.command} ${args.join(" ").slice(0, 100)}...`);
 
-    // Spawn the process with stdout piped for streaming
-    const proc = Bun.spawn([this.command, ...args], {
-      stdout: "pipe",
-      stderr: "pipe",
-      stdin: "ignore",
+    // Run CLI in a detached scope (survives service restarts)
+    // Output goes to a temp file, we poll it for streaming
+    const { readFile } = await import("node:fs/promises");
+    const outputFile = `${tmpDir}/${jobId}.output`;
+    const errorFile = `${tmpDir}/${jobId}.error`;
+    const doneFile = `${tmpDir}/${jobId}.done`;
+
+    const cliCmd = `${this.command} ${args.map(a => a.includes(" ") ? `"${a}"` : a).join(" ")} > "${outputFile}" 2> "${errorFile}"; echo $? > "${doneFile}"`;
+
+    // Launch in separate systemd scope so it survives service restarts
+    Bun.spawn(
+      ["systemd-run", "--user", "--scope", "--", "bash", "-c", cliCmd],
+      { stdout: "ignore", stderr: "ignore", stdin: "ignore" },
+    );
+
+    const sql = getDb();
+    let lastSize = 0;
+    let chunkIndex = 0;
+
+    // Poll the output file for new content + stream chunks to DB
+    const fullOutput = await new Promise<string>((resolve, reject) => {
+      const pollInterval = setInterval(async () => {
+        try {
+          // Check if done
+          const doneExists = await Bun.file(doneFile).exists();
+
+          // Read new output since last check
+          try {
+            const currentContent = await readFile(outputFile, "utf-8");
+            if (currentContent.length > lastSize) {
+              const newChunk = currentContent.slice(lastSize);
+              lastSize = currentContent.length;
+              await storeChunk(sql, pipelineId, newChunk, chunkIndex++);
+            }
+          } catch {
+            // File not ready yet
+          }
+
+          if (doneExists) {
+            clearInterval(pollInterval);
+            const exitCode = (await readFile(doneFile, "utf-8").catch(() => "1")).trim();
+            const output = await readFile(outputFile, "utf-8").catch(() => "");
+            const stderr = await readFile(errorFile, "utf-8").catch(() => "");
+
+            // Cleanup temp files
+            for (const f of [outputFile, errorFile, doneFile]) {
+              await Bun.spawn(["rm", "-f", f]).exited;
+            }
+
+            if (exitCode !== "0") {
+              reject(new Error(`${this.name} failed (exit ${exitCode}): ${stderr.slice(0, 200)}`));
+              return;
+            }
+            if (!output.trim()) {
+              reject(new Error(`${this.name} returned empty output`));
+              return;
+            }
+            resolve(output);
+          }
+        } catch (error) {
+          clearInterval(pollInterval);
+          reject(error);
+        }
+      }, 3000); // Poll every 3 seconds
     });
 
-    // Stream stdout chunks to DB and collect full output
-    const contentParts: string[] = [];
-    let chunkIndex = 0;
-    const sql = getDb();
-    const decoder = new TextDecoder();
-
-    const reader = proc.stdout.getReader();
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const text = decoder.decode(value, { stream: true });
-        if (text) {
-          contentParts.push(text);
-          await storeChunk(sql, pipelineId, text, chunkIndex++);
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-
-    const exitCode = await proc.exited;
-    const stderr = await new Response(proc.stderr).text();
-    const fullOutput = contentParts.join("");
-
-    // Cleanup temp file
-    await unlink(promptFile).catch(() => {});
+    // Cleanup prompt file
+    await Bun.spawn(["rm", "-f", promptFile]).exited;
 
     const durationMs = Math.round(performance.now() - startMs);
-
-    if (exitCode !== 0) {
-      log.error(`CLI planner (${this.command}): failed (exit ${exitCode}): ${stderr.slice(0, 300)}`);
-      throw new Error(`${this.name} failed (exit ${exitCode}): ${stderr.slice(0, 200)}`);
-    }
-
-    if (!fullOutput.trim()) {
-      throw new Error(`${this.name} returned empty output`);
-    }
-
     log.info(`CLI planner (${this.command}): completed in ${durationMs}ms, ${fullOutput.length} chars`);
 
     return {
