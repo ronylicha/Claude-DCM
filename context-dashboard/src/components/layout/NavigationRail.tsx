@@ -16,6 +16,7 @@ import {
   Database,
   Gauge,
   BarChart3,
+  Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from './ThemeToggle';
@@ -58,6 +59,7 @@ const navigationGroups: NavGroup[] = [
       { name: 'Registry', href: '/registry', icon: Database },
       { name: 'Perf', href: '/performance', icon: Gauge },
       { name: 'Stats', href: '/stats', icon: BarChart3 },
+      { name: 'Settings', href: '/settings', icon: Settings },
     ],
   },
 ];

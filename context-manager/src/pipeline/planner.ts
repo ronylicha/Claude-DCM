@@ -11,7 +11,6 @@
 import type {
   PipelinePlan,
   PipelineInput,
-  PipelineConstraints,
 } from "./types";
 import { generateId, truncate } from "../lib/helpers";
 import { createLogger } from "../lib/logger";
@@ -83,15 +82,29 @@ export async function generatePlan(
 // ============================================
 
 /**
- * Call Claude CLI headless in a fully detached process.
- *
- * Writes prompt to a temp file, launches a shell script that runs
- * `claude --print` and writes output to another temp file, then
- * polls for the result file using non-blocking setInterval.
- * This ensures the Bun event loop is NEVER blocked — the API server
- * stays responsive and systemd watchdog is satisfied.
+ * Call the configured LLM provider to generate the plan.
+ * Uses the LLM service which supports MiniMax, ZhipuAI, Moonshot.
+ * Falls back to claude CLI if no provider is configured.
  */
 async function callClaudeHeadless(prompt: string): Promise<string> {
+  // Try LLM service first (fast, no process spawn)
+  try {
+    const { chatComplete } = await import("../llm");
+    const response = await chatComplete({
+      messages: [
+        { role: "system", content: prompt },
+        { role: "user", content: "Generate the execution plan now. Output ONLY valid JSON, no markdown." },
+      ],
+      max_tokens: 8192,
+      temperature: 0.7,
+    });
+    log.info(`LLM planner: ${response.provider} responded in ${response.duration_ms}ms (${response.usage.total_tokens} tokens)`);
+    return response.content;
+  } catch (llmError) {
+    log.warn("LLM service not available, falling back to claude CLI:", llmError instanceof Error ? llmError.message : llmError);
+  }
+
+  // Fallback: claude CLI (slow, spawns process)
   const { writeFile, readFile, unlink } = await import("node:fs/promises");
   const { randomUUID } = await import("node:crypto");
 
@@ -104,54 +117,43 @@ async function callClaudeHeadless(prompt: string): Promise<string> {
   const errorFile = `${tmpDir}/${jobId}.error`;
   const doneFile = `${tmpDir}/${jobId}.done`;
 
-  // Write prompt to file
   await writeFile(promptFile, prompt, "utf-8");
-
   log.info(`Planner job ${jobId}: launching detached claude process (prompt: ${prompt.length} chars)`);
 
-  // Launch in a separate systemd scope so it survives service restarts.
-  // Use --system-prompt-file for the large prompt, -p for the trigger message.
   const claudeCmd = `claude -p "Generate the execution plan now. Output ONLY valid JSON, no markdown." --system-prompt-file "${promptFile}" --model claude-sonnet-4-6 --output-format text > "${outputFile}" 2> "${errorFile}"; echo $? > "${doneFile}"`;
   const proc = Bun.spawn(
     ["systemd-run", "--user", "--scope", "--", "bash", "-c", claudeCmd],
     { stdout: "ignore", stderr: "pipe", stdin: "ignore" },
   );
-  // If systemd-run fails (not available), fallback to setsid
   proc.exited.then(async (code) => {
     if (code !== 0) {
       const doneExists = await Bun.file(doneFile).exists();
       if (!doneExists) {
         log.warn(`systemd-run failed (exit ${code}), falling back to setsid`);
-        Bun.spawn(["setsid", "bash", "-c", claudeCmd], {
-          stdout: "ignore", stderr: "ignore", stdin: "ignore",
-        });
+        Bun.spawn(["setsid", "bash", "-c", claudeCmd], { stdout: "ignore", stderr: "ignore", stdin: "ignore" });
       }
     }
   });
 
-  // Poll for completion (non-blocking, 2s interval)
   return new Promise<string>((resolve, reject) => {
     const startTime = Date.now();
     const pollInterval = setInterval(async () => {
       try {
         const doneExists = await Bun.file(doneFile).exists();
         if (!doneExists) {
-          // Check timeout
           if (Date.now() - startTime > PLANNER_TIMEOUT_MS) {
             clearInterval(pollInterval);
             log.error(`Planner job ${jobId}: timed out after ${PLANNER_TIMEOUT_MS / 1000}s`);
             cleanup();
             reject(new Error("Planner timed out"));
           }
-          return; // Still running — check again in 2s
+          return;
         }
 
         clearInterval(pollInterval);
-
         const exitCode = (await readFile(doneFile, "utf-8")).trim();
         const stdout = await readFile(outputFile, "utf-8").catch(() => "");
         const stderr = await readFile(errorFile, "utf-8").catch(() => "");
-
         cleanup();
 
         if (exitCode !== "0") {
@@ -159,12 +161,10 @@ async function callClaudeHeadless(prompt: string): Promise<string> {
           reject(new Error(`Planner agent failed: ${stderr.slice(0, 200)}`));
           return;
         }
-
         if (!stdout.trim()) {
           reject(new Error("Planner agent returned empty output"));
           return;
         }
-
         log.info(`Planner job ${jobId}: completed, ${stdout.length} chars output`);
         resolve(stdout);
       } catch (error) {

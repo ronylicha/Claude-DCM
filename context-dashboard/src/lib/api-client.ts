@@ -853,6 +853,23 @@ export interface PipelineSprint {
   completed_at: string | null;
 }
 
+// LLM Provider types
+export interface LLMProvider {
+  id: string;
+  provider_key: string;
+  display_name: string;
+  base_url: string;
+  endpoint_path: string;
+  default_model: string;
+  available_models: string[];
+  is_active: boolean;
+  is_default: boolean;
+  config: Record<string, unknown>;
+  has_key: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface PipelinesResponse {
   pipelines: Pipeline[];
   count: number;
@@ -1493,6 +1510,21 @@ export const apiClient = {
     apiFetch<{ sprints: PipelineSprint[]; count: number }>(`/api/pipelines/${id}/sprints`),
   getSprintReport: (id: string, sprintNumber: number) =>
     apiFetch<{ sprint: PipelineSprint }>(`/api/pipelines/${id}/sprints/${sprintNumber}/report`),
+
+  // ==========================================
+  // Settings - /api/settings
+  // ==========================================
+  getProviders: () =>
+    apiFetch<{ providers: LLMProvider[] }>('/api/settings/providers'),
+  configureProvider: (key: string, data: { api_key: string; model?: string; set_default?: boolean }) =>
+    apiFetch<{ success: boolean; message: string }>(`/api/settings/providers/${key}/configure`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  testProvider: (key: string) =>
+    apiFetch<{ ok: boolean; error?: string }>(`/api/settings/providers/${key}/test`, { method: 'POST' }),
+  deactivateProvider: (key: string) =>
+    apiFetch<{ success: boolean }>(`/api/settings/providers/${key}/deactivate`, { method: 'POST' }),
 };
 
 export default apiClient;

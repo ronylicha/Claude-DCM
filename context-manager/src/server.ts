@@ -67,6 +67,7 @@ import { getOrchestratorTopology, getOrchestratorStatus } from "./api/orchestrat
 import { startOrchestrator, stopOrchestrator, getOrchestratorStats } from "./orchestrator";
 import { getStatsOverview, getStatsTokens, getStatsActivity, getStatsAgents } from "./api/stats";
 import { postSkill, postWorkflow, postAdvisor, getStatus, checkGate } from "./api/skill-gate";
+import { getProviders, postConfigureProvider, postTestProvider, postDeactivateProvider } from "./api/settings";
 import {
   postCreatePipeline,
   postCreatePipelineWithFiles,
@@ -568,6 +569,15 @@ app.post("/api/skill-gate/:session_id/workflow", postWorkflow);
 app.post("/api/skill-gate/:session_id/advisor", postAdvisor);
 app.get("/api/skill-gate/:session_id/status", getStatus);
 app.get("/api/skill-gate/:session_id/check", checkGate);
+
+// ============================================
+// Settings API - Phase 14 (DCM v5.3)
+// ============================================
+
+app.get("/api/settings/providers", getProviders);
+app.post("/api/settings/providers/:key/configure", postConfigureProvider);
+app.post("/api/settings/providers/:key/test", postTestProvider);
+app.post("/api/settings/providers/:key/deactivate", postDeactivateProvider);
 
 // ============================================
 // Pipeline API - Phase 13 (DCM v5.1)
