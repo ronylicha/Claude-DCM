@@ -5,6 +5,7 @@
 
 import type { ChatCompletionRequest, ChatCompletionResponse, LLMProvider, LLMProviderRow } from "./types";
 import { createLogger } from "../lib/logger";
+import { getDb, publishEvent } from "../db/client";
 
 const log = createLogger("LLM");
 
@@ -71,7 +72,14 @@ export abstract class BaseLLMProvider implements LLMProvider {
     const headers = this.buildHeaders();
     const body = this.buildBody(request);
     const startMs = performance.now();
+    const pipelineId = (request as ChatCompletionRequest & { _pipeline_id?: string })._pipeline_id;
 
+    // Use streaming when we have a pipeline_id (for live output)
+    if (pipelineId) {
+      return this.completeStreaming(url, headers, body, startMs, pipelineId);
+    }
+
+    // Non-streaming (test, simple calls)
     log.info(`${this.name}: calling ${url} (model: ${body["model"]})`);
 
     const response = await fetch(url, {
@@ -99,6 +107,105 @@ export abstract class BaseLLMProvider implements LLMProvider {
 
     log.info(`${this.name}: completed in ${durationMs}ms (${result.usage.total_tokens} tokens)`);
     return result;
+  }
+
+  /** Streaming completion — sends chunks to DB + WebSocket for live viewing */
+  private async completeStreaming(
+    url: string,
+    headers: Record<string, string>,
+    body: Record<string, unknown>,
+    startMs: number,
+    pipelineId: string,
+  ): Promise<ChatCompletionResponse> {
+    // Enable streaming in the request body
+    body["stream"] = true;
+    log.info(`${this.name}: streaming call to ${url} (model: ${body["model"]})`);
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      log.error(`${this.name}: streaming API error ${response.status}: ${errorText.slice(0, 300)}`);
+      throw new Error(`${this.name} API error (${response.status}): ${errorText.slice(0, 200)}`);
+    }
+
+    if (!response.body) {
+      throw new Error(`${this.name}: no response body for streaming`);
+    }
+
+    const sql = getDb();
+    const contentParts: string[] = [];
+    let chunkIndex = 0;
+    let lineBuffer = "";
+    const decoder = new TextDecoder();
+    const reader = response.body.getReader();
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        lineBuffer += decoder.decode(value, { stream: true });
+        const lines = lineBuffer.split("\n");
+        lineBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          // SSE format: "data: {...}" or "data: [DONE]"
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6).trim();
+          if (payload === "[DONE]") continue;
+
+          try {
+            const chunk = JSON.parse(payload) as Record<string, unknown>;
+            const choices = chunk["choices"] as Array<Record<string, unknown>> | undefined;
+            const delta = choices?.[0]?.["delta"] as Record<string, unknown> | undefined;
+            const text = String(delta?.["content"] ?? "");
+            // Some providers also stream reasoning
+            const reasoning = String(delta?.["reasoning_content"] ?? "");
+            const output = text || reasoning;
+
+            if (output) {
+              contentParts.push(output);
+              // Store chunk for live dashboard viewing
+              try {
+                await sql`
+                  INSERT INTO planning_output (pipeline_id, chunk, chunk_index)
+                  VALUES (${pipelineId}, ${output}, ${chunkIndex++})
+                `;
+                await publishEvent("global", "pipeline.planning.chunk", {
+                  pipeline_id: pipelineId,
+                  chunk: output,
+                  chunk_index: chunkIndex - 1,
+                });
+              } catch {
+                // Don't let DB errors break the stream
+              }
+            }
+          } catch {
+            // Ignore unparseable lines
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    const durationMs = Math.round(performance.now() - startMs);
+    const fullContent = contentParts.join("");
+
+    log.info(`${this.name}: streaming completed in ${durationMs}ms, ${fullContent.length} chars, ${chunkIndex} chunks`);
+
+    return {
+      content: fullContent,
+      model: String(body["model"]),
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      provider: this.key,
+      duration_ms: durationMs,
+    };
   }
 
   async testConnection(): Promise<{ ok: boolean; error?: string }> {
