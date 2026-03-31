@@ -1,32 +1,20 @@
 /**
- * Pipeline Planner — Auto-generates multi-wave execution plans
- * from user instructions and optional documents.
+ * Pipeline Planner — Calls Claude Opus headless to generate intelligent execution plans.
  *
- * Detects domains, matches agents, enriches from DB registry and
- * catalog, then builds an adaptive wave-based PipelinePlan.
+ * Instead of keyword heuristics, this planner sends all context (instructions,
+ * documents, available agents/skills catalog) to Claude Opus which produces
+ * a structured JSON plan with waves, steps, sprints, and scoped prompts.
+ *
  * @module pipeline/planner
  */
 
 import type {
   PipelinePlan,
-  PipelineWave,
-  PipelineStepDef,
   PipelineInput,
   PipelineConstraints,
-  SprintDef,
 } from "./types";
-import {
-  generateId,
-  matchAgentTypes,
-  estimateComplexity,
-  detectDomains,
-  getSkillsForDomains,
-  COMPLEXITY_TIERS,
-  truncate,
-} from "../lib/helpers";
-import { getDb } from "../db/client";
+import { generateId, truncate } from "../lib/helpers";
 import { createLogger } from "../lib/logger";
-import { scanCatalog } from "../data/catalog";
 
 const log = createLogger("Planner");
 
@@ -34,45 +22,31 @@ const log = createLogger("Planner");
 // Constants
 // ============================================
 
-/** Average time per agent turn in milliseconds */
-const MS_PER_TURN = 3000;
+/** Maximum chars per document to include in the planner prompt */
+const MAX_DOC_CHARS = 4000;
 
-/** Maximum chars to include per document excerpt in prompts */
-const MAX_DOC_EXCERPT_CHARS = 2000;
+/** Timeout for the headless claude call (5 minutes) */
+const PLANNER_TIMEOUT_MS = 300_000;
 
-/** Default agent types when no keyword match is found */
-const DEFAULT_AGENTS = ["Explore", "Snipper"];
-
-/** Agent registry row shape for the enrichment query */
-interface AgentRegistryInfo {
-  agent_type: string;
-  category: string;
-  recommended_model: string | null;
-  wave_assignments: number[] | null;
-}
-
-/** Wave name constants */
-const WAVE_NAMES: Record<string, string> = {
-  exploration: "Exploration",
-  implementation: "Implementation",
-  validation: "Validation",
-  security: "Security",
-  testing: "Testing",
-};
+/** Path to the skill-index for agent/skill reference */
+const SKILL_INDEX_PATH = new URL(
+  "../../hooks/skill-advisor/skill-index.json",
+  import.meta.url,
+).pathname;
 
 // ============================================
 // Main Entry Point
 // ============================================
 
 /**
- * Generate a complete execution plan from user input.
+ * Generate a complete execution plan by calling Claude Opus headless.
  *
- * Detects domains and skills, matches agent types, enriches from
- * the DB agent_registry and filesystem catalog, then assembles
- * an adaptive multi-wave PipelinePlan.
+ * Sends all context (instructions, documents, available agents/skills)
+ * to Claude Opus which analyzes and produces a structured JSON plan
+ * with as many waves and sprints as it deems necessary.
  *
  * @param input - User instructions, documents, and scope targets
- * @param sessionId - Active session identifier for DB lookups
+ * @param _sessionId - Active session identifier
  * @returns A fully-formed PipelinePlan ready for execution
  */
 export async function generatePlan(
@@ -80,577 +54,478 @@ export async function generatePlan(
   _sessionId: string,
 ): Promise<PipelinePlan> {
   const startMs = performance.now();
+  log.info("Generating plan via Claude Opus headless...");
 
-  // 1. Aggregate text for domain detection
-  const allText = buildDetectionText(input);
-  const domains = detectDomains(allText);
-  const requiredSkills = getSkillsForDomains(domains);
+  // 1. Load available agents/skills catalog
+  const catalog = await loadCatalogReference();
 
-  log.info(`Domains detected: [${domains.join(", ")}], skills: ${requiredSkills.length}`);
+  // 2. Build the mega-prompt
+  const prompt = buildPlannerPrompt(input, catalog);
 
-  // 2. Match agent types from instructions
-  let matchedAgents = matchAgentTypes(input.instructions);
-  if (matchedAgents.length === 0) {
-    matchedAgents = [...DEFAULT_AGENTS];
-    log.info("No agent keyword match, defaulting to Explore + Snipper");
-  }
+  // 3. Call Claude Opus headless
+  const rawOutput = await callClaudeHeadless(prompt);
 
-  // 3. Enrich from DB agent_registry
-  const registryMap = await fetchRegistryInfo(matchedAgents);
-
-  // 4. Enrich from filesystem catalog
-  const catalogSkills = await findCatalogSkills(domains);
-  const mergedSkills = deduplicateSkills([...requiredSkills, ...catalogSkills]);
-
-  // 5. Build adaptive waves
-  const waves = buildWaves(input, matchedAgents, registryMap, mergedSkills, domains);
-
-  // 6. Assemble the plan
-  const constraints: PipelineConstraints = {
-    max_parallel: 4,
-    max_total_retries: 6,
-    timeout_ms: 0,
-  };
-
-  const totalDuration = waves.reduce((sum, w) => sum + estimateWaveDuration(w), 0);
-
-  const sprints = generateSprints(waves);
-
-  const plan: PipelinePlan = {
-    plan_id: generateId("plan"),
-    version: 1,
-    name: buildPlanName(input.instructions),
-    estimated_duration_ms: totalDuration,
-    waves,
-    required_skills: mergedSkills,
-    constraints,
-    sprints,
-  };
+  // 4. Parse the JSON response
+  const plan = parsePlanOutput(rawOutput, input);
 
   const elapsed = Math.round(performance.now() - startMs);
   log.info(
-    `Plan generated: id=${plan.plan_id}, waves=${waves.length}, ` +
-    `steps=${waves.reduce((s, w) => s + w.steps.length, 0)}, ` +
-    `est=${totalDuration}ms, took=${elapsed}ms`,
+    `Plan generated by Opus: id=${plan.plan_id}, waves=${plan.waves.length}, ` +
+    `sprints=${plan.sprints.length}, steps=${plan.waves.reduce((s, w) => s + w.steps.length, 0)}, ` +
+    `took=${elapsed}ms`,
   );
 
   return plan;
 }
 
 // ============================================
-// Wave Construction
+// Claude Headless Call
 // ============================================
 
 /**
- * Build the ordered list of waves based on detected agents and domains.
- * Always starts with Exploration and ends with Validation.
- * Optionally adds Security and Testing waves when relevant.
+ * Call the Claude CLI in headless mode (--print) with model opus.
+ * Returns the raw text output.
  */
-function buildWaves(
-  input: PipelineInput,
-  matchedAgents: string[],
-  registryMap: Map<string, AgentRegistryInfo>,
-  skills: string[],
-  domains: string[],
-): PipelineWave[] {
-  const waves: PipelineWave[] = [];
-  let waveNumber = 0;
+async function callClaudeHeadless(prompt: string): Promise<string> {
+  log.info(`Calling claude --print (prompt: ${prompt.length} chars)`);
 
-  // Wave 0: Exploration (always present)
-  waves.push({
-    number: waveNumber,
-    name: WAVE_NAMES["exploration"] ?? "Exploration",
-    steps: [
-      buildStep(0, "Explore", "Explore and understand the codebase relevant to the task", input, skills, registryMap, undefined),
+  const proc = Bun.spawn(
+    [
+      "claude",
+      "--print",
+      "--model", "claude-opus-4-6",
+      "--output-format", "text",
+      "-p", prompt,
     ],
-    depends_on: [],
-    on_failure: "continue",
-  });
-  waveNumber++;
-
-  // Wave 1: Implementation (matched agents, parallel)
-  const implementationAgents = matchedAgents.filter((a) => a !== "Explore" && a !== "code-reviewer");
-  if (implementationAgents.length === 0) {
-    implementationAgents.push("Snipper");
-  }
-
-  const implSteps = implementationAgents.map((agent, idx) =>
-    buildStep(
-      idx,
-      agent,
-      `Implement changes using ${agent}: ${truncate(input.instructions, 120)}`,
-      input,
-      skills,
-      registryMap,
-      "Results from exploration wave are available as context.",
-    ),
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env },
+    },
   );
 
-  waves.push({
-    number: waveNumber,
-    name: WAVE_NAMES["implementation"] ?? "Implementation",
-    steps: implSteps,
-    depends_on: [0],
-    on_failure: "retry",
-  });
-  waveNumber++;
+  // Set timeout
+  const timeout = setTimeout(() => {
+    proc.kill();
+    log.error("Claude headless timed out after 5 minutes");
+  }, PLANNER_TIMEOUT_MS);
 
-  // Wave 2: Validation (always present)
-  waves.push({
-    number: waveNumber,
-    name: WAVE_NAMES["validation"] ?? "Validation",
-    steps: [
-      buildStep(
-        0,
-        "code-reviewer",
-        "Review all changes made in the implementation wave",
-        input,
-        skills,
-        registryMap,
-        "Implementation wave completed. Review all modifications for correctness.",
-      ),
-    ],
-    depends_on: [waveNumber - 1],
-    on_failure: "continue",
-  });
-  waveNumber++;
+  const exitCode = await proc.exited;
+  clearTimeout(timeout);
 
-  // Conditional Wave: Security
-  if (domains.includes("security")) {
-    waves.push({
-      number: waveNumber,
-      name: WAVE_NAMES["security"] ?? "Security",
-      steps: [
-        buildStep(
-          0,
-          "security-specialist",
-          "Audit changes for security vulnerabilities and OWASP compliance",
-          input,
-          skills,
-          registryMap,
-          "Implementation and review waves completed. Perform security audit.",
-        ),
-      ],
-      depends_on: [waveNumber - 1],
-      on_failure: "continue",
-    });
-    waveNumber++;
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+
+  if (exitCode !== 0) {
+    log.error(`Claude headless failed (exit ${exitCode}): ${stderr.slice(0, 500)}`);
+    throw new Error(`Planner agent failed: ${stderr.slice(0, 200)}`);
   }
 
-  // Conditional Wave: Testing
-  if (domains.includes("testing")) {
-    waves.push({
-      number: waveNumber,
-      name: WAVE_NAMES["testing"] ?? "Testing",
-      steps: [
-        buildStep(
-          0,
-          "test-engineer",
-          "Write or update tests covering the implemented changes",
-          input,
-          skills,
-          registryMap,
-          "Implementation and review waves completed. Ensure test coverage.",
-        ),
-      ],
-      depends_on: [waveNumber - 1],
-      on_failure: "continue",
-    });
+  if (!stdout.trim()) {
+    throw new Error("Planner agent returned empty output");
   }
 
-  return waves;
+  log.info(`Claude headless returned ${stdout.length} chars`);
+  return stdout;
 }
 
 // ============================================
-// Step Construction
+// Prompt Construction
 // ============================================
 
 /**
- * Build a single pipeline step definition with scoped prompt.
+ * Build the complete prompt that tells Opus what plan to produce.
  */
-function buildStep(
-  order: number,
-  agentType: string,
-  description: string,
-  input: PipelineInput,
-  skills: string[],
-  registryMap: Map<string, AgentRegistryInfo>,
-  previousWaveContext: string | undefined,
-): PipelineStepDef {
-  const registryInfo = registryMap.get(agentType);
-  const complexity = estimateComplexity(
-    input.instructions,
-    (input.target_files?.length ?? 0) + (input.target_directories?.length ?? 0),
-  );
-
-  const model = registryInfo?.recommended_model ?? complexity.model;
-  const maxTurns = resolveMaxTurns(agentType, complexity.max_turns);
-
-  const prompt = buildStepPrompt(description, agentType, input, previousWaveContext);
-
-  return {
-    order,
-    agent_type: agentType,
-    description,
-    skills: filterSkillsForAgent(agentType, skills),
-    prompt,
-    model,
-    max_turns: maxTurns,
-    target_files: input.target_files ?? [],
-    target_directories: input.target_directories ?? [],
-    retry_strategy: "enhanced",
-    max_retries: 2,
-  };
-}
-
-/**
- * Resolve max_turns for a given agent type.
- * Exploration and review agents get reduced budgets.
- */
-function resolveMaxTurns(agentType: string, baseTurns: number): number {
-  const moderateTurns = COMPLEXITY_TIERS["moderate"]?.max_turns ?? 10;
-  const simpleTurns = COMPLEXITY_TIERS["simple"]?.max_turns ?? 5;
-  const overrides: Record<string, number> = {
-    "Explore": Math.min(baseTurns, moderateTurns),
-    "code-reviewer": Math.min(baseTurns, simpleTurns),
-    "security-specialist": moderateTurns,
-    "test-engineer": moderateTurns,
-  };
-  return overrides[agentType] ?? baseTurns;
-}
-
-/**
- * Filter the global skill list to only those relevant for a given agent type.
- * Always includes workflow-clean-code.
- */
-function filterSkillsForAgent(agentType: string, allSkills: string[]): string[] {
-  const agentDomainMap: Record<string, string[]> = {
-    "frontend-react":      ["react-best-practices", "vercel-react-best-practices", "ui-ux-pro-max"],
-    "backend-laravel":     ["laravel-expert", "api-design-principles"],
-    "supabase-backend":    ["postgresql", "sql-pro"],
-    "database-admin":      ["postgresql", "sql-pro"],
-    "security-specialist": ["security-auditor", "vulnerability-scanner"],
-    "test-engineer":       ["senior-qa", "tdd-orchestrator"],
-    "devops-infra":        ["senior-devops", "docker-expert"],
-    "designer-ui-ux":      ["ui-ux-pro-max", "web-design-reviewer"],
-  };
-
-  const relevant = agentDomainMap[agentType];
-  if (!relevant) {
-    // For generic agents (Explore, Snipper, etc.), return workflow skill only
-    return allSkills.filter((s) => s === "workflow-clean-code");
-  }
-
-  const filtered = allSkills.filter(
-    (s) => s === "workflow-clean-code" || relevant.includes(s),
-  );
-
-  return filtered.length > 0 ? filtered : ["workflow-clean-code"];
-}
-
-// ============================================
-// Prompt Building
-// ============================================
-
-/**
- * Build a structured, scoped prompt for a pipeline step.
- *
- * Includes the task header, instructions, document excerpts,
- * scope constraints, previous wave context, and completion instructions.
- *
- * @param description - Step-level task description
- * @param agentType - Agent type that will execute this step
- * @param input - Original pipeline input with instructions and documents
- * @param previousWaveContext - Optional summary from a completed wave
- * @returns Assembled prompt string
- */
-export function buildStepPrompt(
-  description: string,
-  agentType: string,
-  input: PipelineInput,
-  previousWaveContext?: string,
-): string {
+function buildPlannerPrompt(input: PipelineInput, catalog: string): string {
   const sections: string[] = [];
 
-  // Header
-  sections.push(`# Task for ${agentType}`);
-  sections.push("");
+  sections.push(`Tu es un architecte logiciel expert. Tu dois produire un plan d'execution structure pour un pipeline d'agents AI.
+
+Tu recois des instructions, des documents optionnels, et un catalogue d'agents/skills disponibles.
+Tu dois analyser le travail demande et produire un plan JSON detaille avec des waves, des steps, et des sprints.
+
+# IMPORTANT
+- Reponds UNIQUEMENT avec un bloc JSON valide (pas de texte avant/apres)
+- Le JSON doit etre parsable directement
+- Sois exhaustif dans le decoupage : autant de sprints et waves que necessaire
+- Chaque step doit avoir un prompt detaille et scope pour l'agent qui l'executera
+- Les sprints groupent les waves logiquement (1 sprint = 1 livrable coherent)
+- Un sprint peut contenir 1 a N waves`);
 
   // Instructions
-  sections.push("## Instructions");
-  sections.push("");
-  sections.push(input.instructions);
-  sections.push("");
+  sections.push(`\n# INSTRUCTIONS DE L'UTILISATEUR\n\n${input.instructions}`);
 
-  // Step-specific description
-  sections.push("## Step Objective");
-  sections.push("");
-  sections.push(description);
-  sections.push("");
-
-  // Document excerpts
+  // Documents
   if (input.documents && input.documents.length > 0) {
-    sections.push("## Reference Documents");
-    sections.push("");
+    sections.push("\n# DOCUMENTS FOURNIS\n");
     for (const doc of input.documents) {
-      sections.push(`### ${doc.name} (${doc.type})`);
-      sections.push("");
-      sections.push(truncate(doc.content, MAX_DOC_EXCERPT_CHARS));
-      sections.push("");
+      sections.push(`## ${doc.name} (${doc.type})\n\n${truncate(doc.content, MAX_DOC_CHARS)}\n`);
     }
   }
 
-  // Scope constraints
-  sections.push("## Scope Constraints");
-  sections.push("");
+  // Scope
+  if (input.target_files && input.target_files.length > 0) {
+    sections.push(`\n# FICHIERS CIBLES\n${input.target_files.map(f => `- ${f}`).join("\n")}`);
+  }
+  if (input.target_directories && input.target_directories.length > 0) {
+    sections.push(`\n# DOSSIERS CIBLES\n${input.target_directories.map(d => `- ${d}`).join("\n")}`);
+  }
 
-  const targetFiles = input.target_files ?? [];
-  const targetDirs = input.target_directories ?? [];
-
-  if (targetFiles.length > 0) {
-    sections.push("**Target Files** (focus on these files):");
-    for (const f of targetFiles) {
-      sections.push(`- \`${f}\``);
+  // Workspace
+  if (input.workspace) {
+    sections.push(`\n# WORKSPACE\n- Dossier: ${input.workspace.path}`);
+    if (input.workspace.git_repo_url) {
+      sections.push(`- Git: ${input.workspace.git_repo_url} (branche: ${input.workspace.git_branch ?? "main"})`);
     }
-    sections.push("");
   }
 
-  if (targetDirs.length > 0) {
-    sections.push("**Target Directories** (stay within these boundaries):");
-    for (const d of targetDirs) {
-      sections.push(`- \`${d}\``);
+  // Catalog
+  sections.push(`\n# CATALOGUE AGENTS & SKILLS DISPONIBLES\n\n${catalog}`);
+
+  // Output schema
+  sections.push(`\n# FORMAT DE SORTIE ATTENDU
+
+Produis EXACTEMENT ce JSON (pas de markdown, pas de \`\`\`json, juste le JSON brut) :
+
+{
+  "name": "Nom court du plan (max 60 chars)",
+  "waves": [
+    {
+      "number": 0,
+      "name": "Nom de la wave",
+      "steps": [
+        {
+          "order": 0,
+          "agent_type": "type exact de l'agent (du catalogue)",
+          "description": "Ce que cet agent doit faire",
+          "skills": ["skill-1", "skill-2"],
+          "prompt": "Le prompt COMPLET et DETAILLE pour l'agent. Inclure: contexte, objectif precis, fichiers a toucher, contraintes, format de retour attendu. Minimum 200 mots.",
+          "model": "haiku|sonnet|opus",
+          "max_turns": 5,
+          "target_files": [],
+          "target_directories": [],
+          "retry_strategy": "enhanced",
+          "max_retries": 2
+        }
+      ],
+      "depends_on": [],
+      "on_failure": "continue|retry|abort"
     }
-    sections.push("");
+  ],
+  "sprints": [
+    {
+      "number": 1,
+      "name": "Nom du sprint",
+      "objectives": ["Objectif 1 precis et mesurable", "Objectif 2"],
+      "wave_start": 0,
+      "wave_end": 1
+    }
+  ],
+  "required_skills": ["skill-1", "skill-2"],
+  "constraints": {
+    "max_parallel": 4,
+    "max_total_retries": 6,
+    "timeout_ms": 0
   }
+}
 
-  if (targetFiles.length === 0 && targetDirs.length === 0) {
-    sections.push("No explicit file targets. Work only on files directly relevant to the task.");
-    sections.push("");
-  }
+# REGLES POUR LE PLAN
 
-  sections.push("**Rules**:");
-  sections.push("- Do NOT scan the entire codebase");
-  sections.push("- Do NOT explore files outside the target scope");
-  sections.push("- Do NOT create files unless absolutely necessary");
-  sections.push("");
-
-  // Previous wave context
-  if (previousWaveContext) {
-    sections.push("## Previous Wave Context");
-    sections.push("");
-    sections.push(previousWaveContext);
-    sections.push("");
-  }
-
-  // Completion instructions
-  sections.push("## Completion");
-  sections.push("");
-  sections.push("When done, provide a concise summary of:");
-  sections.push("1. What was changed or discovered");
-  sections.push("2. Files modified (if any)");
-  sections.push("3. Any issues or blockers encountered");
+1. **Wave 0 TOUJOURS = Exploration** : un agent Explore qui analyse le codebase et comprend le contexte
+2. **Waves d'implementation** : utilise les agents les plus pertinents du catalogue, en parallele quand possible
+3. **Wave de validation** : toujours inclure un code-reviewer
+4. **Waves optionnelles** : security-specialist, test-engineer, performance-engineer selon le besoin
+5. **Sprints** : groupe les waves en livrables coherents. Un sprint = un commit git potentiel. Autant de sprints que necessaire (pas forcement 3).
+6. **Modeles** : haiku pour exploration/review simple, sonnet pour implementation, opus pour architecture complexe
+7. **max_turns** : 3-5 pour trivial, 5-10 pour simple, 10-20 pour modere, 20-30 pour complexe
+8. **Prompts** : DETAILLES et SCOPES. Chaque prompt doit etre autonome — l'agent ne connait PAS le plan global.
+9. **Skills** : toujours inclure "workflow-clean-code" + les skills specifiques au domaine de l'agent
+10. **Pas de wave vide** : chaque wave doit avoir au moins 1 step`);
 
   return sections.join("\n");
 }
 
 // ============================================
-// Duration Estimation
+// Output Parsing
 // ============================================
 
 /**
- * Estimate the wall-clock duration for a wave in milliseconds.
- * Based on step count multiplied by average turn time and max_turns.
- * Parallel steps use the maximum, not the sum.
- *
- * @param wave - The pipeline wave to estimate
- * @returns Estimated duration in milliseconds
+ * Parse the raw output from Claude Opus into a validated PipelinePlan.
+ * Handles JSON extraction from potentially wrapped output.
  */
-export function estimateWaveDuration(wave: PipelineWave): number {
-  if (wave.steps.length === 0) return 0;
+function parsePlanOutput(raw: string, input: PipelineInput): PipelinePlan {
+  let jsonStr = raw.trim();
 
-  // Parallel execution: duration = max step duration, not sum
-  const stepDurations = wave.steps.map(
-    (step) => step.max_turns * MS_PER_TURN,
-  );
+  // Strip markdown code fences if present
+  const fenceMatch = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  if (fenceMatch?.[1]) {
+    jsonStr = fenceMatch[1].trim();
+  }
 
-  return Math.max(...stepDurations);
+  // Try to find JSON object boundaries
+  const firstBrace = jsonStr.indexOf("{");
+  const lastBrace = jsonStr.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+  } catch (parseError) {
+    log.error(`Failed to parse plan JSON: ${(parseError as Error).message}`);
+    log.error(`Raw output (first 500 chars): ${raw.slice(0, 500)}`);
+    // Fallback to minimal plan
+    return buildFallbackPlan(input);
+  }
+
+  // Validate required fields
+  if (!parsed["waves"] || !Array.isArray(parsed["waves"]) || (parsed["waves"] as unknown[]).length === 0) {
+    log.warn("Plan has no waves, using fallback");
+    return buildFallbackPlan(input);
+  }
+
+  const waves = parsed["waves"] as Array<Record<string, unknown>>;
+  const sprints = (parsed["sprints"] as Array<Record<string, unknown>>) ?? [];
+  const requiredSkills = (parsed["required_skills"] as string[]) ?? ["workflow-clean-code"];
+  const constraints = (parsed["constraints"] as Record<string, unknown>) ?? {};
+
+  // Build validated plan
+  const plan: PipelinePlan = {
+    plan_id: generateId("plan"),
+    version: 1,
+    name: String(parsed["name"] ?? buildPlanName(input.instructions)),
+    waves: waves.map((w, idx) => ({
+      number: Number(w["number"] ?? idx),
+      name: String(w["name"] ?? `Wave ${idx}`),
+      steps: Array.isArray(w["steps"])
+        ? (w["steps"] as Array<Record<string, unknown>>).map((s, sIdx) => ({
+            order: Number(s["order"] ?? sIdx),
+            agent_type: String(s["agent_type"] ?? "Snipper"),
+            description: String(s["description"] ?? ""),
+            skills: Array.isArray(s["skills"]) ? (s["skills"] as string[]) : ["workflow-clean-code"],
+            prompt: String(s["prompt"] ?? s["description"] ?? ""),
+            model: String(s["model"] ?? "sonnet"),
+            max_turns: Number(s["max_turns"] ?? 10),
+            target_files: Array.isArray(s["target_files"]) ? (s["target_files"] as string[]) : (input.target_files ?? []),
+            target_directories: Array.isArray(s["target_directories"]) ? (s["target_directories"] as string[]) : (input.target_directories ?? []),
+            retry_strategy: (String(s["retry_strategy"] ?? "enhanced")) as "same" | "enhanced" | "alternate" | "decompose",
+            max_retries: Number(s["max_retries"] ?? 2),
+          }))
+        : [],
+      depends_on: Array.isArray(w["depends_on"]) ? (w["depends_on"] as number[]) : (idx > 0 ? [idx - 1] : []),
+      on_failure: (String(w["on_failure"] ?? "continue")) as "abort" | "continue" | "retry",
+    })),
+    sprints: sprints.map((s, idx) => ({
+      number: Number(s["number"] ?? idx + 1),
+      name: String(s["name"] ?? `Sprint ${idx + 1}`),
+      objectives: Array.isArray(s["objectives"]) ? (s["objectives"] as string[]) : [],
+      wave_start: Number(s["wave_start"] ?? 0),
+      wave_end: Number(s["wave_end"] ?? 0),
+    })),
+    required_skills: requiredSkills,
+    constraints: {
+      max_parallel: Number(constraints["max_parallel"] ?? 4),
+      max_total_retries: Number(constraints["max_total_retries"] ?? 6),
+      timeout_ms: Number(constraints["timeout_ms"] ?? 0),
+    },
+  };
+
+  // If Opus didn't produce sprints, generate minimal ones
+  if (plan.sprints.length === 0 && plan.waves.length > 0) {
+    plan.sprints = autoGenerateSprints(plan.waves);
+  }
+
+  return plan;
 }
 
 // ============================================
-// DB & Catalog Enrichment
+// Catalog Loading
 // ============================================
 
 /**
- * Fetch agent registry info for a list of agent types.
- * Returns a Map for O(1) lookup. Gracefully handles DB errors.
+ * Load the skill-index.json to give Opus a reference of available agents/skills.
+ * Falls back to a minimal list if file not found.
  */
-async function fetchRegistryInfo(
-  agentTypes: string[],
-): Promise<Map<string, AgentRegistryInfo>> {
-  const result = new Map<string, AgentRegistryInfo>();
-  if (agentTypes.length === 0) return result;
-
+async function loadCatalogReference(): Promise<string> {
   try {
-    const sql = getDb();
-    const rows = await sql<AgentRegistryInfo[]>`
-      SELECT agent_type, category, recommended_model, wave_assignments
-      FROM agent_registry
-      WHERE agent_type = ANY(${agentTypes})
-    `;
-
-    for (const row of rows) {
-      result.set(row.agent_type, row);
+    const file = Bun.file(SKILL_INDEX_PATH);
+    if (!(await file.exists())) {
+      log.warn(`Skill index not found at ${SKILL_INDEX_PATH}, using minimal catalog`);
+      return getMinimalCatalog();
     }
 
-    log.debug(`Registry enrichment: ${result.size}/${agentTypes.length} agents found`);
-  } catch (error) {
-    log.warn("Agent registry lookup failed, proceeding without enrichment:", error);
-  }
+    const raw = await file.text();
+    const index = JSON.parse(raw) as Record<string, unknown>;
+    const domains = index["domains"] as Record<string, Record<string, unknown>> | undefined;
 
-  return result;
+    if (!domains) return getMinimalCatalog();
+
+    // Build a concise summary for the planner
+    const lines: string[] = [];
+    for (const [domain, info] of Object.entries(domains)) {
+      const agents = (info["agents"] as Record<string, string[]>)?.["recommended"] ?? [];
+      const skills = (info["primary"] as string[]) ?? [];
+      const keywords = (info["keywords"] as string[]) ?? [];
+      lines.push(`## ${domain}`);
+      lines.push(`Agents: ${agents.join(", ")}`);
+      lines.push(`Skills: ${skills.join(", ")}`);
+      lines.push(`Keywords: ${keywords.slice(0, 8).join(", ")}`);
+      lines.push("");
+    }
+
+    return lines.join("\n");
+  } catch (error) {
+    log.warn("Failed to load skill index:", error);
+    return getMinimalCatalog();
+  }
 }
 
 /**
- * Scan the filesystem catalog for additional skills matching detected domains.
+ * Minimal catalog when skill-index.json is not available.
  */
-async function findCatalogSkills(domains: string[]): Promise<string[]> {
-  if (domains.length === 0) return [];
+function getMinimalCatalog(): string {
+  return `## Agents disponibles
+- Explore : exploration et comprehension du codebase (haiku, 5 turns)
+- Snipper : modifications de code rapides (sonnet, 10 turns)
+- frontend-react : composants React, hooks, state (sonnet, 15 turns)
+- backend-laravel : API Laravel, controllers, models (sonnet, 15 turns)
+- backend-developer : APIs Node.js/Bun/Hono (sonnet, 15 turns)
+- database-admin : schema PostgreSQL, migrations, index (sonnet, 10 turns)
+- code-reviewer : revue de code, qualite, bugs (sonnet, 10 turns)
+- test-engineer : tests unitaires, integration, e2e (sonnet, 10 turns)
+- security-specialist : audit securite, OWASP (sonnet, 15 turns)
+- performance-engineer : optimisation, profiling, cache (sonnet, 15 turns)
+- designer-ui-ux : design system, accessibilite (sonnet, 15 turns)
+- technical-writer : documentation, API docs (haiku, 5 turns)
+- devops-infra : CI/CD, Docker, deploy (sonnet, 10 turns)
+- qa-testing : QA, tests manuels, validation (haiku, 10 turns)
+- impact-analyzer : analyse d'impact avant modification (sonnet, 10 turns)
+- regression-guard : validation anti-regression (sonnet, 10 turns)
 
-  try {
-    const { skills } = await scanCatalog();
-
-    // Map domain names to catalog categories
-    const categoryMap: Record<string, string> = {
-      react: "frontend",
-      nextjs: "frontend",
-      laravel: "php",
-      database: "database",
-      testing: "testing",
-      security: "security",
-      devops: "devops",
-      ui: "design",
-      mobile: "mobile",
-    };
-
-    const targetCategories = new Set(
-      domains.map((d) => categoryMap[d]).filter(Boolean),
-    );
-
-    const matched = skills
-      .filter((s) => targetCategories.has(s.category))
-      .map((s) => s.id)
-      .slice(0, 10); // Cap to avoid prompt bloat
-
-    log.debug(`Catalog enrichment: ${matched.length} additional skills from ${targetCategories.size} categories`);
-    return matched;
-  } catch (error) {
-    log.warn("Catalog scan failed, proceeding without catalog enrichment:", error);
-    return [];
-  }
+## Skills disponibles
+- workflow-clean-code (toujours requis)
+- react-best-practices, vercel-react-best-practices
+- laravel-expert, api-design-principles
+- postgresql, sql-pro
+- senior-qa, tdd-orchestrator
+- security-auditor, vulnerability-scanner
+- senior-devops, docker-expert
+- ui-ux-pro-max, web-design-reviewer
+- typescript-expert, senior-architect`;
 }
 
 // ============================================
-// Sprint Generation
+// Fallback Plan
 // ============================================
 
 /**
- * Generate sprint definitions that logically group waves.
- *
- * - Sprint 1 "Discovery" = wave 0 (exploration)
- * - Sprint 2 "Implementation" = waves 1..N-2 (all implementation waves)
- * - Sprint 3 "Quality & Validation" = wave N-1..N (validation + testing waves)
- *
- * @param waves - The ordered list of pipeline waves
- * @returns Sprint definitions grouping the waves
+ * Build a minimal fallback plan when Opus fails or returns invalid JSON.
+ * Uses the old heuristic approach as safety net.
  */
-function generateSprints(waves: PipelineWave[]): SprintDef[] {
-  if (waves.length === 0) return [];
-  if (waves.length === 1) {
-    return [{
-      number: 1,
-      name: "Discovery & Implementation",
-      objectives: [`Complete: ${waves[0]?.name ?? "Unnamed wave"}`],
-      wave_start: 0,
-      wave_end: 0,
-    }];
-  }
+function buildFallbackPlan(input: PipelineInput): PipelinePlan {
+  log.warn("Using fallback heuristic plan (Opus failed to produce valid JSON)");
 
-  const sprints: SprintDef[] = [];
-
-  // Sprint 1: Discovery (wave 0)
-  sprints.push({
-    number: 1,
-    name: "Discovery",
-    objectives: [
-      "Explore the codebase and understand the context",
-      "Identify files and patterns to modify",
+  const plan: PipelinePlan = {
+    plan_id: generateId("plan"),
+    version: 1,
+    name: buildPlanName(input.instructions),
+    waves: [
+      {
+        number: 0,
+        name: "Exploration",
+        steps: [{
+          order: 0,
+          agent_type: "Explore",
+          description: "Explore and understand the codebase",
+          skills: ["workflow-clean-code"],
+          prompt: `# Exploration\n\nAnalyze the codebase to understand:\n${input.instructions}\n\nProvide a summary of relevant files, patterns, and dependencies.`,
+          model: "haiku",
+          max_turns: 5,
+          target_files: input.target_files ?? [],
+          target_directories: input.target_directories ?? [],
+          retry_strategy: "enhanced",
+          max_retries: 2,
+        }],
+        depends_on: [],
+        on_failure: "continue",
+      },
+      {
+        number: 1,
+        name: "Implementation",
+        steps: [{
+          order: 0,
+          agent_type: "Snipper",
+          description: `Implement: ${truncate(input.instructions, 120)}`,
+          skills: ["workflow-clean-code"],
+          prompt: `# Implementation\n\n${input.instructions}\n\nImplement the changes described above.`,
+          model: "sonnet",
+          max_turns: 15,
+          target_files: input.target_files ?? [],
+          target_directories: input.target_directories ?? [],
+          retry_strategy: "enhanced",
+          max_retries: 2,
+        }],
+        depends_on: [0],
+        on_failure: "retry",
+      },
+      {
+        number: 2,
+        name: "Validation",
+        steps: [{
+          order: 0,
+          agent_type: "code-reviewer",
+          description: "Review implementation",
+          skills: ["workflow-clean-code"],
+          prompt: "Review all changes made. Check for bugs, security issues, and code quality.",
+          model: "haiku",
+          max_turns: 5,
+          target_files: input.target_files ?? [],
+          target_directories: input.target_directories ?? [],
+          retry_strategy: "enhanced",
+          max_retries: 1,
+        }],
+        depends_on: [1],
+        on_failure: "continue",
+      },
     ],
-    wave_start: 0,
-    wave_end: 0,
-  });
+    sprints: [
+      { number: 1, name: "Discovery", objectives: ["Understand the codebase"], wave_start: 0, wave_end: 0 },
+      { number: 2, name: "Implementation", objectives: ["Deliver the changes"], wave_start: 1, wave_end: 1 },
+      { number: 3, name: "Validation", objectives: ["Ensure quality"], wave_start: 2, wave_end: 2 },
+    ],
+    required_skills: ["workflow-clean-code"],
+    constraints: { max_parallel: 4, max_total_retries: 6, timeout_ms: 0 },
+  };
 
-  // Sprint 2: Implementation (waves 1 to N-2, or just wave 1 if only 2 waves)
-  const implStart = 1;
-  const implEnd = Math.max(1, waves.length - 2);
-  const implWaveNames = waves.slice(implStart, implEnd + 1).map(w => w.name);
-  sprints.push({
-    number: 2,
-    name: "Implementation",
-    objectives: implWaveNames.map(n => `Complete: ${n}`),
-    wave_start: implStart,
-    wave_end: implEnd,
-  });
-
-  // Sprint 3: Quality (last wave(s) — validation, testing, security)
-  if (waves.length > 2) {
-    const qualStart = implEnd + 1;
-    const qualEnd = waves.length - 1;
-    if (qualStart <= qualEnd) {
-      const qualWaveNames = waves.slice(qualStart, qualEnd + 1).map(w => w.name);
-      sprints.push({
-        number: 3,
-        name: "Quality & Validation",
-        objectives: qualWaveNames.map(n => `Complete: ${n}`),
-        wave_start: qualStart,
-        wave_end: qualEnd,
-      });
-    }
-  }
-
-  return sprints;
+  return plan;
 }
 
 // ============================================
-// Internal Helpers
+// Helpers
 // ============================================
 
 /**
- * Aggregate all textual content from input for domain detection.
+ * Auto-generate sprints when Opus doesn't provide them.
+ * Groups waves into logical sprints.
  */
-function buildDetectionText(input: PipelineInput): string {
-  const parts = [input.instructions];
-
-  if (input.documents) {
-    for (const doc of input.documents) {
-      parts.push(truncate(doc.content, MAX_DOC_EXCERPT_CHARS));
-    }
+function autoGenerateSprints(waves: PipelinePlan["waves"]): PipelinePlan["sprints"] {
+  if (waves.length <= 2) {
+    return [{ number: 1, name: "Full Pipeline", objectives: waves.map(w => w.name), wave_start: 0, wave_end: waves.length - 1 }];
   }
 
-  return parts.join(" ");
+  return [
+    { number: 1, name: "Discovery", objectives: ["Exploration du codebase"], wave_start: 0, wave_end: 0 },
+    { number: 2, name: "Implementation", objectives: waves.slice(1, -1).map(w => w.name), wave_start: 1, wave_end: waves.length - 2 },
+    { number: 3, name: "Quality", objectives: [waves[waves.length - 1]?.name ?? "Validation"], wave_start: waves.length - 1, wave_end: waves.length - 1 },
+  ];
 }
 
-/**
- * Generate a short plan name from the first ~60 chars of instructions.
- */
 function buildPlanName(instructions: string): string {
   const firstLine = instructions.split("\n")[0] ?? instructions;
-  const cleaned = firstLine.replace(/[^a-zA-Z0-9\s-]/g, "").trim();
-  return truncate(cleaned, 60) || "Unnamed Plan";
+  const cleaned = firstLine.replace(/[^a-zA-Z0-9\s\u00C0-\u024F-]/g, "").trim();
+  return truncate(cleaned, 60) || "Pipeline";
 }
 
-/**
- * Deduplicate a skill list while preserving order.
- */
-function deduplicateSkills(skills: string[]): string[] {
-  return Array.from(new Set(skills));
-}
+// Re-export for backward compat (used by runner tests)
+export { buildPlannerPrompt as buildStepPrompt };

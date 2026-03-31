@@ -1069,12 +1069,13 @@ export async function commitSprintChanges(pipelineId: string, sprintNumber: numb
 /**
  * Generate a structured report for a completed sprint.
  *
- * Aggregates step results, checks objectives, collects files changed,
- * and computes duration.
+ * Calls Claude Opus headless to intelligently evaluate whether
+ * sprint objectives were truly met, not just counting steps.
+ * Falls back to heuristic evaluation if the LLM call fails.
  *
  * @param pipelineId - Pipeline identifier
  * @param sprintNumber - Sprint number to report on
- * @returns Sprint report with summary, objectives, and statistics
+ * @returns Sprint report with AI-evaluated objectives and statistics
  */
 export async function generateSprintReport(pipelineId: string, sprintNumber: number): Promise<SprintReport> {
   const sql = getDb();
@@ -1082,6 +1083,9 @@ export async function generateSprintReport(pipelineId: string, sprintNumber: num
   // Get sprint
   const [sprint] = await sql`SELECT * FROM pipeline_sprints WHERE pipeline_id = ${pipelineId} AND sprint_number = ${sprintNumber}`;
   if (!sprint) throw new Error(`Sprint ${sprintNumber} not found`);
+
+  // Get pipeline for context
+  const [pipeline] = await sql<PipelineRow[]>`SELECT * FROM pipelines WHERE id = ${pipelineId}`;
 
   // Get all steps in the sprint's wave range
   const steps = await sql`
@@ -1092,35 +1096,143 @@ export async function generateSprintReport(pipelineId: string, sprintNumber: num
     ORDER BY wave_number, step_order
   `;
 
-  const completed = steps.filter((s: Record<string, unknown>) => s["status"] === "completed").length;
-  const failed = steps.filter((s: Record<string, unknown>) => s["status"] === "failed").length;
+  const completedCount = steps.filter((s: Record<string, unknown>) => s["status"] === "completed").length;
+  const failedCount = steps.filter((s: Record<string, unknown>) => s["status"] === "failed").length;
 
   // Collect files changed from results
   const filesSet = new Set<string>();
+  const stepSummaries: string[] = [];
   for (const step of steps) {
     const result = step["result"] as Record<string, unknown> | null;
     if (result && Array.isArray(result["files"])) {
       for (const f of result["files"]) filesSet.add(String(f));
     }
+    // Build a summary of what each step did
+    const summary = result ? extractSummaryFromResult(result) : null;
+    stepSummaries.push(
+      `- ${step["agent_type"]} (${step["status"]}): ${step["description"] ?? "no description"}${summary ? ` → ${summary}` : ""}${step["error"] ? ` [ERROR: ${step["error"]}]` : ""}`,
+    );
   }
 
-  // Check objectives
   const objectives = (sprint["objectives"] as string[]) || [];
-  const objectivesMet = objectives.map((obj: string) => ({
-    objective: obj,
-    met: completed > 0,
-    details: completed > 0 ? "Steps completed successfully" : "Steps did not complete",
-  }));
+  const durationMs = calcDurationMs(sprint["started_at"] as string | null, sprint["completed_at"] as string | null);
+  const commitSha = (sprint["commit_sha"] as string) || null;
+  const prUrl = (sprint["pr_url"] as string) || null;
+
+  // Call Claude Opus headless to evaluate objectives
+  let objectivesMet: SprintReport["objectives_met"];
+  let aiSummary: string | null = null;
+
+  try {
+    const evaluation = await evaluateSprintWithAI(
+      sprint["name"] as string,
+      sprintNumber,
+      objectives,
+      stepSummaries,
+      Array.from(filesSet),
+      (pipeline?.["input"] as PipelineInput)?.instructions ?? "",
+    );
+    objectivesMet = evaluation.objectives_met;
+    aiSummary = evaluation.summary;
+    log.info(`Sprint ${sprintNumber} AI evaluation: ${aiSummary}`);
+  } catch (error) {
+    log.warn(`Sprint ${sprintNumber} AI evaluation failed, using heuristic:`, error);
+    // Fallback: simple heuristic
+    objectivesMet = objectives.map((obj: string) => ({
+      objective: obj,
+      met: completedCount > 0,
+      details: completedCount > 0 ? "Steps completed (heuristic)" : "Steps did not complete",
+    }));
+  }
+
+  const summary = aiSummary ??
+    `Sprint ${sprintNumber} "${sprint["name"]}": ${completedCount}/${steps.length} steps completed, ${filesSet.size} files changed`;
 
   return {
-    summary: `Sprint ${sprintNumber} "${sprint["name"]}": ${completed}/${steps.length} steps completed, ${filesSet.size} files changed`,
+    summary,
     objectives_met: objectivesMet,
-    steps_completed: completed,
-    steps_failed: failed,
+    steps_completed: completedCount,
+    steps_failed: failedCount,
     files_changed: Array.from(filesSet),
-    duration_ms: calcDurationMs(sprint["started_at"] as string | null, sprint["completed_at"] as string | null),
-    commit_sha: (sprint["commit_sha"] as string) || null,
-    pr_url: (sprint["pr_url"] as string) || null,
+    duration_ms: durationMs,
+    commit_sha: commitSha,
+    pr_url: prUrl,
+  };
+}
+
+/**
+ * Call Claude headless to evaluate whether sprint objectives were truly met.
+ * Returns an AI-generated assessment of each objective and an overall summary.
+ */
+async function evaluateSprintWithAI(
+  sprintName: string,
+  sprintNumber: number,
+  objectives: string[],
+  stepSummaries: string[],
+  filesChanged: string[],
+  originalInstructions: string,
+): Promise<{ summary: string; objectives_met: SprintReport["objectives_met"] }> {
+  const prompt = `Tu es un chef de projet technique. Evalue si les objectifs du sprint ont ete atteints.
+
+# Sprint ${sprintNumber}: ${sprintName}
+
+## Instructions originales du pipeline
+${originalInstructions}
+
+## Objectifs du sprint
+${objectives.map((o, i) => `${i + 1}. ${o}`).join("\n")}
+
+## Resultats des agents
+${stepSummaries.join("\n")}
+
+## Fichiers modifies
+${filesChanged.length > 0 ? filesChanged.join(", ") : "Aucun"}
+
+# FORMAT DE REPONSE (JSON uniquement, pas de markdown)
+
+{
+  "summary": "Resume en 1-2 phrases du bilan du sprint",
+  "objectives_met": [
+    {
+      "objective": "L'objectif exact tel que defini",
+      "met": true,
+      "details": "Explication precise de pourquoi l'objectif est atteint ou non, en reference aux resultats des agents"
+    }
+  ]
+}
+
+Sois honnete et precis. Si un agent a echoue ou si le resultat est partiel, dis-le. Ne valide pas un objectif juste parce qu'un step a un status "completed" — verifie que le contenu correspond.`;
+
+  const proc = Bun.spawn(
+    ["claude", "--print", "--model", "claude-sonnet-4-6", "--output-format", "text", "-p", prompt],
+    { stdout: "pipe", stderr: "pipe", env: { ...process.env } },
+  );
+
+  const timeout = setTimeout(() => proc.kill(), 120_000);
+  const exitCode = await proc.exited;
+  clearTimeout(timeout);
+
+  const stdout = await new Response(proc.stdout).text();
+
+  if (exitCode !== 0 || !stdout.trim()) {
+    throw new Error(`Sprint evaluation failed (exit ${exitCode})`);
+  }
+
+  // Parse JSON from output
+  let jsonStr = stdout.trim();
+  const fenceMatch = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  if (fenceMatch?.[1]) jsonStr = fenceMatch[1].trim();
+
+  const firstBrace = jsonStr.indexOf("{");
+  const lastBrace = jsonStr.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+  }
+
+  const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+  return {
+    summary: String(parsed["summary"] ?? `Sprint ${sprintNumber} evaluated`),
+    objectives_met: (parsed["objectives_met"] as SprintReport["objectives_met"]) ?? [],
   };
 }
 
