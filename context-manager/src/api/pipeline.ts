@@ -501,14 +501,14 @@ export async function getGitStatus(c: Context): Promise<Response> {
       });
     }
 
-    // Parse username from auth status output
-    const userMatch = authStderr.match(/Logged in to github\.com account (\S+)/i)
-      ?? authStderr.match(/account (\S+)/i);
-    const user = userMatch?.[1] ?? null;
+    // Parse username — gh auth status outputs to stderr
+    const authOutput = authStderr + await new Response(authProc.stdout).text();
+    const userMatch = authOutput.match(/account\s+(\S+)/i);
+    const user = userMatch?.[1]?.replace(/[()]/g, "") ?? null;
 
-    // List repos (max 30, sorted by last push)
+    // List repos (max 30)
     const repoProc = Bun.spawn(
-      ["gh", "repo", "list", "--limit", "30", "--sort", "pushed", "--json", "nameWithOwner,url,isPrivate,pushedAt,defaultBranchRef"],
+      ["gh", "repo", "list", "--limit", "30", "--json", "nameWithOwner,url,isPrivate,pushedAt"],
       { stdout: "pipe", stderr: "pipe" },
     );
     const repoCode = await repoProc.exited;
@@ -521,7 +521,7 @@ export async function getGitStatus(c: Context): Promise<Response> {
         name: String(r["nameWithOwner"] ?? ""),
         url: String(r["url"] ?? ""),
         isPrivate: Boolean(r["isPrivate"]),
-        defaultBranch: String((r["defaultBranchRef"] as Record<string, unknown>)?.["name"] ?? "main"),
+        defaultBranch: "main",
         pushedAt: String(r["pushedAt"] ?? ""),
       }));
     }
