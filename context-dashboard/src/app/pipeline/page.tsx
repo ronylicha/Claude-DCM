@@ -344,10 +344,17 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
     const dirName = relPath.split('/')[0] ?? '';
     if (dirName) {
       setWorkspacePath(dirName);
-      // Auto-fill session name if empty
       if (!sessionName.trim()) {
         setSessionName(dirName);
       }
+    }
+    // Also add the files from the directory to the file list
+    const validFiles = Array.from(fileList).filter((f) => {
+      const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
+      return ALLOWED_EXTENSIONS.includes(ext) && f.size > 0;
+    });
+    if (validFiles.length > 0) {
+      setFiles((prev) => [...prev, ...validFiles]);
     }
   };
 
@@ -518,7 +525,7 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
               </button>
             </div>
             <p className="text-[11px] text-[var(--md-sys-color-outline)] mt-1">
-              Directory where pipeline results will be stored
+              Full absolute path (e.g. /home/user/projects/my-app). Browse auto-detects files and name.
             </p>
           </div>
 
