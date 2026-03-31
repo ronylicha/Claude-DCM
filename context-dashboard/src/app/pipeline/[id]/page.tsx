@@ -76,6 +76,20 @@ const PIPELINE_STATUS: Record<string, PipelineStatusStyle> = {
     label: 'Pending',
     icon: Clock,
   },
+  planning: {
+    color: 'text-[var(--md-sys-color-tertiary)]',
+    bg: 'bg-[color-mix(in_srgb,var(--md-sys-color-tertiary)_12%,transparent)]',
+    border: 'border-[color-mix(in_srgb,var(--md-sys-color-tertiary)_30%,transparent)]',
+    label: 'Planning...',
+    icon: Loader2,
+  },
+  ready: {
+    color: 'text-[var(--md-sys-color-primary)]',
+    bg: 'bg-[var(--md-sys-color-primary-container)]',
+    border: 'border-[var(--md-sys-color-outline-variant)]',
+    label: 'Ready',
+    icon: CheckCircle2,
+  },
 };
 
 function getStatus(status: string): PipelineStatusStyle {
@@ -229,7 +243,7 @@ export default function PipelineDetailPage() {
     refetchInterval: (query) => {
       const pipeline = query.state.data?.pipeline;
       if (!pipeline) return 5000;
-      const isActive = pipeline.status === 'running' || pipeline.status === 'pending';
+      const isActive = pipeline.status === 'running' || pipeline.status === 'pending' || pipeline.status === 'planning';
       return isActive ? 3000 : false;
     },
   });
@@ -241,7 +255,7 @@ export default function PipelineDetailPage() {
     refetchInterval: () => {
       const p = pipelineData?.pipeline;
       if (!p) return 5000;
-      return (p.status === 'running' || p.status === 'pending') ? 5000 : false;
+      return (p.status === 'running' || p.status === 'pending' || p.status === 'planning') ? 5000 : false;
     },
     enabled: !!pipelineData,
   });
@@ -271,7 +285,11 @@ export default function PipelineDetailPage() {
         eventStr === 'pipeline.step.updated' ||
         eventStr === 'pipeline.completed' ||
         eventStr === 'pipeline.step.completed' ||
-        eventStr === 'pipeline.step.failed'
+        eventStr === 'pipeline.step.failed' ||
+        eventStr === 'pipeline.ready' ||
+        eventStr === 'pipeline.planning' ||
+        eventStr === 'pipeline.planning.fallback' ||
+        eventStr === 'pipeline.failed'
       ) {
         const data = event.data as Record<string, unknown> | null;
         if (data && data.pipeline_id === pipelineId) {
@@ -469,6 +487,25 @@ export default function PipelineDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Planning indicator */}
+      {pipeline.status === 'planning' && (
+        <div
+          className={cn(
+            'rounded-[16px] p-8 text-center',
+            'bg-[color-mix(in_srgb,var(--md-sys-color-tertiary)_6%,var(--md-sys-color-surface-container))]',
+            'border border-[color-mix(in_srgb,var(--md-sys-color-tertiary)_20%,transparent)]',
+          )}
+        >
+          <Loader2 className="h-8 w-8 mx-auto mb-3 text-[var(--md-sys-color-tertiary)] animate-spin" />
+          <h3 className="text-[16px] font-semibold text-[var(--md-sys-color-on-surface)] mb-1">
+            Generating execution plan...
+          </h3>
+          <p className="text-[13px] text-[var(--md-sys-color-outline)] max-w-md mx-auto">
+            Claude Opus is analyzing your instructions and documents to create an optimized multi-sprint execution plan. This usually takes 30-90 seconds.
+          </p>
+        </div>
+      )}
 
       {/* Wave stepper */}
       {waveStepperData.length > 0 && (

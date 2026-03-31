@@ -22,7 +22,7 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=dcm-api
 LimitNOFILE=65536
-MemoryMax=512M
+MemoryMax=2G
 
 [Install]
 WantedBy=dcm.target

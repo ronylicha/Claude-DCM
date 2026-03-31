@@ -8,6 +8,7 @@ import {
   Pause,
   Activity,
   Timer,
+  Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDuration } from '@/lib/utils';
@@ -60,6 +61,20 @@ const STATUS_MAP: Record<string, StatusStyle> = {
     border: 'border-[var(--md-sys-color-outline-variant)]',
     label: 'Pending',
     icon: Clock,
+  },
+  planning: {
+    color: 'text-[var(--md-sys-color-tertiary)]',
+    bg: 'bg-[color-mix(in_srgb,var(--md-sys-color-tertiary)_12%,transparent)]',
+    border: 'border-[color-mix(in_srgb,var(--md-sys-color-tertiary)_30%,transparent)]',
+    label: 'Planning...',
+    icon: Loader2,
+  },
+  ready: {
+    color: 'text-[var(--md-sys-color-primary)]',
+    bg: 'bg-[var(--md-sys-color-primary-container)]',
+    border: 'border-[var(--md-sys-color-outline-variant)]',
+    label: 'Ready',
+    icon: CheckCircle2,
   },
 };
 
