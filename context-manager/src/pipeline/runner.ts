@@ -24,7 +24,7 @@ import type {
   DecisionContext,
   SprintReport,
 } from "./types";
-import { generatePlan } from "./planner";
+import { generatePlan, buildFallbackPlan } from "./planner";
 import { makeDecision, analyzeWaveResults } from "./decisions";
 import { getDb, publishEvent } from "../db/client";
 import { createLogger } from "../lib/logger";
@@ -174,16 +174,9 @@ async function runPlanWorker(
       message: "AI planner failed, using heuristic plan",
     });
 
-    // generatePlan already has internal fallback, but if even that fails:
-    try {
-      plan = await generatePlan(input, sessionId);
-    } catch {
-      // Last resort: mark pipeline as failed
-      await sql`UPDATE pipelines SET status = 'failed', updated_at = NOW() WHERE id = ${pipelineId}`;
-      await recordEvent(sql, pipelineId, "planning_failed", { reason: "All planning methods failed" });
-      await publishEvent("global", "pipeline.failed", { pipeline_id: pipelineId, reason: "Planning failed" });
-      return;
-    }
+    // Use instant heuristic fallback (no claude CLI, <100ms)
+    plan = buildFallbackPlan(input);
+    log.info(`Plan worker: using heuristic fallback for ${pipelineId} (${plan.waves.length} waves)`);
   }
 
   // Populate pipeline with plan, steps, sprints

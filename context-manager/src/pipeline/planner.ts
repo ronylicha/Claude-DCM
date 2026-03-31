@@ -476,7 +476,7 @@ function getMinimalCatalog(): string {
  * Build a minimal fallback plan when Opus fails or returns invalid JSON.
  * Uses the old heuristic approach as safety net.
  */
-function buildFallbackPlan(input: PipelineInput): PipelinePlan {
+export function buildFallbackPlan(input: PipelineInput): PipelinePlan {
   log.warn("Using fallback heuristic plan (Opus failed to produce valid JSON)");
 
   const plan: PipelinePlan = {
