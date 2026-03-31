@@ -1400,9 +1400,10 @@ async function recordEvent(
   data: Record<string, unknown>,
 ): Promise<void> {
   try {
+    const message = typeof data["message"] === "string" ? data["message"] : eventType;
     await sql`
-      INSERT INTO pipeline_events (pipeline_id, event_type, data)
-      VALUES (${pipelineId}, ${eventType}, ${sql.json(data as any)})
+      INSERT INTO pipeline_events (pipeline_id, event_type, message, data)
+      VALUES (${pipelineId}, ${eventType}, ${message}, ${sql.json(data as any)})
     `;
   } catch (error) {
     log.warn(`Failed to record event '${eventType}' for pipeline ${pipelineId}:`, error);
