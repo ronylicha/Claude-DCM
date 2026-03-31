@@ -204,7 +204,7 @@ export async function getActiveSessionsWithCapacity(inactivityMinutes = 15) {
         consumption_rate, predicted_exhaustion_minutes, source
       FROM agent_capacity
       ORDER BY session_id,
-        CASE WHEN source = 'statusline' THEN 0 ELSE 1 END,
+        CASE WHEN source = 'statusline' AND current_usage > 0 THEN 0 ELSE 1 END,
         current_usage DESC NULLS LAST,
         last_updated_at DESC NULLS LAST
     ) ac ON ac.session_id = s.id
