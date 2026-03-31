@@ -262,9 +262,10 @@ export async function retryPlanning(pipelineId: string): Promise<void> {
   // Reset status to planning
   await sql`UPDATE pipelines SET status = 'planning', updated_at = NOW() WHERE id = ${pipelineId}`;
 
-  // Clean any stale steps/sprints from a previous attempt
+  // Clean any stale data from previous attempt
   await sql`DELETE FROM pipeline_steps WHERE pipeline_id = ${pipelineId}`;
   await sql`DELETE FROM pipeline_sprints WHERE pipeline_id = ${pipelineId}`;
+  await sql`DELETE FROM planning_output WHERE pipeline_id = ${pipelineId}`;
 
   await recordEvent(sql, pipelineId, "planning_retry", { message: "Retrying plan generation" });
   await publishEvent("global", "pipeline.planning", { pipeline_id: pipelineId, message: "Retrying plan generation..." });
