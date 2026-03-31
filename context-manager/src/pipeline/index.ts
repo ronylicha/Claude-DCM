@@ -25,6 +25,7 @@ export {
   executeQueuedSteps,
   recoverRunningAgents,
 } from "./executor";
+export { startWorker, stopWorker } from "./worker";
 export type {
   PipelineInput,
   PipelineDocument,

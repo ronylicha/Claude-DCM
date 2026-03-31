@@ -629,10 +629,9 @@ async function startServer() {
   // Start global orchestrator (inter-project coordination)
   startOrchestrator();
 
-  // Recover any pipelines stuck in 'planning' or agents stuck in 'running' after restart
-  import("./pipeline").then(({ recoverStuckPlanners, recoverRunningAgents }) => {
-    recoverStuckPlanners().catch((err) => log.warn("Pipeline recovery check failed:", err));
-    recoverRunningAgents().catch((err) => log.warn("Agent recovery check failed:", err));
+  // Start the pipeline worker (supervises planner/executor jobs)
+  import("./pipeline").then(({ startWorker }) => {
+    startWorker();
   });
 
   // Start HTTP server with Bun

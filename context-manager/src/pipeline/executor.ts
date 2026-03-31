@@ -126,6 +126,13 @@ async function launchAgent(
   await writeFile(scriptFile, script, "utf-8");
   await Bun.spawn(["chmod", "+x", scriptFile]).exited;
 
+  // Register job in DB for worker recovery
+  const sql2 = getDb();
+  await sql2`
+    INSERT INTO pipeline_jobs (pipeline_id, step_id, job_id, job_type, tmp_dir, status)
+    VALUES (${pipelineId}, ${stepId}, ${jobId}, 'executor', ${tmpDir}, 'running')
+  `.catch(() => {});
+
   // Broadcast agent start
   await publishEvent("global", "pipeline.step.started", {
     pipeline_id: pipelineId,

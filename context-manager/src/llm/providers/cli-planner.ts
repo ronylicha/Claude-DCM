@@ -69,10 +69,20 @@ export class CLIPlannerProvider implements LLMProvider {
     );
 
     const sql = getDb();
+
+    // Register job in DB so the worker can recover it after service restart
+    if (pipelineId) {
+      await sql`
+        INSERT INTO pipeline_jobs (pipeline_id, job_id, job_type, tmp_dir, status)
+        VALUES (${pipelineId}, ${jobId}, 'planner', ${tmpDir}, 'running')
+      `.catch(() => {});
+    }
+
     let lastSize = 0;
     let chunkIndex = 0;
 
     // Poll the output file for new content + stream chunks to DB
+    // The worker.ts also polls — this is a fast-path for when the service doesn't restart
     const fullOutput = await new Promise<string>((resolve, reject) => {
       const pollInterval = setInterval(async () => {
         try {
