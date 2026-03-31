@@ -110,8 +110,8 @@ async function callClaudeHeadless(prompt: string): Promise<string> {
   log.info(`Planner job ${jobId}: launching detached claude process (prompt: ${prompt.length} chars)`);
 
   // Launch in a separate systemd scope so it survives service restarts.
-  // Falls back to nohup+setsid if systemd-run is not available.
-  const claudeCmd = `cat "${promptFile}" | claude -p --model claude-sonnet-4-6 --output-format text > "${outputFile}" 2> "${errorFile}"; echo $? > "${doneFile}"`;
+  // Use --system-prompt-file for the large prompt, -p for the trigger message.
+  const claudeCmd = `claude -p "Generate the execution plan now. Output ONLY the JSON object, no markdown fences." --system-prompt-file "${promptFile}" --model claude-sonnet-4-6 --output-format text > "${outputFile}" 2> "${errorFile}"; echo $? > "${doneFile}"`;
   const proc = Bun.spawn(
     ["systemd-run", "--user", "--scope", "--", "bash", "-c", claudeCmd],
     { stdout: "ignore", stderr: "pipe", stdin: "ignore" },
