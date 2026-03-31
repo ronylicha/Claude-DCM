@@ -1,14 +1,128 @@
 # How to Deploy DCM
 
-![Deployment](../images/deployment.png)
-
-Four methods for deploying the Distributed Context Manager, from simplest to most robust.
+Four deployment methods, from simplest to most robust. Docker Compose is the recommended approach for most setups.
 
 ---
 
-## Method 1 -- DCM CLI (recommended for development)
+## Method 1 -- Docker Compose (recommended)
 
-The `dcm` CLI script manages the full lifecycle: install, start, stop, status.
+Docker Compose brings up all five services (PostgreSQL, Redis, API, WebSocket, Dashboard) in containers with a single command.
+
+### Configure
+
+Create a `.env` file at the project root:
+
+```bash
+cd Claude-DCM
+cat > .env << 'EOF'
+DB_USER=dcm
+DB_PASSWORD=your_secure_password_here
+WS_AUTH_SECRET=your_hmac_secret_at_least_32_chars
+EOF
+```
+
+Generate the HMAC secret:
+
+```bash
+openssl rand -hex 32
+```
+
+### Start
+
+```bash
+docker compose up -d
+```
+
+### Verify
+
+```bash
+curl http://localhost:3847/health | jq .
+```
+
+Open the dashboard: http://localhost:3848
+
+### Services overview
+
+| Container | Image | Port (host:container) | Role |
+|-----------|-------|------|------|
+| `postgres` | postgres:17-alpine | 5433:5432 | Database with auto-schema init |
+| `redis` | redis:7-alpine | 6380:6379 | Pub/sub and cache |
+| `dcm-api` | Built from `context-manager/Dockerfile` | 3847:3847 | REST API + pipeline engine |
+| `dcm-ws` | Built from `context-manager/Dockerfile` | 3849:3849 | WebSocket server |
+| `dcm-dashboard` | Built from `context-dashboard/Dockerfile` | 3848:3848 | Next.js dashboard |
+
+PostgreSQL schema is applied automatically on first boot via the `docker-entrypoint-initdb.d` mount. The `schema.sql` file is idempotent and safe to re-run.
+
+The default PostgreSQL host port is `5433` (not `5432`) to avoid conflicts with a locally installed PostgreSQL. Inside the containers, PostgreSQL listens on port `5432` as usual.
+
+### Volumes
+
+| Volume | Purpose |
+|--------|---------|
+| `dcm-pgdata` | PostgreSQL data persistence |
+| `dcm-redis` | Redis data persistence |
+
+Data persists across `docker compose down` and `docker compose up`. Only `docker compose down -v` removes volume data.
+
+### Hooks with Docker
+
+Docker runs the servers in containers, but Claude Code hooks run on the host. You still need to configure them:
+
+```bash
+cd context-manager
+./dcm hooks
+```
+
+Hook scripts use `curl` to call the API at `http://127.0.0.1:3847` by default. Docker Compose maps this port to the host, so hooks work without additional configuration.
+
+### Stop
+
+```bash
+# Stop services (data persists in volumes)
+docker compose down
+
+# Stop and remove all data
+docker compose down -v
+```
+
+### Custom port mapping
+
+Override default ports via environment variables:
+
+```bash
+API_PORT=4847 WS_PORT=4849 DASHBOARD_PORT=4848 docker compose up -d
+```
+
+Note: Docker Compose uses `API_PORT` (not `PORT`) for the host-side API port mapping.
+
+### Custom host for dashboard API/WS URLs
+
+The dashboard bakes API and WebSocket URLs at build time. If the API is not on `127.0.0.1`:
+
+```bash
+DCM_HOST=192.168.1.100 docker compose up -d --build
+```
+
+### Environment variables for Docker Compose
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_USER` | `dcm` | PostgreSQL user |
+| `DB_PASSWORD` | `dcm_secret` | PostgreSQL password (change for production) |
+| `DB_NAME` | `claude_context` | Database name |
+| `DB_PORT` | `5433` | Host port for PostgreSQL |
+| `REDIS_PORT` | `6380` | Host port for Redis |
+| `API_PORT` | `3847` | Host port for API |
+| `WS_PORT` | `3849` | Host port for WebSocket |
+| `WS_AUTH_SECRET` | `dcm_ws_secret` | HMAC secret (change for production) |
+| `DASHBOARD_PORT` | `3848` | Host port for Dashboard |
+| `DCM_HOST` | `127.0.0.1` | Host address baked into dashboard build |
+
+---
+
+## Method 2 -- DCM CLI (development)
+
+The `dcm` CLI script manages the full lifecycle without containers.
 
 ### Install and start
 
@@ -50,84 +164,17 @@ For this to work, PostgreSQL must be available at boot:
 sudo systemctl enable postgresql
 ```
 
----
+### Deploy updates
 
-## Method 2 -- Docker Compose
-
-Docker Compose brings up all four services (PostgreSQL, API, WebSocket, Dashboard) in containers.
-
-### Configure
-
-Create a `.env` file at the project root:
+Pull latest code, rebuild, apply migrations, and restart:
 
 ```bash
-cd Claude-DCM
-cat > .env << 'EOF'
-DB_USER=dcm
-DB_PASSWORD=your_secure_password_here
-WS_AUTH_SECRET=$(openssl rand -hex 32)
-EOF
-```
-
-Generate the HMAC secret separately and paste it in:
-
-```bash
-openssl rand -hex 32
-```
-
-### Start
-
-```bash
-docker compose up -d
-```
-
-### Verify
-
-```bash
-curl http://localhost:3847/health | jq .
-```
-
-### Services overview
-
-| Container | Image | Port | Role |
-|-----------|-------|------|------|
-| `postgres` | postgres:16-alpine | 5432 | Database with auto-schema init |
-| `dcm-api` | oven/bun:1 (built) | 3847 | REST API |
-| `dcm-ws` | oven/bun:1 (built) | 3849 | WebSocket server |
-| `dcm-dashboard` | node:22-alpine (built) | 3848 | Next.js dashboard |
-
-PostgreSQL schema is applied automatically on first boot via the `docker-entrypoint-initdb.d` mount.
-
-### Hooks with Docker
-
-Docker only starts the servers. You still need to configure Claude Code hooks separately:
-
-```bash
-cd context-manager
-./dcm hooks
-```
-
-### Stop
-
-```bash
-# Stop services (data persists in the pgdata volume)
-docker compose down
-
-# Stop and remove all data
-docker compose down -v
-```
-
-### Custom port mapping
-
-Override default ports via environment variables:
-
-```bash
-PORT=4847 WS_PORT=4849 DASHBOARD_PORT=4848 docker compose up -d
+./dcm deploy
 ```
 
 ---
 
-## Method 3 -- Systemd (recommended for production)
+## Method 3 -- Systemd (production without Docker)
 
 Three unit files provide security hardening, memory limits, automatic restarts, and journal logging.
 
@@ -143,11 +190,9 @@ Three unit files provide security hardening, memory limits, automatic restarts, 
 
 Before copying, edit the unit files to match your system. The defaults assume:
 
-- Working directory: `/home/rony/.claude/services/context-manager`
-- User: `rony`
-- Bun binary path from nvm
-
-The dashboard unit uses `ExecStartPre=next build` to build before launch, `ExecStart=next start` for production mode, and `NODE_ENV=production`. The `MemoryMax` for the dashboard is set to 4G to accommodate the build step.
+- Working directory: the project installation path
+- User: your user account
+- Bun binary path from your Bun installation
 
 Adjust `WorkingDirectory`, `ExecStart`, `EnvironmentFile`, and `User` as needed.
 
@@ -168,7 +213,7 @@ sudo systemctl enable --now context-manager-api context-manager-ws context-dashb
 # Check status
 sudo systemctl status context-manager-api
 
-# View logs (follow mode)
+# View logs
 sudo journalctl -u context-manager-api -f
 
 # Restart one service
@@ -178,19 +223,32 @@ sudo systemctl restart context-manager-api
 sudo systemctl stop context-manager-api context-manager-ws context-dashboard
 ```
 
+### DCM supervisor integration
+
+The `dcm` CLI includes a supervisor mode that manages systemd services:
+
+```bash
+./dcm supervisor status     # Show systemd service status
+./dcm supervisor restart    # Restart all via systemd
+./dcm supervisor enable     # Enable auto-start on boot
+./dcm supervisor disable    # Disable auto-start
+./dcm supervisor reload     # Re-template and restart after update
+./dcm supervisor uninstall  # Remove supervisor completely
+```
+
 ### Security hardening
 
-The unit files include these restrictions by default:
+The unit files include:
 
 - `NoNewPrivileges=true`
 - `ProtectSystem=strict`
 - `PrivateTmp=true`
-- `NODE_ENV=production` (dashboard unit)
-- Memory limits via `MemoryMax` (4G for dashboard, 512 MB for API, 128 MB for WebSocket)
+- `NODE_ENV=production`
+- Memory limits via `MemoryMax`
 
 ---
 
-## Method 4 -- Manual
+## Method 4 -- Manual (debugging)
 
 Run each service directly for debugging or custom setups.
 
@@ -214,7 +272,7 @@ bun run src/websocket-server.ts
 cd Claude-DCM/context-dashboard
 npm install
 npm run build
-npm start   # runs next start (production mode)
+npm start
 ```
 
 ### Background mode (without systemd)
@@ -229,9 +287,9 @@ nohup bun run src/websocket-server.ts > /tmp/dcm-ws.log 2>&1 &
 
 ## Environment Variable Configuration
 
-All configuration is done through `context-manager/.env`. Bun loads it automatically at startup.
+All backend configuration is done through `context-manager/.env`. Bun loads it automatically.
 
-Copy the example file:
+Copy the example:
 
 ```bash
 cp context-manager/.env.example context-manager/.env
@@ -239,7 +297,7 @@ cp context-manager/.env.example context-manager/.env
 
 See the full [Environment Variables Reference](../reference/environment-variables.md) for every available setting.
 
-### Minimum required configuration
+### Minimum required
 
 ```bash
 DB_USER=dcm
@@ -254,20 +312,20 @@ DB_PASSWORD=strong_random_password
 WS_AUTH_SECRET=output_of_openssl_rand_hex_32
 NODE_ENV=production
 HOST=127.0.0.1
+LOG_LEVEL=warn
 ```
 
 ---
 
 ## Production Checklist
 
-Before running DCM in a production environment, verify the following:
-
 ### Database
 
 - [ ] PostgreSQL 16+ is running with `systemctl enable postgresql`
 - [ ] Database `claude_context` exists with schema applied
+- [ ] Pipeline migrations are applied (pipelines, sprints, providers, planner settings, capacity fields)
 - [ ] `DB_USER` and `DB_PASSWORD` are set in `.env`
-- [ ] Connection pooling is configured (`DB_MAX_CONNECTIONS=10` or higher)
+- [ ] Connection pooling is configured (`DB_MAX_CONNECTIONS=20` or higher)
 - [ ] Regular backups are scheduled
 
 ### Security
@@ -277,6 +335,12 @@ Before running DCM in a production environment, verify the following:
 - [ ] `HOST=127.0.0.1` (do not bind to `0.0.0.0` unless behind a reverse proxy)
 - [ ] `ALLOWED_ORIGINS` is set to your dashboard URL only
 - [ ] Firewall restricts access to ports 3847, 3848, 3849
+
+### LLM Providers
+
+- [ ] At least one LLM provider is configured for pipeline planning
+- [ ] API keys for cloud providers are set via the Settings page or API
+- [ ] CLI providers have their respective CLIs installed and authenticated
 
 ### Monitoring
 
@@ -291,29 +355,7 @@ Before running DCM in a production environment, verify the following:
 
 ---
 
-## How to Update / Upgrade
-
-### CLI or manual deployment
-
-```bash
-cd Claude-DCM
-
-# Pull latest changes
-git pull origin main
-
-# Update dependencies
-cd context-manager
-bun install
-
-# Apply any new migrations
-psql -U dcm -d claude_context -h 127.0.0.1 -f src/db/schema.sql
-
-# Restart services
-./dcm restart
-
-# Re-install hooks (picks up new hook scripts)
-./dcm hooks
-```
+## How to Update
 
 ### Docker deployment
 
@@ -327,6 +369,34 @@ docker compose build --no-cache
 docker compose up -d
 ```
 
+### CLI or manual deployment
+
+```bash
+cd Claude-DCM/context-manager
+
+# One-command update
+./dcm deploy
+```
+
+Or manually:
+
+```bash
+cd Claude-DCM
+git pull origin main
+
+cd context-manager
+bun install
+
+# Apply schema and migrations (all are idempotent)
+psql -U dcm -d claude_context -h 127.0.0.1 -f src/db/schema.sql
+
+# Restart services
+./dcm restart
+
+# Re-install hooks
+./dcm hooks
+```
+
 ### Systemd deployment
 
 ```bash
@@ -335,31 +405,30 @@ git pull origin main
 cd context-manager
 bun install
 
-# Apply schema
 psql -U dcm -d claude_context -h 127.0.0.1 -f src/db/schema.sql
 
-# Restart services
 sudo systemctl restart context-manager-api context-manager-ws context-dashboard
 ```
 
 ### Database migrations
 
-New schema additions use `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`, making the schema file idempotent. Re-running `schema.sql` is safe:
+The main `schema.sql` uses `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`, making it idempotent and safe to re-run.
+
+For specific migrations, check the `src/db/` directory:
 
 ```bash
-psql -U dcm -d claude_context -h 127.0.0.1 -f context-manager/src/db/schema.sql
-```
-
-For specific migrations (added between releases), check the `src/db/migrations/` directory:
-
-```bash
+ls context-manager/src/db/migration-*.sql
 ls context-manager/src/db/migrations/
 ```
 
-Apply individual migrations in order:
+Apply migrations in order:
 
 ```bash
-psql -U dcm -d claude_context -h 127.0.0.1 -f context-manager/src/db/migrations/003_proactive_triage.sql
+psql -U dcm -d claude_context -h 127.0.0.1 -f context-manager/src/db/migration-pipelines.sql
+psql -U dcm -d claude_context -h 127.0.0.1 -f context-manager/src/db/migration-pipeline-sprints.sql
+psql -U dcm -d claude_context -h 127.0.0.1 -f context-manager/src/db/migration-llm-providers.sql
+psql -U dcm -d claude_context -h 127.0.0.1 -f context-manager/src/db/migration-planner-settings.sql
+psql -U dcm -d claude_context -h 127.0.0.1 -f context-manager/src/db/migration-capacity-fields.sql
 ```
 
 ---
@@ -375,13 +444,13 @@ psql -U dcm -d claude_context -h 127.0.0.1 -f context-manager/src/db/migrations/
 ### Step 2 -- Stop services
 
 ```bash
-# CLI mode
-./dcm stop
-
-# Docker mode
+# Docker
 docker compose down -v
 
-# Systemd mode
+# CLI
+./dcm stop
+
+# Systemd
 sudo systemctl stop context-manager-api context-manager-ws context-dashboard
 sudo systemctl disable context-manager-api context-manager-ws context-dashboard
 sudo rm /etc/systemd/system/context-manager-*.service /etc/systemd/system/context-dashboard.service

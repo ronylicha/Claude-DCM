@@ -1,8 +1,6 @@
 # Environment Variables Reference
 
-![Environment Variables](../images/environment-variables.png)
-
-Complete list of environment variables used by DCM. All configuration is done through the `context-manager/.env` file. Bun loads it automatically at startup.
+Complete list of environment variables used by DCM. All backend configuration is done through the `context-manager/.env` file. Bun loads it automatically at startup.
 
 Create the file from the template:
 
@@ -30,10 +28,10 @@ cp context-manager/.env.example context-manager/.env
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `HOST` | No | `127.0.0.1` | Bind address for the API server. Use `0.0.0.0` to expose externally. |
+| `HOST` | No | `127.0.0.1` | Bind address for the API server. Use `0.0.0.0` to expose externally (Docker does this automatically). |
 | `PORT` | No | `3847` | API server listening port |
 | `NODE_ENV` | No | `production` | Environment mode. Set to `production` to enforce WebSocket auth and stricter CORS. |
-| `ALLOWED_ORIGINS` | No | `http://localhost:3848,http://127.0.0.1:3848` | Comma-separated list of allowed CORS origins. Set to `*` to allow all (not recommended for production). |
+| `ALLOWED_ORIGINS` | No | `http://localhost:3848,http://127.0.0.1:3848` | Comma-separated list of allowed CORS origins. |
 
 ---
 
@@ -42,7 +40,15 @@ cp context-manager/.env.example context-manager/.env
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `WS_PORT` | No | `3849` | WebSocket server listening port |
-| `WS_AUTH_SECRET` | Production | -- | HMAC-SHA256 secret for WebSocket token authentication. Required when `NODE_ENV=production`. Generate with `openssl rand -hex 32`. |
+| `WS_AUTH_SECRET` | Production | -- | HMAC-SHA256 secret for WebSocket token authentication. Required when `NODE_ENV=production`. Minimum 32 characters. Generate with `openssl rand -hex 32`. |
+
+---
+
+## Redis
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `REDIS_URL` | No | -- | Redis connection URL (e.g., `redis://localhost:6379`). Used when Redis is available for pub/sub and caching. Docker Compose sets this automatically. |
 
 ---
 
@@ -61,6 +67,10 @@ cp context-manager/.env.example context-manager/.env
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `CLEANUP_INTERVAL_MS` | No | `60000` | Cleanup job interval in milliseconds (60 seconds). |
+| `CLEANUP_STALE_HOURS` | No | `0.5` | How old a session/agent must be before eligible for cleanup (hours). |
+| `CLEANUP_INACTIVE_MINUTES` | No | `10` | How long without activity before a session is considered inactive (minutes). |
+| `CLEANUP_SNAPSHOT_MAX_HOURS` | No | `24` | Maximum age for compact snapshots (hours). |
+| `CLEANUP_READ_MSG_MAX_HOURS` | No | `24` | Maximum age for read broadcast messages (hours). |
 | `CLEANUP_MAX_AGE_ACTIONS_DAYS` | No | `30` | Maximum age for actions before cleanup (days). |
 | `CLEANUP_MAX_AGE_MESSAGES_DAYS` | No | `7` | Maximum age for expired messages before cleanup (days). |
 
@@ -84,11 +94,13 @@ These variables are used by the `docker-compose.yml` at the project root. They a
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DB_USER` | No | `dcm` | PostgreSQL user for the containerized database |
-| `DB_PASSWORD` | **Yes** | -- | PostgreSQL password (required, no default) |
-| `DB_PORT` | No | `5432` | Host port mapped to the PostgreSQL container |
-| `PORT` | No | `3847` | Host port mapped to the API container |
+| `DB_PASSWORD` | **Yes** | `dcm_secret` | PostgreSQL password (change the default for production) |
+| `DB_NAME` | No | `claude_context` | Database name |
+| `DB_PORT` | No | `5433` | Host port mapped to the PostgreSQL container. Defaults to 5433 to avoid conflicts with local PostgreSQL. |
+| `REDIS_PORT` | No | `6380` | Host port mapped to the Redis container. Defaults to 6380 to avoid conflicts with local Redis. |
+| `API_PORT` | No | `3847` | Host port mapped to the API container |
 | `WS_PORT` | No | `3849` | Host port mapped to the WebSocket container |
-| `WS_AUTH_SECRET` | No | `change_me` | HMAC secret (change this for production) |
+| `WS_AUTH_SECRET` | No | `dcm_ws_secret` | HMAC secret for WebSocket auth (change for production) |
 | `DCM_HOST` | No | `127.0.0.1` | Hostname baked into the dashboard build for API/WS URLs |
 | `DASHBOARD_PORT` | No | `3848` | Host port mapped to the dashboard container |
 
@@ -105,16 +117,43 @@ These variables are used internally by the bash hook scripts. They do not need t
 
 ---
 
+## LLM Provider Configuration
+
+LLM providers are configured through the API or dashboard, not environment variables. API keys are stored encrypted in the `llm_providers` database table.
+
+Configure via API:
+
+```bash
+# Set API key for a cloud provider
+curl -X POST http://127.0.0.1:3847/api/settings/providers/minimax/configure \
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "your_api_key"}'
+
+# Set the active planner provider
+curl -X POST http://127.0.0.1:3847/api/settings/planner \
+  -H "Content-Type: application/json" \
+  -d '{"provider_key": "claude-cli"}'
+```
+
+Or use the Settings page in the dashboard.
+
+CLI providers (claude-cli, codex-cli, gemini-cli) do not need API keys -- they authenticate through their respective CLI login flows.
+
+---
+
 ## Ports Summary
 
-| Port | Service | Variable | Protocol |
-|------|---------|----------|----------|
-| 3847 | REST API | `PORT` | HTTP |
-| 3848 | Dashboard | `DASHBOARD_PORT` | HTTP |
-| 3849 | WebSocket | `WS_PORT` | WS |
-| 5432 | PostgreSQL | `DB_PORT` | TCP |
+| Port | Service | Variable | Protocol | Docker default |
+|------|---------|----------|----------|---------------|
+| 3847 | REST API | `PORT` / `API_PORT` | HTTP | 3847 |
+| 3848 | Dashboard | `DASHBOARD_PORT` | HTTP | 3848 |
+| 3849 | WebSocket | `WS_PORT` | WS | 3849 |
+| 5432 | PostgreSQL | `DB_PORT` | TCP | 5433 (host) |
+| 6379 | Redis | `REDIS_PORT` | TCP | 6380 (host) |
 
-All services bind to `127.0.0.1` by default. Change `HOST` to `0.0.0.0` to expose externally (Docker Compose does this automatically for containerized services).
+All services bind to `127.0.0.1` by default. Change `HOST` to `0.0.0.0` to expose externally. Docker Compose does this automatically for containerized services.
+
+Docker Compose maps PostgreSQL and Redis to non-standard host ports (5433 and 6380) by default to avoid conflicts with locally installed instances.
 
 ---
 
@@ -126,6 +165,8 @@ For a basic local development setup, only two variables are required:
 DB_USER=dcm
 DB_PASSWORD=your_password
 ```
+
+---
 
 ## Recommended production configuration
 

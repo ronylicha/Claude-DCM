@@ -4,7 +4,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="2.2.0"
+VERSION="2.3.0"
 
 # Colors
 RED='\033[0;31m'
@@ -65,6 +65,12 @@ usage() {
     echo "  snapshot    Trigger a manual context snapshot"
     echo "  context     Get context brief for an agent"
     echo ""
+    echo "Docker:"
+    echo "  docker:up     Start DCM with Docker Compose"
+    echo "  docker:down   Stop Docker services"
+    echo "  docker:logs   Show Docker logs"
+    echo "  docker:reset  Remove volumes and rebuild (DESTRUCTIVE)"
+    echo ""
     echo "Examples:"
     echo "  dcm install          # First-time setup (includes supervisor)"
     echo "  dcm start            # Start everything"
@@ -122,9 +128,36 @@ cmd_install() {
         echo "  Skipped (setup-db.sh not found)"
     fi
 
+    # Apply all migrations
+    for migration in "$SCRIPT_DIR"/src/db/migration-*.sql; do
+        if [[ -f "$migration" ]]; then
+            psql -U "${DB_USER:-rony}" -d "${DB_NAME:-claude_context}" -f "$migration" > /dev/null 2>&1
+        fi
+    done
+    echo -e "  ${GREEN}All migrations applied${NC}"
+
     # Step 5: Hooks
     echo -e "${YELLOW}[5/6]${NC} Installing Claude Code hooks..."
     bash "$SCRIPT_DIR/scripts/setup-hooks.sh" 2>&1 | sed 's/^/  /'
+
+    # Step 5b: Build skill index
+    echo -e "${YELLOW}[5b/6]${NC} Building skill index..."
+    if [[ -f "$SCRIPT_DIR/hooks/skill-advisor/build-index.ts" ]]; then
+        cd "$SCRIPT_DIR"
+        bun run hooks/skill-advisor/build-index.ts 2>/dev/null && echo -e "  ${GREEN}Skill index built${NC}" || echo -e "  ${YELLOW}Skill index build skipped${NC}"
+    fi
+
+    # Step 5c: Import agent registry
+    echo -e "${YELLOW}[5c/6]${NC} Importing agent registry..."
+    local catalog_count=$(curl -s "http://127.0.0.1:${API_PORT:-3847}/api/registry/catalog?type=agents" 2>/dev/null | jq '.agents | length' 2>/dev/null || echo "0")
+    if [[ "$catalog_count" -gt 0 ]]; then
+        curl -s -X POST "http://127.0.0.1:${API_PORT:-3847}/api/registry/import" \
+            -H "Content-Type: application/json" \
+            -d "{\"source\": \"catalog\"}" 2>/dev/null
+        echo -e "  ${GREEN}${catalog_count} agents imported from catalog${NC}"
+    else
+        echo -e "  ${YELLOW}Agent registry import skipped (API not running)${NC}"
+    fi
 
     # Step 6: Supervisor (systemd user services)
     echo -e "${YELLOW}[6/6]${NC} Installing supervisor (auto-start on boot)..."
@@ -443,6 +476,50 @@ cmd_db_reset() {
     fi
 }
 
+cmd_docker_up() {
+    local project_root="$(dirname "$SCRIPT_DIR")"
+    echo -e "${BLUE}Starting DCM with Docker Compose...${NC}"
+
+    # Create .env if not exists
+    if [[ ! -f "$project_root/.env" ]]; then
+        cp "$project_root/.env.example" "$project_root/.env" 2>/dev/null || true
+        echo -e "  ${YELLOW}Created .env from .env.example${NC}"
+    fi
+
+    cd "$project_root"
+    docker compose up -d --build
+
+    echo ""
+    echo -e "  API:       http://127.0.0.1:${API_PORT:-3847}"
+    echo -e "  WebSocket: ws://127.0.0.1:${WS_PORT:-3849}"
+    echo -e "  Dashboard: http://127.0.0.1:${DASHBOARD_PORT:-3848}"
+    echo -e "  Postgres:  127.0.0.1:${DB_PORT:-5433}"
+    echo -e "  Redis:     127.0.0.1:${REDIS_PORT:-6380}"
+}
+
+cmd_docker_down() {
+    local project_root="$(dirname "$SCRIPT_DIR")"
+    cd "$project_root"
+    docker compose down
+}
+
+cmd_docker_logs() {
+    local project_root="$(dirname "$SCRIPT_DIR")"
+    cd "$project_root"
+    docker compose logs -f --tail=50
+}
+
+cmd_docker_reset() {
+    local project_root="$(dirname "$SCRIPT_DIR")"
+    cd "$project_root"
+    echo -e "${RED}WARNING: This will delete all DCM data!${NC}"
+    read -p "Are you sure? (y/N) " confirm
+    [[ "$confirm" == "y" ]] || return
+    docker compose down -v
+    docker compose build --no-cache
+    echo -e "${GREEN}Reset complete. Run: dcm docker:up${NC}"
+}
+
 # Route commands
 cmd_deploy() {
     local project_root="$(dirname "$SCRIPT_DIR")"
@@ -529,6 +606,10 @@ case "${1:-}" in
     snapshot)   shift; cmd_snapshot "$@" ;;
     context)    shift; cmd_context "$@" ;;
     deploy)     cmd_deploy ;;
+    docker:up)    cmd_docker_up ;;
+    docker:down)  cmd_docker_down ;;
+    docker:logs)  cmd_docker_logs ;;
+    docker:reset) cmd_docker_reset ;;
     db:setup)   cmd_db_setup ;;
     db:reset)   cmd_db_reset ;;
     version|-v|--version) echo "DCM v${VERSION}" ;;

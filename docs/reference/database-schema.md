@@ -1,17 +1,15 @@
 # Database Schema Reference
 
-![Database Schema](../images/database-schema.png)
-
 Complete schema for the DCM PostgreSQL database (`claude_context`).
 
-**PostgreSQL version:** 16+
+**PostgreSQL version:** 16+ (Docker ships with 17)
 **Extension required:** `pgcrypto` (provides `gen_random_uuid()`)
 **Schema file:** `context-manager/src/db/schema.sql`
-**Schema version:** 4.0.0
+**Schema version:** 5.5.0
 
 ---
 
-## Tables
+## Core Tables
 
 ### projects
 
@@ -80,25 +78,6 @@ Waves of objectives for each request. Each task_list represents one execution wa
 
 ---
 
-### orchestration_batches
-
-Batches of tasks submitted together for parallel execution.
-
-| Column | Type | Constraints | Default | Description |
-|--------|------|-------------|---------|-------------|
-| `id` | UUID | PRIMARY KEY | `gen_random_uuid()` | Unique identifier |
-| `session_id` | TEXT | NOT NULL | -- | Associated session |
-| `wave_number` | INTEGER | NOT NULL, CHECK >= 0 | -- | Wave number |
-| `status` | TEXT | -- | `'pending'` | Status: pending, running, completed, failed |
-| `total_tasks` | INTEGER | -- | 0 | Total tasks in batch |
-| `completed_tasks` | INTEGER | -- | 0 | Completed tasks |
-| `failed_tasks` | INTEGER | -- | 0 | Failed tasks |
-| `synthesis` | JSONB | -- | NULL | Aggregated results |
-| `created_at` | TIMESTAMPTZ | -- | `NOW()` | Creation timestamp |
-| `completed_at` | TIMESTAMPTZ | -- | NULL | Completion timestamp |
-
----
-
 ### subtasks
 
 Individual agent assignments within a wave. Each subtask represents one agent's piece of work.
@@ -126,7 +105,7 @@ Individual agent assignments within a wave. Each subtask represents one agent's 
 
 ### actions
 
-Tool invocations. Every Read, Write, Bash, Task, Skill, and MCP call is recorded here.
+Tool invocations. Every Read, Write, Bash, Task, Skill, and MCP call is recorded.
 
 | Column | Type | Constraints | Default | Description |
 |--------|------|-------------|---------|-------------|
@@ -145,22 +124,7 @@ Tool invocations. Every Read, Write, Bash, Task, Skill, and MCP call is recorded
 
 ---
 
-### keyword_tool_scores
-
-Routing intelligence. Tracks which tools work best for which keywords, refined by feedback.
-
-| Column | Type | Constraints | Default | Description |
-|--------|------|-------------|---------|-------------|
-| `id` | SERIAL | PRIMARY KEY | auto-increment | Unique identifier |
-| `keyword` | TEXT | NOT NULL, UNIQUE(keyword, tool_name) | -- | Search keyword |
-| `tool_name` | TEXT | NOT NULL | -- | Tool name |
-| `tool_type` | TEXT | NOT NULL | -- | Tool type |
-| `score` | REAL | -- | 1.0 | Relevance score |
-| `usage_count` | INTEGER | -- | 1 | Times used |
-| `success_count` | INTEGER | -- | 1 | Successful uses |
-| `last_used` | TIMESTAMPTZ | -- | `NOW()` | Last usage time |
-
----
+## Communication Tables
 
 ### agent_messages
 
@@ -178,7 +142,7 @@ Inter-agent pub/sub messaging.
 | `priority` | INTEGER | NOT NULL | 0 | Priority level |
 | `read_by` | TEXT[] | -- | `'{}'` | Agent IDs that have read this message |
 | `created_at` | TIMESTAMPTZ | -- | `NOW()` | Creation timestamp |
-| `expires_at` | TIMESTAMPTZ | -- | NULL | Expiration time (cleanup removes expired) |
+| `expires_at` | TIMESTAMPTZ | -- | NULL | Expiration time |
 
 ---
 
@@ -202,6 +166,64 @@ Agent state snapshots for recovery after compaction.
 
 ---
 
+## Orchestration Tables
+
+### orchestration_batches
+
+Batches of tasks submitted together for parallel execution.
+
+| Column | Type | Constraints | Default | Description |
+|--------|------|-------------|---------|-------------|
+| `id` | UUID | PRIMARY KEY | `gen_random_uuid()` | Unique identifier |
+| `session_id` | TEXT | NOT NULL | -- | Associated session |
+| `wave_number` | INTEGER | NOT NULL, CHECK >= 0 | -- | Wave number |
+| `status` | TEXT | -- | `'pending'` | Status: pending, running, completed, failed |
+| `total_tasks` | INTEGER | -- | 0 | Total tasks in batch |
+| `completed_tasks` | INTEGER | -- | 0 | Completed tasks |
+| `failed_tasks` | INTEGER | -- | 0 | Failed tasks |
+| `synthesis` | JSONB | -- | NULL | Aggregated results |
+| `created_at` | TIMESTAMPTZ | -- | `NOW()` | Creation timestamp |
+| `completed_at` | TIMESTAMPTZ | -- | NULL | Completion timestamp |
+
+---
+
+### wave_states
+
+Wave execution state tracking for orchestration.
+
+| Column | Type | Constraints | Default | Description |
+|--------|------|-------------|---------|-------------|
+| `id` | UUID | PRIMARY KEY | `gen_random_uuid()` | Unique identifier |
+| `session_id` | TEXT | NOT NULL, UNIQUE(session_id, wave_number) | -- | Session ID |
+| `wave_number` | INTEGER | NOT NULL, CHECK >= 0 | -- | Wave sequence number |
+| `status` | TEXT | -- | `'pending'` | Status: pending, running, completed |
+| `total_tasks` | INTEGER | -- | 0 | Total tasks in this wave |
+| `completed_tasks` | INTEGER | -- | 0 | Completed tasks |
+| `failed_tasks` | INTEGER | -- | 0 | Failed tasks |
+| `started_at` | TIMESTAMPTZ | -- | NULL | Start timestamp |
+| `completed_at` | TIMESTAMPTZ | -- | NULL | Completion timestamp |
+
+---
+
+## Intelligence Tables
+
+### keyword_tool_scores
+
+Routing intelligence. Tracks which tools work best for which keywords, refined by feedback.
+
+| Column | Type | Constraints | Default | Description |
+|--------|------|-------------|---------|-------------|
+| `id` | SERIAL | PRIMARY KEY | auto-increment | Unique identifier |
+| `keyword` | TEXT | NOT NULL, UNIQUE(keyword, tool_name) | -- | Search keyword |
+| `tool_name` | TEXT | NOT NULL | -- | Tool name |
+| `tool_type` | TEXT | NOT NULL | -- | Tool type |
+| `score` | REAL | -- | 1.0 | Relevance score [0.1, 5.0] |
+| `usage_count` | INTEGER | -- | 1 | Times used |
+| `success_count` | INTEGER | -- | 1 | Successful uses |
+| `last_used` | TIMESTAMPTZ | -- | `NOW()` | Last usage time |
+
+---
+
 ### agent_registry
 
 Registry of available agent types with their scopes and constraints.
@@ -220,6 +242,36 @@ Registry of available agent types with their scopes and constraints.
 | `created_at` | TIMESTAMPTZ | -- | `NOW()` | Registration timestamp |
 
 ---
+
+## Skill Gate Tables
+
+### session_skills
+
+Skills loaded per session for gate enforcement.
+
+| Column | Type | Constraints | Default | Description |
+|--------|------|-------------|---------|-------------|
+| `id` | UUID | PRIMARY KEY | `gen_random_uuid()` | Unique identifier |
+| `session_id` | TEXT | NOT NULL | -- | Session ID |
+| `skill_name` | TEXT | NOT NULL | -- | Loaded skill name |
+| `loaded_at` | TIMESTAMPTZ | -- | `NOW()` | When the skill was loaded |
+
+---
+
+### session_workflow_state
+
+Workflow state tracking per session (task sizing, wave progress, advisor recommendations).
+
+| Column | Type | Constraints | Default | Description |
+|--------|------|-------------|---------|-------------|
+| `id` | UUID | PRIMARY KEY | `gen_random_uuid()` | Unique identifier |
+| `session_id` | TEXT | NOT NULL, UNIQUE | -- | Session ID |
+| `state` | JSONB | NOT NULL | `'{}'` | Workflow state data |
+| `updated_at` | TIMESTAMPTZ | -- | `NOW()` | Last update |
+
+---
+
+## Token Tracking Tables
 
 ### agent_capacity
 
@@ -243,6 +295,16 @@ Context window capacity tracking per agent.
 | `model_id` | TEXT | -- | NULL | Claude model identifier |
 | `source` | TEXT | -- | `'estimated'` | Data source: estimated or statusline |
 | `last_statusline_at` | TIMESTAMPTZ | -- | NULL | Last statusline data timestamp |
+| `model_name` | TEXT | -- | NULL | Model display name |
+| `version` | TEXT | -- | NULL | Version string |
+| `cache_creation_tokens` | BIGINT | -- | 0 | Cache creation tokens |
+| `cache_read_tokens` | BIGINT | -- | 0 | Cache read tokens |
+| `cost_usd` | DOUBLE PRECISION | -- | 0 | Cost in USD |
+| `duration_ms` | BIGINT | -- | 0 | Total duration |
+| `api_duration_ms` | BIGINT | -- | 0 | API call duration |
+| `lines_added` | INTEGER | -- | 0 | Lines of code added |
+| `lines_removed` | INTEGER | -- | 0 | Lines of code removed |
+| `exceeds_200k` | BOOLEAN | -- | false | Whether token usage exceeds 200k |
 
 ---
 
@@ -263,27 +325,24 @@ Per-tool-call token consumption records.
 
 ---
 
-### wave_states
+### calibration_ratios
 
-Wave execution state tracking for orchestration.
+Calibration data between real token counts (from statusline) and estimated counts (from hooks).
 
 | Column | Type | Constraints | Default | Description |
 |--------|------|-------------|---------|-------------|
 | `id` | UUID | PRIMARY KEY | `gen_random_uuid()` | Unique identifier |
-| `session_id` | TEXT | NOT NULL, UNIQUE(session_id, wave_number) | -- | Session ID |
-| `wave_number` | INTEGER | NOT NULL, CHECK >= 0 | -- | Wave sequence number |
-| `status` | TEXT | -- | `'pending'` | Status: pending, running, completed |
-| `total_tasks` | INTEGER | -- | 0 | Total tasks in this wave |
-| `completed_tasks` | INTEGER | -- | 0 | Completed tasks |
-| `failed_tasks` | INTEGER | -- | 0 | Failed tasks |
-| `started_at` | TIMESTAMPTZ | -- | NULL | Start timestamp |
-| `completed_at` | TIMESTAMPTZ | -- | NULL | Completion timestamp |
+| `session_id` | TEXT | NOT NULL | -- | Session ID |
+| `ratio` | FLOAT | NOT NULL | 1.0 | Real/estimated ratio |
+| `real_tokens` | BIGINT | NOT NULL | -- | Real token count |
+| `estimated_tokens` | BIGINT | NOT NULL | -- | Estimated token count |
+| `calculated_at` | TIMESTAMPTZ | -- | `NOW()` | Calculation timestamp |
 
 ---
 
 ### preemptive_summaries
 
-Pre-generated context summaries produced before compaction by headless agents.
+Pre-generated context summaries produced before compaction.
 
 | Column | Type | Constraints | Default | Description |
 |--------|------|-------------|---------|-------------|
@@ -299,20 +358,175 @@ Pre-generated context summaries produced before compaction by headless agents.
 
 ---
 
-### calibration_ratios
+## Pipeline Tables
 
-Calibration data between real token counts (from statusline) and estimated counts (from hooks).
+### pipelines
+
+Execution pipelines with auto-generated multi-wave plans.
 
 | Column | Type | Constraints | Default | Description |
 |--------|------|-------------|---------|-------------|
 | `id` | UUID | PRIMARY KEY | `gen_random_uuid()` | Unique identifier |
-| `session_id` | TEXT | NOT NULL | -- | Session ID |
-| `ratio` | FLOAT | NOT NULL | 1.0 | Real/estimated ratio |
-| `real_tokens` | BIGINT | NOT NULL | -- | Real token count |
-| `estimated_tokens` | BIGINT | NOT NULL | -- | Estimated token count |
-| `calculated_at` | TIMESTAMPTZ | -- | `NOW()` | Calculation timestamp |
+| `session_id` | TEXT | NOT NULL | -- | Associated session |
+| `name` | TEXT | -- | NULL | Pipeline name |
+| `status` | TEXT | NOT NULL, CHECK | `'planning'` | planning, ready, running, paused, completed, failed, cancelled |
+| `input` | JSONB | NOT NULL | -- | Pipeline input (instructions, documents, context) |
+| `plan` | JSONB | -- | NULL | Generated execution plan (waves, steps, sprints) |
+| `current_wave` | INTEGER | NOT NULL | 0 | Current executing wave |
+| `config` | JSONB | NOT NULL | `'{"max_retries":2,"strategy":"adaptive","parallel_limit":5}'` | Pipeline configuration |
+| `synthesis` | JSONB | -- | NULL | Final synthesis report |
+| `workspace_path` | TEXT | -- | NULL | Workspace directory path |
+| `git_repo_url` | TEXT | -- | NULL | Git repository URL |
+| `git_branch` | TEXT | -- | `'main'` | Git branch |
+| `git_initialized` | BOOLEAN | NOT NULL | false | Whether git is initialized |
+| `created_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Creation timestamp |
+| `started_at` | TIMESTAMPTZ | -- | NULL | Start timestamp |
+| `completed_at` | TIMESTAMPTZ | -- | NULL | Completion timestamp |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Last update (auto-trigger) |
+
+**Trigger:** `update_pipelines_updated_at` sets `updated_at = NOW()` on every UPDATE.
 
 ---
+
+### pipeline_steps
+
+Individual agent steps within pipeline waves.
+
+| Column | Type | Constraints | Default | Description |
+|--------|------|-------------|---------|-------------|
+| `id` | UUID | PRIMARY KEY | `gen_random_uuid()` | Unique identifier |
+| `pipeline_id` | UUID | NOT NULL, FK -> pipelines(id) ON DELETE CASCADE | -- | Parent pipeline |
+| `wave_number` | INTEGER | NOT NULL, CHECK >= 0 | -- | Wave number |
+| `step_order` | INTEGER | NOT NULL, CHECK >= 0 | -- | Order within wave |
+| `agent_type` | TEXT | NOT NULL | -- | Agent type to use |
+| `description` | TEXT | -- | NULL | Step description |
+| `skills` | TEXT[] | -- | NULL | Skills to load |
+| `prompt` | TEXT | -- | NULL | Crafted prompt for the agent |
+| `model` | TEXT | NOT NULL | `'sonnet'` | LLM model to use |
+| `max_turns` | INTEGER | NOT NULL | 10 | Maximum agent turns |
+| `status` | TEXT | NOT NULL, CHECK | `'pending'` | pending, queued, running, completed, failed, retrying, skipped, blocked |
+| `subtask_id` | UUID | FK -> subtasks(id) ON DELETE SET NULL | NULL | Linked subtask |
+| `result` | JSONB | -- | NULL | Step result |
+| `error` | TEXT | -- | NULL | Error message if failed |
+| `retry_count` | INTEGER | NOT NULL | 0 | Retry attempts |
+| `retry_strategy` | TEXT | NOT NULL | `'enhanced'` | same, enhanced, alternate, decompose |
+| `max_retries` | INTEGER | NOT NULL | 2 | Max retries allowed |
+| `started_at` | TIMESTAMPTZ | -- | NULL | Start timestamp |
+| `completed_at` | TIMESTAMPTZ | -- | NULL | Completion timestamp |
+| `duration_ms` | INTEGER | -- | NULL | Execution duration |
+| `created_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Creation timestamp |
+
+**Unique constraint:** `(pipeline_id, wave_number, step_order)`
+
+---
+
+### pipeline_events
+
+Timeline events for pipeline execution history.
+
+| Column | Type | Constraints | Default | Description |
+|--------|------|-------------|---------|-------------|
+| `id` | UUID | PRIMARY KEY | `gen_random_uuid()` | Unique identifier |
+| `pipeline_id` | UUID | NOT NULL, FK -> pipelines(id) ON DELETE CASCADE | -- | Parent pipeline |
+| `event_type` | TEXT | NOT NULL | -- | Event type (pipeline_start, wave_start, step_complete, etc.) |
+| `wave_number` | INTEGER | -- | NULL | Wave number |
+| `step_order` | INTEGER | -- | NULL | Step order |
+| `agent_type` | TEXT | -- | NULL | Agent type |
+| `message` | TEXT | NOT NULL | -- | Event message |
+| `data` | JSONB | NOT NULL | `'{}'` | Event data |
+| `created_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Timestamp |
+
+---
+
+### pipeline_sprints
+
+Sprint tracking within pipelines with git integration.
+
+| Column | Type | Constraints | Default | Description |
+|--------|------|-------------|---------|-------------|
+| `id` | UUID | PRIMARY KEY | `gen_random_uuid()` | Unique identifier |
+| `pipeline_id` | UUID | NOT NULL, FK -> pipelines(id) ON DELETE CASCADE | -- | Parent pipeline |
+| `sprint_number` | INTEGER | NOT NULL | -- | Sprint number (1-indexed) |
+| `name` | TEXT | NOT NULL | -- | Sprint name |
+| `objectives` | TEXT[] | NOT NULL | `'{}'` | Sprint objectives |
+| `wave_start` | INTEGER | NOT NULL, CHECK >= 0 | -- | First wave in sprint |
+| `wave_end` | INTEGER | NOT NULL, CHECK >= wave_start | -- | Last wave in sprint |
+| `status` | TEXT | NOT NULL, CHECK | `'pending'` | pending, running, completed, failed, skipped |
+| `commit_sha` | TEXT | -- | NULL | Git commit SHA |
+| `pr_url` | TEXT | -- | NULL | Pull request URL |
+| `report` | JSONB | -- | NULL | Sprint report (objectives met, files changed, duration) |
+| `started_at` | TIMESTAMPTZ | -- | NULL | Start timestamp |
+| `completed_at` | TIMESTAMPTZ | -- | NULL | Completion timestamp |
+| `created_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Creation timestamp |
+
+**Unique constraint:** `(pipeline_id, sprint_number)`
+
+---
+
+## LLM Provider Tables
+
+### llm_providers
+
+LLM provider configurations with encrypted API keys.
+
+| Column | Type | Constraints | Default | Description |
+|--------|------|-------------|---------|-------------|
+| `id` | UUID | PRIMARY KEY | `gen_random_uuid()` | Unique identifier |
+| `provider_key` | TEXT | NOT NULL, UNIQUE | -- | Provider identifier (minimax, zhipuai, moonshot, claude-cli, etc.) |
+| `display_name` | TEXT | NOT NULL | -- | Human-readable name |
+| `base_url` | TEXT | NOT NULL | -- | API base URL |
+| `endpoint_path` | TEXT | NOT NULL | `'/chat/completions'` | API endpoint path |
+| `default_model` | TEXT | NOT NULL | -- | Default model to use |
+| `available_models` | TEXT[] | NOT NULL | `'{}'` | Available models |
+| `api_key_encrypted` | TEXT | -- | NULL | Encrypted API key |
+| `is_active` | BOOLEAN | NOT NULL | false | Whether provider is active |
+| `is_default` | BOOLEAN | NOT NULL | false | Whether provider is the default |
+| `config` | JSONB | NOT NULL | `'{}'` | Provider-specific configuration |
+| `can_plan` | BOOLEAN | NOT NULL | true | Whether provider can be used for planning |
+| `created_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Creation timestamp |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Last update (auto-trigger) |
+
+**Trigger:** `update_llm_providers_updated_at` sets `updated_at = NOW()` on every UPDATE.
+
+**Seeded providers:** minimax, zhipuai, moonshot (cloud APIs), claude-cli, codex-cli, gemini-cli (local CLIs).
+
+---
+
+### planning_output
+
+Live streaming chunks from LLM planner output.
+
+| Column | Type | Constraints | Default | Description |
+|--------|------|-------------|---------|-------------|
+| `id` | UUID | PRIMARY KEY | `gen_random_uuid()` | Unique identifier |
+| `pipeline_id` | UUID | NOT NULL, FK -> pipelines(id) ON DELETE CASCADE | -- | Parent pipeline |
+| `chunk` | TEXT | NOT NULL | -- | Output chunk text |
+| `chunk_index` | INTEGER | NOT NULL | 0 | Chunk order |
+| `created_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Timestamp |
+
+---
+
+## Settings Tables
+
+### dcm_settings
+
+Global DCM configuration key-value store.
+
+| Column | Type | Constraints | Default | Description |
+|--------|------|-------------|---------|-------------|
+| `key` | TEXT | PRIMARY KEY | -- | Setting key |
+| `value` | JSONB | NOT NULL | -- | Setting value |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | `NOW()` | Last update |
+
+**Default settings:**
+
+| Key | Default Value |
+|-----|--------------|
+| `planner` | `{"provider_key": null, "timeout_ms": 0}` |
+
+---
+
+## Infrastructure Tables
 
 ### schema_version
 
@@ -333,8 +547,6 @@ Complete action view with full hierarchy. Joins actions through subtasks, task_l
 
 **Key columns:** `action_id`, `tool_name`, `tool_type`, `exit_code`, `duration_ms`, `file_paths`, `action_created_at`, `subtask_id`, `agent_type`, `agent_id`, `subtask_description`, `subtask_status`, `task_list_id`, `task_list_name`, `wave_number`, `request_id`, `prompt`, `prompt_type`, `session_id`, `project_id`, `project_path`, `project_name`
 
-**Use case:** Full audit trail queries, dashboard activity feeds.
-
 ---
 
 ### v_active_agents
@@ -345,8 +557,6 @@ Currently running agents with their hierarchy context.
 
 **Key columns:** `subtask_id`, `priority`, `project_id`, `project_name`, `project_path`, `agent_type`, `agent_id`, `parent_agent_id`, `status`, `description`, `started_at`, `created_at`, `session_id`, `request_id`, `actions_count`
 
-**Use case:** Dashboard agent monitoring, active session detection.
-
 ---
 
 ### v_unread_messages
@@ -355,10 +565,6 @@ Messages that have not expired, ordered by priority and creation time.
 
 **Filter:** `expires_at IS NULL OR expires_at > NOW()`
 
-**Key columns:** All columns from `agent_messages` plus `project_name` from the projects join.
-
-**Use case:** Inter-agent message delivery, notification feeds.
-
 ---
 
 ### v_project_stats
@@ -366,8 +572,6 @@ Messages that have not expired, ordered by priority and creation time.
 Aggregated statistics per project.
 
 **Key columns:** `project_id`, `project_name`, `path`, `total_requests`, `total_subtasks`, `total_actions`, `successful_actions`, `avg_duration_ms`, `last_activity`
-
-**Use case:** Dashboard project cards, project comparison.
 
 ---
 
@@ -389,29 +593,34 @@ project (path)
   |                                         |-- N:1 --> orchestration_batch (batch_id FK)
   |
   |-- 1:N --> agent_message (project_id FK)
-  |
   |-- 1:N --> agent_context (project_id FK)
 
+pipeline (session_id)
+  |-- 1:N --> pipeline_step (pipeline_id FK)
+  |-- 1:N --> pipeline_event (pipeline_id FK)
+  |-- 1:N --> pipeline_sprint (pipeline_id FK)
+  |-- 1:N --> planning_output (pipeline_id FK)
+
+pipeline_step --> subtask (subtask_id FK, SET NULL)
+
 orchestration_batch (session_id)
-  |
   |-- 1:N --> subtask (batch_id FK)
 
+session_skills (session_id)
+session_workflow_state (session_id)
+
+llm_providers (provider_key)
+dcm_settings (key)
 wave_states (session_id, wave_number)
-
 agent_capacity (agent_id)
-
 token_consumption (agent_id, session_id)
-
 keyword_tool_scores (keyword, tool_name)
-
 preemptive_summaries (session_id)
-
 calibration_ratios (session_id)
-
 schema_version (version)
 ```
 
-**Cascade deletions:** Deleting a project cascades through requests, task_lists, subtasks, actions, messages, and contexts. Deleting an orchestration batch sets `batch_id = NULL` on subtasks (SET NULL).
+**Cascade deletions:** Deleting a project cascades through requests, task_lists, subtasks, actions, messages, and contexts. Deleting a pipeline cascades through pipeline_steps, pipeline_events, pipeline_sprints, and planning_output.
 
 ---
 
@@ -458,6 +667,18 @@ schema_version (version)
 | preemptive_summaries | `idx_preemptive_session_status` | `session_id, status` |
 | preemptive_summaries | `idx_preemptive_created` | `created_at DESC` |
 | calibration_ratios | `idx_calibration_session` | `session_id, calculated_at DESC` |
+| pipelines | `idx_pipelines_session` | `session_id, created_at DESC` |
+| pipelines | `idx_pipelines_status` | `status` |
+| pipeline_steps | `idx_pipeline_steps_pipeline` | `pipeline_id, wave_number, step_order` |
+| pipeline_steps | `idx_pipeline_steps_status` | `status` |
+| pipeline_steps | `idx_pipeline_steps_subtask` | `subtask_id` |
+| pipeline_events | `idx_pipeline_events_pipeline` | `pipeline_id, created_at` |
+| pipeline_events | `idx_pipeline_events_type` | `event_type` |
+| pipeline_sprints | `idx_pipeline_sprints_pipeline` | `pipeline_id, sprint_number` |
+| pipeline_sprints | `idx_pipeline_sprints_status` | `status` |
+| llm_providers | `idx_llm_providers_key` | `provider_key` |
+| llm_providers | `idx_llm_providers_active` | `is_active` |
+| planning_output | `idx_planning_output_pipeline` | `pipeline_id, chunk_index` |
 
 ### GIN indexes (JSONB)
 
@@ -468,27 +689,20 @@ schema_version (version)
 | actions | `idx_actions_metadata` | `metadata` |
 | agent_messages | `idx_messages_payload` | `payload` |
 | agent_contexts | `idx_contexts_role` | `role_context` |
-
----
-
-## Functions and Triggers
-
-### update_updated_at_column()
-
-Trigger function that sets the `updated_at` (or `last_updated`) column to `NOW()` on every UPDATE.
-
-**Applied to:**
-
-| Table | Trigger name | Column affected |
-|-------|-------------|-----------------|
-| projects | `update_projects_updated_at` | `updated_at` |
-| agent_contexts | `update_contexts_updated_at` | `last_updated` |
+| pipelines | `idx_pipelines_input` | `input` |
+| pipelines | `idx_pipelines_plan` | `plan` |
 
 ---
 
 ## Migrations
 
-Located in `context-manager/src/db/migrations/`:
+### Base schema
+
+| File | Description |
+|------|-------------|
+| `schema.sql` | Core tables (projects through schema_version). Idempotent. |
+
+### Incremental migrations (src/db/migrations/)
 
 | File | Description |
 |------|-------------|
@@ -498,5 +712,16 @@ Located in `context-manager/src/db/migrations/`:
 | `006_agent_turns_tracking.sql` | Adds turn tracking fields |
 | `006_v4_context.sql` | Adds v4 context fields (real tokens, model_id) |
 | `007_actions_session_id.sql` | Adds session_id column to actions table |
+| `add-skill-gate.sql` | Adds session_skills and session_workflow_state tables |
 
-The main `schema.sql` uses `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`, making it idempotent and safe to re-run at any time.
+### Feature migrations (src/db/)
+
+| File | Version | Description |
+|------|---------|-------------|
+| `migration-pipelines.sql` | 5.1.0 | Adds pipelines, pipeline_steps, pipeline_events tables |
+| `migration-pipeline-sprints.sql` | 5.2.0 | Adds pipeline_sprints table, workspace columns to pipelines |
+| `migration-llm-providers.sql` | 5.3.0 | Adds llm_providers table with 3 seeded cloud providers |
+| `migration-planner-settings.sql` | 5.4.0 | Adds dcm_settings, planning_output tables, 3 CLI providers |
+| `migration-capacity-fields.sql` | 5.5.0 | Extends agent_capacity with cost, cache, and metrics fields |
+
+All migrations use `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, and `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, making them idempotent and safe to re-run.

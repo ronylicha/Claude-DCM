@@ -5,229 +5,121 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-03-31
+
+### Added
+
+- **Pipeline Engine** — Full AI-powered pipeline orchestrator with waves, steps, sprints, and dependencies.
+  - `pipeline/planner.ts` — LLM-powered plan generation (calls Opus/Sonnet/API providers)
+  - `pipeline/runner.ts` — Wave-by-wave lifecycle management with sprint tracking
+  - `pipeline/executor.ts` — Launches Claude CLI agents in detached systemd scopes
+  - `pipeline/decisions.ts` — Pure-logic retry/fallback/skip/abort decision engine
+  - Post-processor: extracts JSON from any LLM output format (text, files, mixed)
+  - Workspace file recovery: reads plan from JSON files written by agents
+
+- **Parallel Wave Execution** — Dependency-aware scheduling via `depends_on` graph.
+  - `findReadyWaves()` queues ALL waves whose deps are satisfied at once
+  - Backend + frontend waves run in parallel when they share the same parent
+  - Pipeline completes only when no active AND no ready waves remain
+
+- **Regression Guard** — Auto-injected after each implementation wave.
+  - Verifies files exist, imports valid, structure matches plan
+  - Runs as Sonnet agent (fast, 5 turns max)
+  - Skipped for explore/review/guard waves
+
+- **LLM Provider System** — 6 providers with extensible architecture.
+  - API: MiniMax M2.7, ZhipuAI GLM-5, Moonshot Kimi K2.5
+  - CLI: Claude (Opus/Sonnet), Codex (GPT-5.4), Gemini (3.1-pro)
+  - `BaseLLMProvider` abstract class with SSE streaming support
+  - `CLIPlannerProvider` with detached systemd scopes + file-based polling
+  - Provider-specific fixes: ZhipuAI reasoning_content, MiniMax `<think>` stripping, Moonshot temperature
+
+- **Sprint System** — Auto-generated sprints with git integration.
+  - Planner generates sprints from wave groups
+  - Auto `git commit` at end of each sprint
+  - AI-evaluated sprint reports (Sonnet checks objectives)
+  - Sprint timeline component in dashboard
+
+- **Live Streaming** — Real-time LLM output during planning and execution.
+  - `planning_output` table for incremental chunks
+  - API providers: SSE streaming with `stream: true`
+  - CLI providers: file polling with chunk detection
+  - Dashboard: terminal-style live viewer with auto-scroll
+
+- **Settings Page** — LLM provider management in dashboard.
+  - Provider cards with API key input, model selector, test button
+  - Planner config: radio buttons (single selection) + model dropdown
+  - CLI providers: no API key needed, install status check
+  - Configure model without re-entering API key
+
+- **Pipeline Dashboard** — Full execution visualization.
+  - Pipeline list with status badges, action menu (start/pause/cancel/delete/retry)
+  - Pipeline detail: wave stepper, all waves expanded, step cards
+  - Planning live view: terminal output during plan generation
+  - Sprint timeline with expandable objective cards
+  - Synthesis panel with stats, files, errors, timeline
+
+- **Workspace & Git** — Pipeline workspace management.
+  - Required workspace path for pipeline creation
+  - Server-side directory browser (`GET /api/fs/browse`)
+  - Git integration: clone/pull on start, commit per sprint
+  - GitHub connection: `GET /api/git/status` with org listing
+
+- **File Upload** — Document attachment for pipeline planning.
+  - Drag-and-drop + file picker in creation dialog
+  - Client-side file reading (JSON, not FormData)
+  - Supports .md, .txt, .json, code files
+
+- **Docker Support** — Full containerized deployment.
+  - PostgreSQL 17, Redis 7 with custom ports (avoid conflicts)
+  - `dcm docker:up/down/logs/reset` commands
+  - `.env.example` with all configurable ports
+
+- **Smart Recovery** — Auto-recover after service restarts.
+  - `recoverStuckPlanners()` relaunches planning workers on startup
+  - `recoverRunningAgents()` checks process liveness via `pgrep`
+  - Activity-based health checks (output file modification time)
+  - 1h timeout before re-queuing (Opus can take 10min+)
+
+- **Full HookInput Data** — Complete token/cost tracking from Claude Code.
+  - Parses ALL HookInput fields: model, context_window, cost, cache, lines, version
+  - 10 new columns on `agent_capacity` table
+  - Cockpit displays cost ($), +lines/-lines, cache tokens
+  - Capacity row selection: prefers rows with actual usage > 0
+
+- **Database Tables** — `pipelines`, `pipeline_steps`, `pipeline_events`, `pipeline_sprints`, `planning_output`, `llm_providers`, `dcm_settings`
+
+- **TypeScript Strict Compliance** — 651 type errors fixed across 40+ files.
+
+### Changed
+
+- **Planner** — Rewritten from keyword heuristics to LLM-powered (no fallback).
+- **Cockpit** — Prefers capacity rows with `current_usage > 0` over empty statusline.
+- **DCM CLI** — v2.3.0 with `deploy`, `docker:*` commands, skill index build, agent registry import.
+- **NavigationRail** — Added Pipeline and Settings links.
+- **Package versions** — Both packages bumped to 2.1.0.
+
+### Removed
+
+- **Heuristic fallback plan** — `buildFallbackPlan()` and `autoGenerateSprints()` deleted.
+- **`buildStepPrompt` re-export** — Removed from barrel exports.
+
 ## [1.5.0] - 2026-03-31
 
 ### Added
 
-- **Skill Gate API** — 5 new endpoints (`/api/skill-gate/:sid/{skills,workflow,advisor,status,check}`) with dynamic enforcement via PostgreSQL. Adapts to any machine via `skill-index.json` + advisor reco + catalog fallback.
-- **`session_skills` + `session_workflow_state` tables** — replaces `/tmp/claude-skill-gate/` flat files with persistent PostgreSQL storage.
-- **`skill-gate-enforce.sh`** — unified PreToolUse hook for Edit/Write/MultiEdit/Agent. Single 30-line hook replaces 3 bash scripts + 200 lines of shell logic.
-- **`skill-gate-status.sh`** — UserPromptSubmit hook injecting workflow state + advisor + delegation rules into systemMessage.
-- **Skill Gate section in Routing dashboard** — session lookup with live skills, workflow state, imposed agents.
-- **3-layer routing** — `suggest-skills.sh` queries routing API (skills + agents) + catalog API (discovery) in parallel with keyword-sorted catalog search.
-- **Skill Advisor + DCM integration** — `engine.ts` queries DCM routing before Haiku, merges learned scores, sends positive feedback for validated choices.
-- **Agent enforcement** — wrong agent = BLOCK with recommended agents per domain.
+- **Skill Gate API** — 5 new endpoints with dynamic enforcement via PostgreSQL.
+- **`session_skills` + `session_workflow_state` tables** — persistent PostgreSQL storage.
+- **`skill-gate-enforce.sh`** — unified PreToolUse hook.
+- **3-layer routing** — skills + agents + catalog in parallel.
+- **Skill Advisor + DCM integration** — queries DCM routing before Haiku.
 
 ### Changed
 
-- **`track-action.sh`** — registers skills in `session_skills` + detects impact/regression agents. Replaces `track-skill-loaded.sh` + `track-workflow-agent.sh`.
-- **`track-session.sh`** — initializes `session_workflow_state`. Replaces `session-init-skill-gate.sh`.
-- **`setup-hooks.sh`** — auto-detects dev vs deploy path, merges at individual hook level preserving non-DCM hooks.
-- **`skill-advisor/engine.ts`** — writes reco to API + local file fallback.
+- **`track-action.sh`** — registers skills in `session_skills`.
+- **`track-session.sh`** — initializes `session_workflow_state`.
+- **`setup-hooks.sh`** — auto-detects dev vs deploy path.
 
 ### Removed
 
-- 7 custom scripts from `~/.claude/scripts/`: `enforce-skills-before-{code,agent}.sh`, `enforce-claude-rules.sh`, `track-skill-loaded.sh`, `track-workflow-agent.sh`, `session-init-skill-gate.sh`, `lib/skill-gate-common.sh`. All migrated to DCM.
-- `/tmp/claude-skill-gate/` flat file dependency.
-
----
-
-## [1.3.1] - 2026-03-30
-
-### Added
-
-- **Comprehensive `/stats` page** — exhaustive usage analytics with token consumption by day/week/month/year, activity heatmap (GitHub-style 365-day grid), agent leaderboard, hourly distribution, and tool usage breakdown. 4 new backend endpoints: `/api/stats/{overview,tokens,activity,agents}` with period filtering and trend comparison. (`b9b0382`)
-- **3D Token Sphere** — React Three Fiber visualization with instanced particles orbiting a pulsing core. Input tokens = blue outer orbit, output tokens = green inner orbit. Auto-rotates, lazy-loaded via `next/dynamic`. (`b9b0382`)
-- **Remotion animated recap** — `@remotion/player` composition with spring-based animated counters, growing success bar, and gradient background. 6-second loop at 30fps. (`b9b0382`)
-- **Server-side aggregation endpoint** — `GET /api/actions/top-tools` replaces 500-row client-side fetch with SQL `GROUP BY`. (`0e1270c`)
-- **Shared `formatDuration()` utility** — human-readable durations (ms→s→min→h) in `lib/utils.ts`, used across cockpit, performance, tools, and stats pages. (`987c19d`)
-
-### Changed
-
-- **Singleton WebSocket** — single connection per browser tab instead of 5-6 independent connections. New `WebSocketProvider` context wraps the app; `useWebSocket` hook now uses the shared connection. (`0e1270c`)
-- **Batch cockpit grid queries** — `getCockpitGrid` reduced from N×5 queries to 5 batch queries using `ANY()` and `DISTINCT ON`. 93% DB query reduction. (`0e1270c`)
-- **Code splitting** — `CockpitDrawer` and `CockpitZoom` lazy-loaded via `next/dynamic` with `ssr: false`. ~100KB off initial bundle. (`0e1270c`)
-- **React.memo + useCallback** — `SessionMiniCockpit` memoized, `CockpitGrid` callbacks stabilized. Only changed sessions re-render. (`0e1270c`)
-- **Polling reduced** — `useSessionGrid` interval 8s→60s when WebSocket is connected (-87% HTTP calls). (`0e1270c`)
-- **Metrics broadcast guard** — `broadcastMetrics()` skips 5 DB queries when no WS clients are connected (-1050 queries/hour idle). (`0e1270c`)
-- **SELECT explicit columns** — `cockpit.ts` and `sessions.ts` no longer use `SELECT *` on hot tables. (`0e1270c`)
-- **SVG animations extracted** — `dashFlow` and `pulse` keyframes moved from inline `<style>` to `globals.css`. (`0e1270c`)
-- **Sessions COUNT parallelized** — `getSessions` runs data and count queries in `Promise.all()` instead of sequentially. Also fixed COUNT missing `activeOnly` filter. (`0e1270c`)
-
-### Fixed
-
-- **Remotion Sequence stacking** — `<Sequence>` wraps children in `AbsoluteFill`, causing overlap. Replaced with frame-based conditional rendering. (`80ab519`)
-- **Stats SQL joins** — `subtasks` has no `session_id` column; fixed to join through `task_lists→requests→sessions`. (`bf43673`)
-- **Token chart UUIDs** — `token_consumption.agent_id` is actually session_id. Changed to group by `tool_name` (Write, Edit, Bash, etc.). (`4b7e71a`)
-- **Heatmap tooltip clipped** — tooltip now appears below the cell with `z-50` and `overflow-y-visible`. (`4b7e71a`)
-- **Removed Three.js** then re-added for stats page — initially removed unused deps (-180KB), then added back for the 3D Token Sphere (lazy-loaded, only on `/stats`). (`0e1270c`, `b9b0382`)
-
----
-
-## [1.3.0] - 2026-03-29
-
-### Added
-
-- **SVG/CSS topology replaces Three.js** — no more WebGL context loss, no heavy 3D dependencies. Pure SVG with CSS animations: rotating core ring, animated dash-flow connections, usage ring arcs per session node, click-to-inspect detail card. M3 color tokens throughout. (`757093f`)
-- **Statusline Notification hook** — registered `statusline-dcm.sh` on the `Notification` event in Claude Code settings. Pushes real token data (model_id, context_window_size, used_percentage) from Claude Code to DCM in real time. (`9ecb1b5`)
-- **KPI chips** in cockpit summary bar — compact M3 chip-style indicators for sessions, agents, and tokens. (`757093f`)
-
-### Changed
-
-- **Cockpit layout redesigned** — topology always visible (no toggle), KPI chips row at top, sessions grid below, live activity at bottom. (`757093f`)
-- **DRY: shared session query** — extracted `getActiveSessionsWithCapacity()` in `db/client.ts`. Replaces 3 duplicate DISTINCT ON subqueries across cockpit, orchestrator, and topology endpoints. (`4d9ba53`)
-- **Capacity dedup** — DISTINCT ON (session_id) subquery prefers statusline over estimated, then highest current_usage, then most recent. Eliminates all duplicate session rows. (`a2eab7b`, `5bc8b98`)
-
-### Fixed
-
-- **Duplicate sessions in grid and topology** — sessions appeared 2-3 times due to multiple agent_capacity rows per session. Fixed with DISTINCT ON subquery + TS-level dedup. (`82ee354`, `e4c122f`)
-- **model_id not showing** — was missing from the `context` block in grid response. Added to response builder. (`dba5f80`)
-- **Empty model_id string** — COALESCE didn't catch empty strings. Now uses NULLIF. (`b253c8b`)
-- **Statusline hook never fired** — was registered in hooks.json but not in Claude Code settings.json `Notification` event. (`9ecb1b5`)
-- **Context window default** — fallback to 200K for Sonnet/Haiku; Opus sends real 1M via statusline. (`e1bc4a0`)
-
-### Removed
-
-- **OrchestratorTopology3D.tsx** — 651 lines deleted. Three.js, @react-three/fiber, @react-three/drei no longer needed for topology. (`85e1a4e`)
-
----
-
-## [1.2.0] - 2026-03-29
-
-### Added
-
-- **Dynamic skill/agent/command registry** — the catalog now scans `~/.claude/skills/`, `~/.claude/agents/`, and `~/.claude/commands/` at runtime instead of reading from a hardcoded list. Discovers 1200+ skills, 100+ agents, and 20+ commands from whatever the user has installed. Results are cached for 60 seconds. (`8220016`, `6fb9cf1`)
-- **10 AI-generated illustrations** in documentation, one per doc page plus architecture, cockpit, orchestration, and hero banner images. (`d32e5b2`)
-
-### Changed
-
-- **Skill classification rewritten** — old regex matched too broadly (98 skills in "design" including billing, monorepo, tmux). New ID-prefix rules put skills where they belong. Added 7 new categories: business, gamedev, communication, integrations, languages, blockchain, automation. Design dropped from 98 to 15 entries. (`93d252b`)
-- **Documentation cleaned up** — removed 48 outdated files (wiki, old API docs, design plans, orphan images). Kept 6 Diataxis docs. Net: -23,720 lines. (`293e520`)
-- **README updated** — 11 pages (not 12), registry description made generic, hero banner and illustrations added, documentation table with links to all 6 docs. (`df05f8c`, `d32e5b2`)
-
-### Fixed
-
-- **Registry showed 81 skills instead of 1200+** — replaced the 1787-line static `catalog.ts` with a 252-line filesystem scanner. (`8220016`)
-- **Agents not detected (0)** — added `scanAgents()` to read `~/.claude/agents/*.md`. (`6fb9cf1`)
-- **Commands only 3 instead of 21** — `scanCommands()` now recurses into subdirectories. (`6fb9cf1`)
-
-### Removed
-
-- **Static catalog data file** — 1787 lines of hardcoded agent/skill/command entries replaced by dynamic scan. (`8220016`)
-- **48 outdated doc files** — wiki (16 files), old API docs, design plans, orphan images/SVGs. (`293e520`)
-
-### Dependencies
-
-- hono 4.11.10 → 4.12.7, next 16.1.6 → 16.1.7 (Dependabot PR #13)
-
----
-
-## [1.1.0] - 2026-03-29
-
-### Added
-
-- **Metrics drawer in cockpit** — sliding panel surfaces token consumption, session KPIs, and model distribution directly inside the cockpit; replaces the standalone `/dashboard` page (`377f906`)
-
-### Changed
-
-- **Entropy reduction** — deleted 7 dead files and deduplicated 16 helper functions across the codebase (`d769393`)
-- **Dashboard page removed** — the `/dashboard` route is gone; all metrics now live in the cockpit metrics drawer (`377f906`)
-
-### Fixed
-
-- **README accuracy** — corrected dashboard page count from 14 to 12 to reflect reality (`5e27122`)
-
----
-
-## [1.0.0] - 2026-03-29
-
-_First production release. The entire DCM (Developer Cockpit Manager) system, built from the ground up to give real-time observability and orchestration for Claude Code multi-agent sessions._
-
-### Added
-
-#### Core Platform
-- Bun + Hono server with PostgreSQL persistence and WebSocket real-time layer
-- Structured logger with `LOG_LEVEL` support, replacing all raw `console.log` calls
-- Centralized configuration in `src/config.ts` with environment variable overrides
-- OpenAPI 3.1 specification (`openapi.yaml`) documenting every endpoint
-- Circuit breaker pattern across hooks, API, and schema layers
-
-#### Cockpit (Single-Page Control Center)
-- Multi-monitor cockpit consolidating live view, waves pipeline, and flows into one page
-- Real-time token consumption chart (Recharts) with model-aware capacity tracking
-- M3 (Material Design 3) design system with full light/dark theme support
-- 3D Neural Constellation topology (SVG-based, replacing earlier WebGL implementation)
-- Session mini-cockpit cards showing model name (Opus/Sonnet/Haiku), token usage, and activity
-- Pre-emptive compaction alerts when sessions approach context limits
-- Zoom view with graceful fallback when capacity data is unavailable
-- Message detail modal for viewing full message content
-
-#### Orchestrator
-- Inter-project orchestrator coordinating across multiple Claude Code projects
-- Native Bun orchestrator process (replaces `claude headless`), auto-started with the server
-- Proactive info sharing and architecture broadcasts to push context to agents automatically
-- SQL-backed message routing with `to_agent_id` always populated
-
-#### Agent Tracking and Hooks
-- Agent turns tracking (`turns_used`, `max_turns`, `last_relaunch_context`) with dedicated API endpoints
-- Auto-relaunch system: hooks detect when a subagent hits `max_turns` and restart it with context
-- `max_turns` propagation from Agent tool input through to subtask creation
-- Skill auto-suggestion hook (`suggest-skills.sh`) on `UserPromptSubmit`
-- `statusline-dcm.sh` hook for real-time token tracking in the terminal status line
-- Hook tool matcher aligned to "Agent" (matching Claude Code rename from "Task")
-
-#### Supervisor
-- Systemd user-level supervisor for auto-start on boot, crash recovery, and automatic restart on update
-- Dashboard switched to production mode (no more dev server in daily use)
-- Database connection retry to survive boot race conditions
-
-#### Dashboard Pages (12 pages)
-- Sessions, Agents, Subtasks, Actions, Messages, Tokens, Performance, Flows, Waves, Alerts, Registry, Settings
-- All pages aligned with real API data (no fake/placeholder data)
-- Premium components: HealthGauge, PremiumKPICard, GlassChartTooltip, ActivityFeed, SystemPulseBar
-
-#### API and Data Layer
-- Active session detection based on recent activity timestamp (not `ended_at IS NULL`)
-- `v_active_agents` view returning individual agents instead of grouped results
-- `actions.session_id` column with direct queries (no broken subtask JOIN chains)
-- Agent hierarchy with parent-child relationships
-- Compact snapshot-first restore for session reactivation
-- Safety gate for critical operations
-
-#### Developer Experience
-- Auto-start dashboard with browser open on session start
-- Context guardian 4-layer defense for context window management
-- Registry catalog with static data, API endpoint, and 3-tab dashboard view
-- Wave pipeline hooks wiring for multi-wave orchestration workflows
-
-### Changed
-
-- Extracted inline route handlers from `server.ts` (-527 LOC) into dedicated API modules
-- Extracted 5 inline components from the dashboard page (-508 LOC) into standalone files
-- Consolidated 4 near-identical SQL branches in routing into 1 dynamic query
-- Improved token estimation ratio from 4 to 3.5 chars/token
-- M3 color tokens applied in `@layer base` across all components
-- Lifecycle cascade: auto-complete tasks and requests, wave sync
-- Messages model simplified by removing unused read/unread tracking
-
-### Removed
-
-- Dead code: `decompressData()` from `db/client.ts`
-- Empty directories: `src/pubsub/` and `src/utils/`
-- 3 redundant pages (standalone live, waves, flows) after cockpit consolidation
-
-### Fixed
-
-- WebGL stability: replaced WebGL 3D with SVG topology, added context loss handling, lazy-loading, DPR limiter, and removed missing font references
-- Token tracking: `model_id` persistence with proper SELECT/NULL cast, detection from transcript path, correct `max_capacity` per model
-- Orchestrator SQL: `unnest` syntax, interval syntax, `db.json()` for JSONB inserts
-- Cockpit data: guards for undefined `agent.id` and null `model_id`, v4/legacy API compat, 8s polling fallback, column ambiguity in FILTER clause
-- Messages: null `from_agent_id` color hash handling
-- Performance page: actions-by-tool display when `duration_ms` unavailable
-- NULL array bug in `read_by` column causing silent message filtering
-- DB migrations 003-004 and merge conflict resolution
-
-[1.3.0]: https://github.com/ronylicha/Claude-DCM/compare/v1.2.0...v1.3.0
-[1.2.0]: https://github.com/ronylicha/Claude-DCM/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/ronylicha/Claude-DCM/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/ronylicha/Claude-DCM/releases/tag/v1.0.0
+- 7 custom scripts migrated to DCM.

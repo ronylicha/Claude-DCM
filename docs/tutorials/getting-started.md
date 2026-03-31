@@ -1,48 +1,35 @@
 # Getting Started with DCM
 
-![Getting Started](../images/getting-started.png)
-
-Set up the Distributed Context Manager from scratch in about 10 minutes. By the end of this tutorial, you will have DCM running alongside Claude Code with persistent memory, compact recovery, and a real-time monitoring dashboard.
+Set up the Distributed Context Manager from scratch in about 10 minutes. By the end of this tutorial you will have DCM running alongside Claude Code with persistent memory, pipeline orchestration, and a real-time monitoring dashboard.
 
 ---
 
 ## What you will build
 
-A local DCM installation with three services:
+A local DCM installation with five capabilities:
 
-- **REST API** (port 3847) -- tracks every tool call, agent spawn, and session event
-- **WebSocket server** (port 3849) -- streams events in real time
-- **Dashboard** (port 3848) -- monitoring UI for sessions, agents, and waves
+- **REST API** (port 3847) -- tracks every tool call, agent spawn, and session event across 143+ endpoints
+- **WebSocket server** (port 3849) -- streams events in real time to the dashboard
+- **Dashboard** (port 3848) -- 18-page monitoring UI for sessions, agents, pipelines, and analytics
+- **Pipeline engine** -- submit instructions, get an AI-generated execution plan, and let DCM run it wave by wave
+- **Redis cache** (port 6379) -- pub/sub messaging and fast lookups
 
 ---
 
 ## Prerequisites
 
-Before starting, make sure the following tools are installed on your machine.
-
 | Tool | Minimum version | Check command |
 |------|----------------|---------------|
 | Bun | 1.x | `bun --version` |
-| PostgreSQL | 16 | `psql --version` |
+| PostgreSQL | 16+ | `psql --version` |
+| Node.js | 22+ (dashboard) | `node --version` |
 | jq | any | `jq --version` |
 | curl | any | `curl --version` |
-| lsof | any | `lsof -v` |
-| Node.js | 22+ (dashboard only) | `node --version` |
 
 Run this block to verify everything at once:
 
 ```bash
-bun --version && psql --version && jq --version && curl --version && node --version
-```
-
-Expected output (version numbers may differ):
-
-```
-1.2.4
-psql (PostgreSQL) 16.6 (Ubuntu 16.6-0ubuntu0.24.04.1)
-jq-1.7.1
-curl 8.5.0 (x86_64-pc-linux-gnu)
-v22.12.0
+bun --version && psql --version && node --version && jq --version && curl --version
 ```
 
 ### Install missing tools
@@ -53,24 +40,22 @@ v22.12.0
 curl -fsSL https://bun.sh/install | bash
 ```
 
-**PostgreSQL 16:**
+**PostgreSQL 17:**
 
 ```bash
 # Ubuntu/Debian
-sudo apt update && sudo apt install -y postgresql-16 postgresql-client-16
+sudo apt update && sudo apt install -y postgresql-17 postgresql-client-17
 
 # macOS
-brew install postgresql@16
+brew install postgresql@17
 ```
 
-**jq:**
+PostgreSQL 16 also works. The Docker setup ships with PostgreSQL 17 Alpine.
+
+**Node.js 22:**
 
 ```bash
-# Ubuntu/Debian
-sudo apt install -y jq
-
-# macOS
-brew install jq
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs
 ```
 
 ---
@@ -82,7 +67,7 @@ git clone https://github.com/ronylicha/Claude-DCM.git
 cd Claude-DCM
 ```
 
-Your working directory is now `Claude-DCM/`. All subsequent commands assume this location.
+All subsequent commands assume your working directory is `Claude-DCM/`.
 
 ---
 
@@ -101,7 +86,7 @@ Create a dedicated database user and database:
 sudo -u postgres createuser --pwprompt dcm
 ```
 
-When prompted, enter a password. Remember it -- you will need it for the `.env` file.
+Enter a password when prompted. You will need it for the `.env` file.
 
 ```bash
 sudo -u postgres createdb -O dcm claude_context
@@ -113,40 +98,11 @@ Verify the connection:
 psql -U dcm -d claude_context -h 127.0.0.1 -c "SELECT 1 AS connected;"
 ```
 
-Expected output:
-
-```
- connected
------------
-         1
-(1 row)
-```
-
-If you get a "peer authentication failed" error, edit `pg_hba.conf` to allow password authentication for local connections:
+If you get a "peer authentication failed" error, edit `pg_hba.conf` to allow password authentication:
 
 ```bash
-# Find pg_hba.conf location
 sudo -u postgres psql -c "SHOW hba_file;"
-
-# Edit the file (change "peer" to "md5" for local connections)
-sudo nano /etc/postgresql/16/main/pg_hba.conf
-```
-
-Change the line:
-
-```
-local   all   all   peer
-```
-
-to:
-
-```
-local   all   all   md5
-```
-
-Then restart PostgreSQL:
-
-```bash
+# Edit the file shown, change 'peer' to 'md5' for local connections
 sudo systemctl restart postgresql
 ```
 
@@ -190,23 +146,24 @@ DB_USER=dcm
 DB_PASSWORD=your_password_here
 ```
 
-Save and close.
-
 ---
 
 ## Step 4 -- Apply the database schema
 
-If the installer did not apply the schema automatically (check the output of step 4), run it manually:
+If the installer did not apply the schema automatically, run it manually:
 
 ```bash
 psql -U dcm -d claude_context -h 127.0.0.1 -f src/db/schema.sql
 ```
 
-Expected output ends with:
+Apply the pipeline and provider migrations:
 
-```
-INSERT 0 1
-INSERT 0 0
+```bash
+psql -U dcm -d claude_context -h 127.0.0.1 -f src/db/migration-pipelines.sql
+psql -U dcm -d claude_context -h 127.0.0.1 -f src/db/migration-pipeline-sprints.sql
+psql -U dcm -d claude_context -h 127.0.0.1 -f src/db/migration-llm-providers.sql
+psql -U dcm -d claude_context -h 127.0.0.1 -f src/db/migration-planner-settings.sql
+psql -U dcm -d claude_context -h 127.0.0.1 -f src/db/migration-capacity-fields.sql
 ```
 
 Verify the tables were created:
@@ -215,31 +172,7 @@ Verify the tables were created:
 psql -U dcm -d claude_context -h 127.0.0.1 -c "\dt"
 ```
 
-You should see 19 tables:
-
-```
-                    List of relations
- Schema |          Name           | Type  | Owner
---------+-------------------------+-------+-------
- public | actions                 | table | dcm
- public | agent_capacity          | table | dcm
- public | agent_contexts          | table | dcm
- public | agent_messages          | table | dcm
- public | agent_registry          | table | dcm
- public | calibration_ratios      | table | dcm
- public | keyword_tool_scores     | table | dcm
- public | orchestration_batches   | table | dcm
- public | preemptive_summaries    | table | dcm
- public | projects                | table | dcm
- public | requests                | table | dcm
- public | schema_version          | table | dcm
- public | sessions                | table | dcm
- public | subtasks                | table | dcm
- public | task_lists              | table | dcm
- public | token_consumption       | table | dcm
- public | wave_states             | table | dcm
-(17 rows)
-```
+You should see 25+ tables including `pipelines`, `pipeline_steps`, `pipeline_events`, `pipeline_sprints`, `llm_providers`, `planning_output`, and `dcm_settings`.
 
 ---
 
@@ -249,15 +182,13 @@ You should see 19 tables:
 ./dcm start
 ```
 
-This launches three background processes. The supervisor runs all services in production mode. You will see:
+This launches three background processes:
 
-```
-Starting DCM services...
-  API server starting on port 3847...
-  WebSocket server starting on port 3849...
-  Dashboard starting on port 3848 (next start)...
-All services started.
-```
+| Process | Port | Stack |
+|---------|------|-------|
+| API Server | 3847 | Bun + Hono |
+| WebSocket Server | 3849 | Bun native WS |
+| Dashboard | 3848 | Next.js 16 |
 
 ---
 
@@ -273,14 +204,14 @@ Expected output:
 
 ```
 DCM Status
-  API (port 3847):       healthy (v1.1.0)
+  API (port 3847):       healthy (v2.1.0)
   WebSocket (port 3849):  running
   Dashboard (port 3848):  running (production)
   PostgreSQL:             connected
   Claude Code hooks:      installed
 ```
 
-### Hit the health endpoint directly
+### Hit the health endpoint
 
 ```bash
 curl -s http://127.0.0.1:3847/health | jq .
@@ -291,8 +222,8 @@ Expected output:
 ```json
 {
   "status": "healthy",
-  "timestamp": "2026-03-28T10:00:00.000Z",
-  "version": "1.1.0",
+  "timestamp": "2026-03-31T10:00:00.000Z",
+  "version": "2.1.0",
   "database": {
     "healthy": true,
     "latency_ms": 2
@@ -313,11 +244,11 @@ Expected output:
 
 ### Open the dashboard
 
-Open [http://localhost:3848](http://localhost:3848) in your browser. You should see the DCM dashboard with health gauges and empty KPI cards.
+Open [http://localhost:3848](http://localhost:3848) in your browser. You should see the DCM dashboard with health gauges and KPI cards.
 
-### Send a test event
+### Send a test action
 
-To confirm the full pipeline works (hook to API to database), send a synthetic action:
+To confirm the full pipeline works (hook to API to database):
 
 ```bash
 curl -s -X POST http://127.0.0.1:3847/api/actions \
@@ -329,26 +260,13 @@ curl -s -X POST http://127.0.0.1:3847/api/actions \
   }' | jq .
 ```
 
-Expected response:
-
-```json
-{
-  "id": "a1b2c3d4-...",
-  "tool_name": "Test",
-  "tool_type": "builtin",
-  "created_at": "2026-03-28T10:00:01.000Z"
-}
-```
-
-Refresh the dashboard -- the action should appear in the activity feed.
+Refresh the dashboard -- the action appears in the activity feed.
 
 ---
 
-## Step 7 -- Verify hooks in Claude Code
+## Step 7 -- Verify Claude Code hooks
 
-DCM works by hooking into Claude Code lifecycle events. The installer configured these hooks in `~/.claude/settings.json`.
-
-Verify the hooks are registered:
+DCM hooks into Claude Code lifecycle events. The installer configured these in `~/.claude/settings.json`.
 
 ```bash
 cat ~/.claude/settings.json | jq '.hooks'
@@ -356,24 +274,117 @@ cat ~/.claude/settings.json | jq '.hooks'
 
 You should see entries for `PreToolUse`, `PostToolUse`, `SessionStart`, `PreCompact`, `SubagentStop`, `Stop`, and `SessionEnd`.
 
-Now start a new Claude Code session. DCM will automatically:
+Start a new Claude Code session. DCM automatically:
 
-1. Detect the session via `track-session.sh`
-2. Track every tool call via `track-action.sh`
-3. Monitor context size via `context-guardian.sh`
-4. Save snapshots before compaction via `pre-compact-save.sh`
-5. Restore context after compaction via `post-compact-restore.sh`
-6. Block dangerous operations via `safety-gate.sh`
+1. Detects the session via `track-session.sh`
+2. Tracks every tool call via `track-action.sh`
+3. Enforces skill loading via `skill-gate-enforce.sh`
+4. Monitors context size via `context-guardian.sh`
+5. Saves snapshots before compaction via `pre-compact-save.sh`
+6. Restores context after compaction via `post-compact-restore.sh`
+7. Blocks dangerous operations via `safety-gate.sh`
+8. Provides skill routing suggestions via `suggest-skills.sh`
+
+---
+
+## Step 8 -- Create your first pipeline
+
+Pipelines let DCM plan and execute complex tasks autonomously. Before creating a pipeline, you need an LLM provider configured.
+
+### Configure an LLM provider
+
+The dashboard Settings page lets you add API keys for cloud providers (MiniMax, ZhipuAI, Moonshot) or use local CLI providers (Claude CLI, Codex CLI, Gemini CLI) that authenticate through their own login flow.
+
+```bash
+# Example: set the active planner to Claude CLI (no API key needed)
+curl -s -X POST http://127.0.0.1:3847/api/settings/planner \
+  -H "Content-Type: application/json" \
+  -d '{"provider_key": "claude-cli"}' | jq .
+```
+
+For cloud providers, configure the API key first:
+
+```bash
+curl -s -X POST http://127.0.0.1:3847/api/settings/providers/minimax/configure \
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "your_minimax_api_key"}' | jq .
+```
+
+### Create the pipeline
+
+```bash
+curl -s -X POST http://127.0.0.1:3847/api/pipelines \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "pipeline-demo-001",
+    "instructions": "Create a REST API with user authentication using JWT tokens",
+    "workspace": {
+      "path": "/tmp/dcm-demo"
+    }
+  }' | jq .
+```
+
+The pipeline engine will:
+
+1. Call the configured LLM planner to generate a multi-wave execution plan
+2. Create pipeline steps with agent assignments, skills, and prompts
+3. Organize steps into sprints with objectives
+
+### Start execution
+
+```bash
+curl -s -X POST http://127.0.0.1:3847/api/pipelines/<pipeline_id>/start | jq .
+```
+
+Replace `<pipeline_id>` with the ID returned in the creation response.
+
+### Monitor in real time
+
+Open the Pipeline page in the dashboard at `http://localhost:3848/pipeline`. You can watch:
+
+- Live streaming output from the LLM planner
+- Wave-by-wave execution progress
+- Agent step status (pending, running, completed, failed)
+- Sprint reports with objectives and git commits
+- Decision engine actions on failures (retry, skip, alternate agent)
+
+---
+
+## Step 9 -- Set up Docker (alternative)
+
+If you prefer containers over a local installation, Docker Compose brings up all five services with a single command.
+
+```bash
+cd Claude-DCM
+
+cat > .env << 'EOF'
+DB_PASSWORD=your_secure_password
+WS_AUTH_SECRET=your_hmac_secret_at_least_32_chars
+EOF
+
+docker compose up -d
+```
+
+Docker maps the PostgreSQL container port to `5433` on the host by default to avoid conflicts with a locally installed PostgreSQL. All other ports remain the same (3847, 3848, 3849).
+
+You still need to install hooks on the host:
+
+```bash
+cd context-manager && ./dcm hooks
+```
+
+See the [Deployment Guide](../howto/deployment.md) for full Docker configuration options.
 
 ---
 
 ## What to do next
 
-- **View live activity**: Open the dashboard at `http://localhost:3848` and watch events flow in during a Claude Code session. The dashboard runs via `next start` (production build), not `next dev`.
-- **Monitor from the terminal**: Run `bash hooks/dashboard.sh --watch` for a terminal-based view.
-- **Learn the API**: See the [API Overview](../reference/api-overview.md) for all 102 endpoints.
-- **Deploy for production**: Follow the [Deployment Guide](../howto/deployment.md) for Docker, systemd, or manual setups.
-- **Troubleshoot issues**: Check the [Troubleshooting Guide](../howto/troubleshooting.md) if something is not working.
+- **Monitor live activity**: Open the dashboard at `http://localhost:3848` and watch events during a Claude Code session
+- **Create a pipeline**: Use the Pipeline page to submit instructions and watch DCM plan and execute them
+- **Configure providers**: Visit the Settings page to set up LLM providers for pipeline planning
+- **Learn the API**: See the [API Reference](../reference/api-overview.md) for all 143+ endpoints
+- **Deploy for production**: Follow the [Deployment Guide](../howto/deployment.md) for Docker, systemd, or manual setups
+- **Troubleshoot issues**: Check the [Troubleshooting Guide](../howto/troubleshooting.md) if something is not working
 
 ---
 
@@ -386,4 +397,5 @@ Now start a new Claude Code session. DCM will automatically:
 | `./dcm status` | Check health of all components |
 | `./dcm logs api` | Tail API server logs |
 | `./dcm restart` | Stop then start all services |
+| `./dcm deploy` | Pull, rebuild, migrate, restart |
 | `curl http://127.0.0.1:3847/health` | Direct API health check |

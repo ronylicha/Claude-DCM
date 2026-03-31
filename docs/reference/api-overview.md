@@ -1,14 +1,10 @@
-# API Reference Overview
-
-![API Reference](../images/api-reference.png)
+# API Reference
 
 Complete list of all REST endpoints exposed by the DCM API server on port 3847.
 
 **Base URL:** `http://127.0.0.1:3847`
 **Transport:** JSON over HTTP
 **Authentication:** None required (local-only service). WebSocket auth uses HMAC-SHA256 tokens in production.
-
-For full request/response schemas, see the [OpenAPI spec](../api/openapi.yaml) or the [Swagger UI](../api/swagger.html).
 
 ---
 
@@ -18,7 +14,7 @@ For full request/response schemas, see the [OpenAPI spec](../api/openapi.yaml) o
 |------------|--------|
 | Content-Type | `application/json` for all request and response bodies |
 | IDs | UUIDs generated server-side (except session IDs, which are client-provided) |
-| Timestamps | ISO 8601 strings (`2026-03-28T14:30:00.000Z`) |
+| Timestamps | ISO 8601 strings (`2026-03-31T14:30:00.000Z`) |
 | Pagination | `?limit=` (default 100, max 100) and `?offset=` (default 0) |
 | Deletion | Returns `204 No Content` with empty body |
 | Creation | Returns `201 Created` with the created resource |
@@ -45,21 +41,25 @@ For full request/response schemas, see the [OpenAPI spec](../api/openapi.yaml) o
 
 ---
 
-## Health and Stats (3 endpoints)
+## Health and Stats (4 endpoints)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/health` | Service health check. Returns database connectivity, version, and enabled feature phases. Returns 503 if unhealthy. |
 | GET | `/stats` | Global row counts across all tables. |
 | GET | `/stats/tools-summary` | Counts of skills, commands, workflows, and plugins in `~/.claude`. Cached for 5 minutes. |
-
----
-
-## Dashboard KPIs (1 endpoint)
-
-| Method | Path | Description |
-|--------|------|-------------|
 | GET | `/api/dashboard/kpis` | Aggregated KPI metrics. Runs 7 parallel aggregation queries covering actions, sessions, agents, subtasks, and routing. |
+
+### Examples
+
+```bash
+# Health check
+curl -s http://127.0.0.1:3847/health | jq .
+# Response: {"status":"healthy","version":"2.1.0","database":{"healthy":true,"latency_ms":2},"features":{...}}
+
+# Global stats
+curl -s http://127.0.0.1:3847/stats | jq .
+```
 
 ---
 
@@ -72,8 +72,23 @@ Projects represent monitored codebases, identified by their absolute filesystem 
 | POST | `/api/projects` | Create or upsert a project. Body: `{path, name?, metadata?}`. |
 | GET | `/api/projects` | List all projects with pagination. |
 | GET | `/api/projects/by-path` | Look up a project by filesystem path. Query: `?path=`. |
-| GET | `/api/projects/:id` | Get a single project with its recent requests and stats. |
+| GET | `/api/projects/:id` | Get a single project with recent requests and stats. |
 | DELETE | `/api/projects/:id` | Delete a project and all associated data (cascade). |
+
+### Examples
+
+```bash
+# Create a project
+curl -s -X POST http://127.0.0.1:3847/api/projects \
+  -H "Content-Type: application/json" \
+  -d '{"path": "/home/user/my-project", "name": "My Project"}' | jq .
+
+# List projects
+curl -s http://127.0.0.1:3847/api/projects | jq .
+
+# Find by path
+curl -s "http://127.0.0.1:3847/api/projects/by-path?path=/home/user/my-project" | jq .
+```
 
 ---
 
@@ -84,8 +99,8 @@ Sessions represent Claude Code working sessions. The session ID is client-provid
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/sessions` | Create a new session. Body: `{id, project_id?, started_at?}`. |
-| GET | `/api/sessions` | List sessions with optional filters: `?project_id=`, `?active_only=`, `?limit=`. |
-| GET | `/api/sessions/stats` | Aggregate statistics across all sessions, grouped by project. |
+| GET | `/api/sessions` | List sessions with filters: `?project_id=`, `?active_only=`, `?limit=`. |
+| GET | `/api/sessions/stats` | Aggregate statistics grouped by project. |
 | GET | `/api/sessions/:id` | Get a single session by ID. |
 | PATCH | `/api/sessions/:id` | Update session fields (ended_at, tool counts). |
 | DELETE | `/api/sessions/:id` | Delete a session. |
@@ -108,7 +123,7 @@ User prompts that initiate work within a project.
 
 ## Tasks / Waves (5 endpoints)
 
-Waves of objectives for each request. Each task_list represents one wave.
+Waves of objectives for each request. Each task_list represents one execution wave.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -135,17 +150,33 @@ Agent assignments within a wave. Each subtask tracks one agent's work.
 
 ---
 
-## Actions (5 endpoints)
+## Actions (6 endpoints)
 
-Tool invocations recorded from hook scripts. Every Read, Write, Bash, Task, and Skill call is tracked here.
+Tool invocations recorded from hook scripts. Every Read, Write, Bash, Task, and Skill call is tracked.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/actions` | Record a tool action. Body: `{tool_name, tool_type, session_id?, input?, exit_code?}`. |
 | GET | `/api/actions` | List actions with filters: `?session_id=`, `?tool_type=`, `?limit=`, `?offset=`. |
 | GET | `/api/actions/hourly` | Hourly action counts for charting. Filter: `?session_id=`. |
+| GET | `/api/actions/top-tools` | Top tools by usage count. Server-side aggregation. Filter: `?session_id=`, `?limit=`. |
 | DELETE | `/api/actions/:id` | Delete a single action. |
 | DELETE | `/api/actions/by-session/:session_id` | Delete all actions for a session. |
+
+### Examples
+
+```bash
+# Record an action
+curl -s -X POST http://127.0.0.1:3847/api/actions \
+  -H "Content-Type: application/json" \
+  -d '{"tool_name":"Read","tool_type":"builtin","session_id":"sess-123"}' | jq .
+
+# Get top tools
+curl -s "http://127.0.0.1:3847/api/actions/top-tools?limit=10" | jq .
+
+# Hourly chart data
+curl -s "http://127.0.0.1:3847/api/actions/hourly?session_id=sess-123" | jq .
+```
 
 ---
 
@@ -192,13 +223,25 @@ Agent dependency management. Prevents an agent from running until another comple
 
 ## Routing (3 endpoints)
 
-Intelligent tool suggestion based on keyword-to-tool scoring with feedback.
+Intelligent tool suggestion based on keyword-to-tool scoring with feedback loop.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/routing/suggest` | Suggest tools for a keyword. Query: `?keyword=`, `?limit=`. |
 | GET | `/api/routing/stats` | Routing intelligence statistics (total keywords, tools, mappings). |
 | POST | `/api/routing/feedback` | Provide success/failure feedback. Body: `{keyword, tool_name, successful}`. |
+
+### Examples
+
+```bash
+# Get suggestions for a keyword
+curl -s "http://127.0.0.1:3847/api/routing/suggest?keyword=authentication&limit=5" | jq .
+
+# Submit feedback
+curl -s -X POST http://127.0.0.1:3847/api/routing/feedback \
+  -H "Content-Type: application/json" \
+  -d '{"keyword":"auth","tool_name":"laravel-expert","successful":true}' | jq .
+```
 
 ---
 
@@ -209,7 +252,7 @@ Full project hierarchy tree views.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/hierarchy/:project_id` | Full hierarchical tree: project -> requests -> tasks -> subtasks. |
-| GET | `/api/active-sessions` | List active sessions. Returns both `active_agents` (individual agents from the `v_active_agents` view) and `active_sessions` (grouped by session). |
+| GET | `/api/active-sessions` | List active sessions with agent details. |
 
 ---
 
@@ -219,14 +262,14 @@ Context brief generation for agents.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/context/:agent_id` | Get context brief. Query: `?session_id=`, `?format=brief|raw`, `?max_tokens=`. |
+| GET | `/api/context/:agent_id` | Get context brief. Query: `?session_id=`, `?format=brief\|raw`, `?max_tokens=`. |
 | POST | `/api/context/generate` | Generate a context brief on demand. Body: `{session_id, agent_id, format?}`. |
 
 ---
 
-## Compact (6 endpoints)
+## Compact (7 endpoints)
 
-Context save/restore for compaction events.
+Context save/restore for compaction events and preemptive summaries.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -234,9 +277,23 @@ Context save/restore for compaction events.
 | POST | `/api/compact/restore` | Restore context after compact. Body: `{session_id, agent_id, agent_type?, max_tokens?}`. Returns `{additionalContext}`. |
 | GET | `/api/compact/status/:session_id` | Check if a session has been compacted. |
 | GET | `/api/compact/snapshot/:session_id` | Get the saved snapshot for a session. |
-| GET | `/api/compact/raw-context/:session_id` | Get raw context data for a session (preemptive). |
+| GET | `/api/compact/raw-context/:session_id` | Get raw context data for preemptive analysis. |
 | POST | `/api/compact/preemptive-summary` | Submit a preemptive context summary. Body: `{session_id, agent_id?, summary, context_tokens_at_trigger?}`. |
 | GET | `/api/compact/preemptive/:session_id` | Get a preemptive summary for a session. |
+
+### Examples
+
+```bash
+# Save a snapshot before compaction
+curl -s -X POST http://127.0.0.1:3847/api/compact/save \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"sess-123","trigger":"manual","context_summary":"Working on auth module"}' | jq .
+
+# Restore context after compaction
+curl -s -X POST http://127.0.0.1:3847/api/compact/restore \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"sess-123","agent_id":"orchestrator-1"}' | jq .
+```
 
 ---
 
@@ -266,7 +323,7 @@ Token consumption monitoring and capacity prediction.
 
 ## Real-time Token Tracking (3 endpoints)
 
-Real token data from Claude Code statusline (Phase 10).
+Real token data from Claude Code statusline.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -323,7 +380,7 @@ Wave lifecycle management for orchestrated execution.
 
 ## Agent Turns and Relaunch (3 endpoints)
 
-Agent turn tracking and automatic relaunch (Phase 10).
+Agent turn tracking and automatic relaunch.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -335,7 +392,7 @@ Agent turn tracking and automatic relaunch (Phase 10).
 
 ## Cockpit (3 endpoints)
 
-Aggregated control-panel views (Phase 10).
+Aggregated control-panel views.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -347,13 +404,208 @@ Aggregated control-panel views (Phase 10).
 
 ## Orchestrator (3 endpoints)
 
-Global orchestrator status and topology (Phase 11).
+Global orchestrator status and topology.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/orchestrator/topology` | Orchestrator topology view (inter-project coordination). |
 | GET | `/api/orchestrator/status` | Orchestrator operational status. |
 | GET | `/api/orchestrator/stats` | Orchestrator statistics. |
+
+---
+
+## Stats (4 endpoints)
+
+Analytics for the statistics dashboard page.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/stats/overview` | High-level usage overview with period comparison. |
+| GET | `/api/stats/tokens` | Token consumption by day/week/month/year. |
+| GET | `/api/stats/activity` | Activity heatmap data (365-day grid). |
+| GET | `/api/stats/agents` | Agent leaderboard with usage and success rates. |
+
+### Examples
+
+```bash
+# Usage overview
+curl -s http://127.0.0.1:3847/api/stats/overview | jq .
+
+# Token consumption by week
+curl -s "http://127.0.0.1:3847/api/stats/tokens?period=week" | jq .
+
+# Activity heatmap
+curl -s http://127.0.0.1:3847/api/stats/activity | jq .
+
+# Agent leaderboard
+curl -s http://127.0.0.1:3847/api/stats/agents | jq .
+```
+
+---
+
+## Skill Gate (5 endpoints)
+
+Skill enforcement and workflow state tracking per session.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/skill-gate/:session_id/skills` | Register loaded skills for a session. |
+| POST | `/api/skill-gate/:session_id/workflow` | Update workflow state (task sizing, wave tracking). |
+| POST | `/api/skill-gate/:session_id/advisor` | Submit advisor recommendations. |
+| GET | `/api/skill-gate/:session_id/status` | Get current skill gate status for a session. |
+| GET | `/api/skill-gate/:session_id/check` | Check if the gate allows code editing. |
+
+### Examples
+
+```bash
+# Register skills
+curl -s -X POST http://127.0.0.1:3847/api/skill-gate/sess-123/skills \
+  -H "Content-Type: application/json" \
+  -d '{"skills":["workflow-clean-code","laravel-expert"]}' | jq .
+
+# Check gate
+curl -s "http://127.0.0.1:3847/api/skill-gate/sess-123/check" | jq .
+```
+
+---
+
+## Settings (6 endpoints)
+
+LLM provider configuration and planner settings.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/settings/providers` | List all LLM providers with status and available models. |
+| POST | `/api/settings/providers/:key/configure` | Configure a provider (set API key). Body: `{api_key}`. |
+| POST | `/api/settings/providers/:key/test` | Test provider connectivity. |
+| POST | `/api/settings/providers/:key/deactivate` | Deactivate a provider. |
+| GET | `/api/settings/planner` | Get planner settings (active provider, timeout). |
+| POST | `/api/settings/planner` | Update planner settings. Body: `{provider_key, timeout_ms?}`. |
+
+### Examples
+
+```bash
+# List providers
+curl -s http://127.0.0.1:3847/api/settings/providers | jq .
+
+# Configure a cloud provider
+curl -s -X POST http://127.0.0.1:3847/api/settings/providers/minimax/configure \
+  -H "Content-Type: application/json" \
+  -d '{"api_key":"your_api_key_here"}' | jq .
+
+# Test provider connectivity
+curl -s -X POST http://127.0.0.1:3847/api/settings/providers/minimax/test | jq .
+
+# Set active planner
+curl -s -X POST http://127.0.0.1:3847/api/settings/planner \
+  -H "Content-Type: application/json" \
+  -d '{"provider_key":"claude-cli"}' | jq .
+```
+
+---
+
+## Pipeline (16 endpoints)
+
+Pipeline creation, execution, monitoring, and sprint management.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/pipelines` | Create a pipeline. Body: `{session_id, instructions, workspace?, documents?, context?}`. |
+| POST | `/api/pipelines/upload` | Create a pipeline with uploaded files. Multipart form data. |
+| GET | `/api/pipelines` | List all pipelines with pagination. Filter: `?session_id=`, `?status=`. |
+| GET | `/api/pipelines/:id` | Get pipeline details including plan and synthesis. |
+| GET | `/api/pipelines/:id/steps` | List all steps for a pipeline, grouped by wave. |
+| GET | `/api/pipelines/:id/live` | Get live execution state (current wave, running steps, progress). |
+| GET | `/api/pipelines/:id/events` | Get pipeline event timeline. |
+| GET | `/api/pipelines/:id/planning-output` | Get live streaming chunks from LLM planner output. |
+| GET | `/api/pipelines/:id/sprints` | List all sprints for a pipeline. |
+| GET | `/api/pipelines/:id/sprints/:number/report` | Get sprint report (objectives, files, duration). |
+| POST | `/api/pipelines/:id/start` | Start pipeline execution. |
+| POST | `/api/pipelines/:id/retry-planning` | Retry planning with the same or different provider. |
+| POST | `/api/pipelines/:id/pause` | Pause a running pipeline. |
+| POST | `/api/pipelines/:id/cancel` | Cancel a pipeline. |
+| PATCH | `/api/pipelines/:id/steps/:stepId` | Update step status. Body: `{status, result?, error?}`. |
+| DELETE | `/api/pipelines/:id` | Delete a pipeline and all associated data. |
+
+### Pipeline status lifecycle
+
+```
+planning -> ready -> running -> completed
+                  |         |-> paused -> running (resume)
+                  |         |-> failed
+                  |         |-> cancelled
+                  |-> failed (planning failure)
+```
+
+### Step status lifecycle
+
+```
+pending -> queued -> running -> completed
+                            |-> failed -> retrying -> completed
+                            |                     |-> failed (max retries)
+                            |-> skipped
+                            |-> blocked
+```
+
+### Decision engine actions
+
+When a step fails, the decision engine evaluates the error and chooses one of:
+
+| Action | Behavior |
+|--------|----------|
+| `proceed` | Move to next wave |
+| `retry` | Retry with same configuration |
+| `retry_alt` | Retry with different agent or model |
+| `skip` | Skip the failed step and continue |
+| `pause` | Pause the pipeline for human review |
+| `abort` | Abort the entire pipeline |
+| `inject` | Insert an extra step before continuing |
+| `human` | Escalate to human decision |
+
+### Examples
+
+```bash
+# Create a pipeline
+curl -s -X POST http://127.0.0.1:3847/api/pipelines \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "sess-001",
+    "instructions": "Build a user authentication system with JWT",
+    "workspace": {"path": "/home/user/project"}
+  }' | jq .
+
+# Start execution
+curl -s -X POST http://127.0.0.1:3847/api/pipelines/<id>/start | jq .
+
+# Watch live state
+curl -s http://127.0.0.1:3847/api/pipelines/<id>/live | jq .
+
+# Get planner output (streaming chunks)
+curl -s http://127.0.0.1:3847/api/pipelines/<id>/planning-output | jq .
+
+# List sprints
+curl -s http://127.0.0.1:3847/api/pipelines/<id>/sprints | jq .
+
+# Get sprint report
+curl -s http://127.0.0.1:3847/api/pipelines/<id>/sprints/1/report | jq .
+
+# Pause
+curl -s -X POST http://127.0.0.1:3847/api/pipelines/<id>/pause | jq .
+
+# Cancel
+curl -s -X POST http://127.0.0.1:3847/api/pipelines/<id>/cancel | jq .
+```
+
+---
+
+## Filesystem (2 endpoints)
+
+Workspace browsing for pipeline configuration.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/fs/browse` | Browse filesystem directories. Query: `?path=`. |
+| GET | `/api/git/status` | Get git status for a directory. Query: `?path=`. |
 
 ---
 
@@ -377,18 +629,17 @@ TTL-based message cleanup stats.
 
 ---
 
-## Endpoint count summary
+## Endpoint Count Summary
 
 | Category | Count |
 |----------|-------|
-| Health and Stats | 3 |
-| Dashboard KPIs | 1 |
+| Health and Stats | 4 |
 | Projects | 5 |
 | Sessions | 6 |
 | Requests | 5 |
 | Tasks (Waves) | 5 |
 | Subtasks | 6 |
-| Actions | 5 |
+| Actions | 6 |
 | Messages | 4 |
 | Subscriptions | 5 |
 | Blocking | 5 |
@@ -405,6 +656,11 @@ TTL-based message cleanup stats.
 | Agent Turns | 3 |
 | Cockpit | 3 |
 | Orchestrator | 3 |
+| Stats | 4 |
+| Skill Gate | 5 |
+| Settings | 6 |
+| Pipeline | 16 |
+| Filesystem | 2 |
 | Authentication | 1 |
 | Cleanup | 1 |
-| **Total (across 11 pages)** | **102** |
+| **Total** | **143** |
