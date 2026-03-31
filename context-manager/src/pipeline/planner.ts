@@ -25,8 +25,8 @@ const log = createLogger("Planner");
 /** Maximum chars per document to include in the planner prompt */
 const MAX_DOC_CHARS = 4000;
 
-/** Timeout for the headless claude call (10 minutes — Opus is slow on large prompts) */
-const PLANNER_TIMEOUT_MS = 600_000;
+/** Timeout for the headless claude call (2 minutes — falls back to heuristic if exceeded) */
+const PLANNER_TIMEOUT_MS = 120_000;
 
 /** Path to the skill-index for agent/skill reference */
 const SKILL_INDEX_PATH = new URL(
