@@ -13,6 +13,7 @@ import type {
   PipelineStepDef,
   PipelineInput,
   PipelineConstraints,
+  SprintDef,
 } from "./types";
 import {
   generateId,
@@ -113,6 +114,8 @@ export async function generatePlan(
 
   const totalDuration = waves.reduce((sum, w) => sum + estimateWaveDuration(w), 0);
 
+  const sprints = generateSprints(waves);
+
   const plan: PipelinePlan = {
     plan_id: generateId("plan"),
     version: 1,
@@ -121,6 +124,7 @@ export async function generatePlan(
     waves,
     required_skills: mergedSkills,
     constraints,
+    sprints,
   };
 
   const elapsed = Math.round(performance.now() - startMs);
@@ -543,6 +547,77 @@ async function findCatalogSkills(domains: string[]): Promise<string[]> {
     log.warn("Catalog scan failed, proceeding without catalog enrichment:", error);
     return [];
   }
+}
+
+// ============================================
+// Sprint Generation
+// ============================================
+
+/**
+ * Generate sprint definitions that logically group waves.
+ *
+ * - Sprint 1 "Discovery" = wave 0 (exploration)
+ * - Sprint 2 "Implementation" = waves 1..N-2 (all implementation waves)
+ * - Sprint 3 "Quality & Validation" = wave N-1..N (validation + testing waves)
+ *
+ * @param waves - The ordered list of pipeline waves
+ * @returns Sprint definitions grouping the waves
+ */
+function generateSprints(waves: PipelineWave[]): SprintDef[] {
+  if (waves.length === 0) return [];
+  if (waves.length === 1) {
+    return [{
+      number: 1,
+      name: "Discovery & Implementation",
+      objectives: [`Complete: ${waves[0]?.name ?? "Unnamed wave"}`],
+      wave_start: 0,
+      wave_end: 0,
+    }];
+  }
+
+  const sprints: SprintDef[] = [];
+
+  // Sprint 1: Discovery (wave 0)
+  sprints.push({
+    number: 1,
+    name: "Discovery",
+    objectives: [
+      "Explore the codebase and understand the context",
+      "Identify files and patterns to modify",
+    ],
+    wave_start: 0,
+    wave_end: 0,
+  });
+
+  // Sprint 2: Implementation (waves 1 to N-2, or just wave 1 if only 2 waves)
+  const implStart = 1;
+  const implEnd = Math.max(1, waves.length - 2);
+  const implWaveNames = waves.slice(implStart, implEnd + 1).map(w => w.name);
+  sprints.push({
+    number: 2,
+    name: "Implementation",
+    objectives: implWaveNames.map(n => `Complete: ${n}`),
+    wave_start: implStart,
+    wave_end: implEnd,
+  });
+
+  // Sprint 3: Quality (last wave(s) — validation, testing, security)
+  if (waves.length > 2) {
+    const qualStart = implEnd + 1;
+    const qualEnd = waves.length - 1;
+    if (qualStart <= qualEnd) {
+      const qualWaveNames = waves.slice(qualStart, qualEnd + 1).map(w => w.name);
+      sprints.push({
+        number: 3,
+        name: "Quality & Validation",
+        objectives: qualWaveNames.map(n => `Complete: ${n}`),
+        wave_start: qualStart,
+        wave_end: qualEnd,
+      });
+    }
+  }
+
+  return sprints;
 }
 
 // ============================================

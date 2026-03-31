@@ -828,6 +828,31 @@ export interface PipelineStep {
   duration_ms: number | null;
 }
 
+export interface PipelineSprint {
+  id: string;
+  pipeline_id: string;
+  sprint_number: number;
+  name: string;
+  objectives: string[];
+  wave_start: number;
+  wave_end: number;
+  status: string;
+  commit_sha: string | null;
+  pr_url: string | null;
+  report: {
+    summary: string;
+    objectives_met: Array<{ objective: string; met: boolean; details: string }>;
+    steps_completed: number;
+    steps_failed: number;
+    files_changed: string[];
+    duration_ms: number;
+    commit_sha: string | null;
+    pr_url: string | null;
+  } | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
 export interface PipelinesResponse {
   pipelines: Pipeline[];
   count: number;
@@ -1454,6 +1479,7 @@ export const apiClient = {
     documents?: Array<{ name: string; content: string; type: string }>;
     target_files?: string[];
     target_directories?: string[];
+    workspace: { path: string; git_repo_url?: string; git_branch?: string };
   }) =>
     apiFetch<PipelineCreateResponse>('/api/pipelines', {
       method: 'POST',
@@ -1463,6 +1489,10 @@ export const apiClient = {
     apiFetch<{ success: boolean }>(`/api/pipelines/${id}/${action}`, {
       method: 'POST',
     }),
+  getPipelineSprints: (id: string) =>
+    apiFetch<{ sprints: PipelineSprint[]; count: number }>(`/api/pipelines/${id}/sprints`),
+  getSprintReport: (id: string, sprintNumber: number) =>
+    apiFetch<{ sprint: PipelineSprint }>(`/api/pipelines/${id}/sprints/${sprintNumber}/report`),
 };
 
 export default apiClient;

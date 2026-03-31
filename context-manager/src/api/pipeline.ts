@@ -36,6 +36,11 @@ const CreatePipelineSchema = z.object({
   })).optional().default([]),
   target_files: z.array(z.string()).optional().default([]),
   target_directories: z.array(z.string()).optional().default([]),
+  workspace: z.object({
+    path: z.string().min(1, "workspace path is required"),
+    git_repo_url: z.string().optional(),
+    git_branch: z.string().optional(),
+  }),
   config: z.object({
     max_retries: z.number().int().min(0).max(5).optional(),
     strategy: z.enum(["sequential", "adaptive"]).optional(),
@@ -73,14 +78,20 @@ export async function postCreatePipeline(c: Context): Promise<Response> {
       );
     }
 
-    const { session_id, instructions, documents, target_files, target_directories, config } =
+    const { session_id, instructions, documents, target_files, target_directories, workspace, config } =
       parseResult.data;
+
+    // Build workspace config without undefined values (exactOptionalPropertyTypes compliance)
+    const workspaceConfig: import("../pipeline/types").WorkspaceConfig = { path: workspace.path };
+    if (workspace.git_repo_url) workspaceConfig.git_repo_url = workspace.git_repo_url;
+    if (workspace.git_branch) workspaceConfig.git_branch = workspace.git_branch;
 
     const input: PipelineInput = {
       instructions,
       documents,
       target_files,
       target_directories,
+      workspace: workspaceConfig,
     };
 
     log.info(`Creating pipeline: session=${session_id}, instructions=${instructions.slice(0, 80)}...`);
@@ -291,9 +302,16 @@ export async function postCreatePipelineWithFiles(c: Context): Promise<Response>
 
     const sessionId = String(body["session_id"] ?? "");
     const instructions = String(body["instructions"] ?? "");
+    const workspacePath = String(body["workspace_path"] ?? "");
+    const gitRepoUrl = body["git_repo_url"] ? String(body["git_repo_url"]) : undefined;
+    const gitBranch = body["git_branch"] ? String(body["git_branch"]) : undefined;
 
     if (!sessionId || !instructions) {
       return c.json({ error: "session_id and instructions are required" }, 400);
+    }
+
+    if (!workspacePath) {
+      return c.json({ error: "workspace_path is required" }, 400);
     }
 
     // Parse uploaded files
@@ -329,11 +347,17 @@ export async function postCreatePipelineWithFiles(c: Context): Promise<Response>
       if (body["target_directories"]) targetDirectories = JSON.parse(String(body["target_directories"]));
     } catch { /* ignore parse errors */ }
 
+    // Build workspace config without undefined values (exactOptionalPropertyTypes compliance)
+    const uploadWorkspaceConfig: import("../pipeline/types").WorkspaceConfig = { path: workspacePath };
+    if (gitRepoUrl) uploadWorkspaceConfig.git_repo_url = gitRepoUrl;
+    if (gitBranch) uploadWorkspaceConfig.git_branch = gitBranch;
+
     const input: PipelineInput = {
       instructions,
       documents,
       target_files: targetFiles,
       target_directories: targetDirectories,
+      workspace: uploadWorkspaceConfig,
     };
 
     log.info(`Creating pipeline with files: session=${sessionId}, docs=${documents.length}, instructions=${instructions.slice(0, 80)}...`);
@@ -447,5 +471,53 @@ export async function getPipelineStepsList(c: Context): Promise<Response> {
       },
       500,
     );
+  }
+}
+
+// ============================================
+// Sprint Handlers
+// ============================================
+
+/**
+ * GET /api/pipelines/:id/sprints - List all sprints for a pipeline
+ * @param c - Hono context
+ */
+export async function getPipelineSprints(c: Context): Promise<Response> {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Missing pipeline ID" }, 400);
+
+    const sql = (await import("../db/client")).getDb();
+    const sprints = await sql`
+      SELECT * FROM pipeline_sprints WHERE pipeline_id = ${id} ORDER BY sprint_number ASC
+    `;
+
+    return c.json({ sprints, count: sprints.length });
+  } catch (error) {
+    log.error("GET sprints error:", error);
+    return c.json({ error: "Failed to fetch sprints", message: error instanceof Error ? error.message : "Unknown" }, 500);
+  }
+}
+
+/**
+ * GET /api/pipelines/:id/sprints/:number/report - Get sprint detail with report
+ * @param c - Hono context
+ */
+export async function getSprintReport(c: Context): Promise<Response> {
+  try {
+    const id = c.req.param("id");
+    const num = c.req.param("number");
+    if (!id || !num) return c.json({ error: "Missing params" }, 400);
+
+    const sql = (await import("../db/client")).getDb();
+    const [sprint] = await sql`
+      SELECT * FROM pipeline_sprints WHERE pipeline_id = ${id} AND sprint_number = ${parseInt(num, 10)}
+    `;
+    if (!sprint) return c.json({ error: "Sprint not found" }, 404);
+
+    return c.json({ sprint });
+  } catch (error) {
+    log.error("GET sprint report error:", error);
+    return c.json({ error: "Failed to fetch sprint report", message: error instanceof Error ? error.message : "Unknown" }, 500);
   }
 }

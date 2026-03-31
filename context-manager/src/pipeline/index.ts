@@ -16,6 +16,8 @@ export {
   listPipelines,
   pausePipeline,
   cancelPipeline,
+  commitSprintChanges,
+  generateSprintReport,
 } from "./runner";
 export type {
   PipelineInput,
@@ -35,4 +37,8 @@ export type {
   DecisionContext,
   RetryStrategy,
   PipelineEvent,
+  WorkspaceConfig,
+  SprintDef,
+  SprintRow,
+  SprintReport,
 } from "./types";

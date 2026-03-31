@@ -26,6 +26,7 @@ import { WaveStepper } from '@/components/pipeline/WaveStepper';
 import type { WaveStepData } from '@/components/pipeline/WaveStepper';
 import { StepCard } from '@/components/pipeline/StepCard';
 import { SynthesisPanel } from '@/components/pipeline/SynthesisPanel';
+import { SprintTimeline } from '@/components/pipeline/SprintTimeline';
 
 // ============================================
 // Status helpers
@@ -233,6 +234,18 @@ export default function PipelineDetailPage() {
     },
   });
 
+  // Fetch sprints data
+  const { data: sprintsData } = useQuery({
+    queryKey: ['pipeline-sprints', pipelineId],
+    queryFn: () => apiClient.getPipelineSprints(pipelineId),
+    refetchInterval: () => {
+      const p = pipelineData?.pipeline;
+      if (!p) return 5000;
+      return (p.status === 'running' || p.status === 'pending') ? 5000 : false;
+    },
+    enabled: !!pipelineData,
+  });
+
   const pipeline = pipelineData?.pipeline ?? null;
   const allSteps = pipelineData?.steps ?? [];
 
@@ -264,6 +277,12 @@ export default function PipelineDetailPage() {
         if (data && data.pipeline_id === pipelineId) {
           queryClient.invalidateQueries({ queryKey: ['pipeline', pipelineId] });
           queryClient.invalidateQueries({ queryKey: ['pipeline-steps', pipelineId] });
+        }
+      }
+      if (eventStr === 'pipeline.sprint.completed' || eventStr === 'pipeline.sprint.started') {
+        const data = event.data as Record<string, unknown> | null;
+        if (data && data.pipeline_id === pipelineId) {
+          queryClient.invalidateQueries({ queryKey: ['pipeline-sprints', pipelineId] });
         }
       }
     },
@@ -469,6 +488,11 @@ export default function PipelineDetailPage() {
             onSelectWave={handleSelectWave}
           />
         </div>
+      )}
+
+      {/* Sprint Timeline */}
+      {sprintsData && sprintsData.sprints.length > 0 && (
+        <SprintTimeline sprints={sprintsData.sprints} />
       )}
 
       {/* All waves — full pipeline visualization */}

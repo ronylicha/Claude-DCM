@@ -56,12 +56,72 @@ export interface PipelineInput {
   /** Target files/directories to scope the work */
   target_files?: string[];
   target_directories?: string[];
+  /** Workspace configuration (required for execution) */
+  workspace?: WorkspaceConfig;
 }
 
 export interface PipelineDocument {
   name: string;
   content: string;
   type: "markdown" | "text" | "json" | "code";
+}
+
+// ============================================
+// Workspace & Git Configuration
+// ============================================
+
+export interface WorkspaceConfig {
+  /** Absolute path to workspace directory */
+  path: string;
+  /** Git repository URL (optional — if provided, will clone/pull) */
+  git_repo_url?: string;
+  /** Git branch to work on */
+  git_branch?: string;
+}
+
+// ============================================
+// Sprint Definitions
+// ============================================
+
+export interface SprintDef {
+  /** Sprint number (1-indexed) */
+  number: number;
+  /** Human-readable sprint name */
+  name: string;
+  /** Sprint objectives / deliverables */
+  objectives: string[];
+  /** First wave included in this sprint */
+  wave_start: number;
+  /** Last wave included in this sprint */
+  wave_end: number;
+}
+
+export interface SprintRow {
+  id: string;
+  pipeline_id: string;
+  sprint_number: number;
+  name: string;
+  objectives: string[];
+  wave_start: number;
+  wave_end: number;
+  status: string;
+  commit_sha: string | null;
+  pr_url: string | null;
+  report: SprintReport | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface SprintReport {
+  summary: string;
+  objectives_met: Array<{ objective: string; met: boolean; details: string }>;
+  steps_completed: number;
+  steps_failed: number;
+  files_changed: string[];
+  duration_ms: number;
+  commit_sha: string | null;
+  pr_url: string | null;
 }
 
 // ============================================
@@ -83,6 +143,8 @@ export interface PipelinePlan {
   required_skills: string[];
   /** Global constraints */
   constraints: PipelineConstraints;
+  /** Sprint breakdown for the pipeline */
+  sprints: SprintDef[];
 }
 
 export interface PipelineWave {
@@ -150,6 +212,10 @@ export interface PipelineRow {
   started_at: string | null;
   completed_at: string | null;
   updated_at: string;
+  workspace_path: string | null;
+  git_repo_url: string | null;
+  git_branch: string | null;
+  git_initialized: boolean;
 }
 
 export interface PipelineStepRow {

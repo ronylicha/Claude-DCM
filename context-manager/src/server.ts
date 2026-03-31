@@ -79,6 +79,8 @@ import {
   getPipelineStepsList,
   getPipelineLive,
   getPipelineEvents,
+  getPipelineSprints,
+  getSprintReport,
 } from "./api/pipeline";
 
 // Version from package.json (single source of truth)
@@ -573,6 +575,8 @@ app.post("/api/pipelines", postCreatePipeline);
 app.get("/api/pipelines", getListPipelines);
 app.get("/api/pipelines/:id/live", getPipelineLive);
 app.get("/api/pipelines/:id/events", getPipelineEvents);
+app.get("/api/pipelines/:id/sprints", getPipelineSprints);
+app.get("/api/pipelines/:id/sprints/:number/report", getSprintReport);
 app.get("/api/pipelines/:id", getPipelineDetail);
 app.get("/api/pipelines/:id/steps", getPipelineStepsList);
 app.post("/api/pipelines/:id/start", postStartPipeline);

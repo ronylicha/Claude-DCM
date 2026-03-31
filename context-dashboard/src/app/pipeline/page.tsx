@@ -12,6 +12,9 @@ import {
   X,
   Upload,
   FileText,
+  FolderOpen,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import apiClient from '@/lib/api-client';
@@ -34,6 +37,10 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
   const [instructions, setInstructions] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [workspacePath, setWorkspacePath] = useState('');
+  const [gitRepoUrl, setGitRepoUrl] = useState('');
+  const [gitBranch, setGitBranch] = useState('main');
+  const [showGitConfig, setShowGitConfig] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
@@ -54,10 +61,22 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      const workspace = {
+        path: workspacePath.trim(),
+        ...(gitRepoUrl.trim() ? { git_repo_url: gitRepoUrl.trim() } : {}),
+        ...(gitBranch.trim() !== 'main' ? { git_branch: gitBranch.trim() } : {}),
+      };
       if (files.length > 0) {
         const formData = new FormData();
         formData.append('session_id', sessionId.trim());
         formData.append('instructions', instructions.trim());
+        formData.append('workspace_path', workspacePath.trim());
+        if (gitRepoUrl.trim()) {
+          formData.append('git_repo_url', gitRepoUrl.trim());
+        }
+        if (gitBranch.trim() !== 'main') {
+          formData.append('git_branch', gitBranch.trim());
+        }
         for (const file of files) {
           formData.append('files', file);
         }
@@ -70,6 +89,7 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
       return apiClient.createPipeline({
         session_id: sessionId.trim(),
         instructions: instructions.trim(),
+        workspace,
       });
     },
     onSuccess: (data) => {
@@ -78,11 +98,16 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
       setSessionId('');
       setInstructions('');
       setFiles([]);
+      setWorkspacePath('');
+      setGitRepoUrl('');
+      setGitBranch('main');
+      setShowGitConfig(false);
     },
   });
 
   const canSubmit =
     sessionId.trim().length > 0 &&
+    workspacePath.trim().length > 0 &&
     (instructions.trim().length > 0 || files.length > 0) &&
     !createMutation.isPending;
 
@@ -152,6 +177,100 @@ function NewPipelineDialog({ open, onClose, onCreated }: NewPipelineDialogProps)
                 'transition-colors duration-200',
               )}
             />
+          </div>
+
+          {/* Workspace (required) */}
+          <div>
+            <label htmlFor="pipeline-workspace" className="block text-[12px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-1.5">
+              Workspace Directory <span className="text-[var(--dcm-zone-red)]">*</span>
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="pipeline-workspace"
+                type="text"
+                value={workspacePath}
+                onChange={(e) => setWorkspacePath(e.target.value)}
+                placeholder="/home/user/projects/my-project"
+                className={cn(
+                  'flex-1 px-3 py-2.5 rounded-[8px] text-[14px]',
+                  'bg-[var(--md-sys-color-surface-container)]',
+                  'border border-[var(--md-sys-color-outline-variant)]',
+                  'text-[var(--md-sys-color-on-surface)]',
+                  'placeholder:text-[var(--md-sys-color-outline)]',
+                  'focus:outline-2 focus:outline-[var(--md-sys-color-primary)]',
+                  'transition-colors duration-200',
+                )}
+              />
+              <FolderOpen className="h-5 w-5 mt-2.5 text-[var(--md-sys-color-outline)]" aria-hidden="true" />
+            </div>
+            <p className="text-[11px] text-[var(--md-sys-color-outline)] mt-1">
+              Directory where pipeline results will be stored
+            </p>
+          </div>
+
+          {/* Git configuration (optional, toggleable) */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowGitConfig(!showGitConfig)}
+              className={cn(
+                'flex items-center gap-2 text-[12px] font-medium cursor-pointer',
+                'text-[var(--md-sys-color-primary)]',
+                'hover:text-[var(--md-sys-color-on-primary-container)]',
+                'transition-colors duration-200',
+              )}
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              {showGitConfig ? 'Hide' : 'Connect'} Git Repository
+              {showGitConfig ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            </button>
+
+            {showGitConfig && (
+              <div className="mt-2 space-y-3 p-3 rounded-[8px] bg-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-outline-variant)]">
+                <div>
+                  <label htmlFor="pipeline-git-url" className="block text-[11px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-1">
+                    Repository URL
+                  </label>
+                  <input
+                    id="pipeline-git-url"
+                    type="text"
+                    value={gitRepoUrl}
+                    onChange={(e) => setGitRepoUrl(e.target.value)}
+                    placeholder="https://github.com/user/repo.git"
+                    className={cn(
+                      'w-full px-3 py-2 rounded-[6px] text-[13px]',
+                      'bg-[var(--md-sys-color-surface)]',
+                      'border border-[var(--md-sys-color-outline-variant)]',
+                      'text-[var(--md-sys-color-on-surface)]',
+                      'placeholder:text-[var(--md-sys-color-outline)]',
+                      'focus:outline-2 focus:outline-[var(--md-sys-color-primary)]',
+                      'transition-colors duration-200',
+                    )}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="pipeline-git-branch" className="block text-[11px] font-medium text-[var(--md-sys-color-on-surface-variant)] mb-1">
+                    Branch
+                  </label>
+                  <input
+                    id="pipeline-git-branch"
+                    type="text"
+                    value={gitBranch}
+                    onChange={(e) => setGitBranch(e.target.value)}
+                    placeholder="main"
+                    className={cn(
+                      'w-full px-3 py-2 rounded-[6px] text-[13px]',
+                      'bg-[var(--md-sys-color-surface)]',
+                      'border border-[var(--md-sys-color-outline-variant)]',
+                      'text-[var(--md-sys-color-on-surface)]',
+                      'placeholder:text-[var(--md-sys-color-outline)]',
+                      'focus:outline-2 focus:outline-[var(--md-sys-color-primary)]',
+                      'transition-colors duration-200',
+                    )}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Instructions */}
