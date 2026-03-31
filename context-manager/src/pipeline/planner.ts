@@ -25,8 +25,8 @@ const log = createLogger("Planner");
 /** Maximum chars per document to include in the planner prompt */
 const MAX_DOC_CHARS = 4000;
 
-/** Timeout for the headless claude call (5 minutes) */
-const PLANNER_TIMEOUT_MS = 300_000;
+/** Timeout for the headless claude call (10 minutes — Opus is slow on large prompts) */
+const PLANNER_TIMEOUT_MS = 600_000;
 
 /** Path to the skill-index for agent/skill reference */
 const SKILL_INDEX_PATH = new URL(
@@ -111,7 +111,7 @@ async function callClaudeHeadless(prompt: string): Promise<string> {
 
   // Launch in a separate systemd scope so it survives service restarts.
   // Falls back to nohup+setsid if systemd-run is not available.
-  const claudeCmd = `cat "${promptFile}" | claude -p --model claude-opus-4-6 --output-format text > "${outputFile}" 2> "${errorFile}"; echo $? > "${doneFile}"`;
+  const claudeCmd = `cat "${promptFile}" | claude -p --model claude-sonnet-4-6 --output-format text > "${outputFile}" 2> "${errorFile}"; echo $? > "${doneFile}"`;
   const proc = Bun.spawn(
     ["systemd-run", "--user", "--scope", "--", "bash", "-c", claudeCmd],
     { stdout: "ignore", stderr: "pipe", stdin: "ignore" },
