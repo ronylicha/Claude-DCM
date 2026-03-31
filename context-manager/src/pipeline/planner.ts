@@ -109,8 +109,8 @@ async function callClaudeHeadless(prompt: string): Promise<string> {
 
   log.info(`Planner job ${jobId}: launching detached claude process (prompt: ${prompt.length} chars)`);
 
-  // Launch fully detached shell script — does NOT block Bun's event loop
-  const script = `claude --print --model claude-opus-4-6 --output-format text -p "$(cat "${promptFile}")" > "${outputFile}" 2> "${errorFile}"; echo $? > "${doneFile}"`;
+  // Launch fully detached — pipe prompt via stdin to avoid shell escaping issues
+  const script = `cat "${promptFile}" | claude --print --model claude-opus-4-6 --output-format text > "${outputFile}" 2> "${errorFile}"; echo $? > "${doneFile}"`;
   Bun.spawn(["bash", "-c", script], {
     stdout: "ignore",
     stderr: "ignore",
