@@ -111,7 +111,7 @@ async function callClaudeHeadless(prompt: string): Promise<string> {
 
   // Launch in a separate systemd scope so it survives service restarts.
   // Use --system-prompt-file for the large prompt, -p for the trigger message.
-  const claudeCmd = `claude -p "Generate the execution plan now. Output ONLY the JSON object, no markdown fences." --system-prompt-file "${promptFile}" --model claude-sonnet-4-6 --output-format text > "${outputFile}" 2> "${errorFile}"; echo $? > "${doneFile}"`;
+  const claudeCmd = `claude -p "Generate the execution plan now. Output ONLY the JSON." --system-prompt-file "${promptFile}" --model claude-sonnet-4-6 --output-format text --bare --max-turns 1 > "${outputFile}" 2> "${errorFile}"; echo $? > "${doneFile}"`;
   const proc = Bun.spawn(
     ["systemd-run", "--user", "--scope", "--", "bash", "-c", claudeCmd],
     { stdout: "ignore", stderr: "pipe", stdin: "ignore" },
