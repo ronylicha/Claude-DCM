@@ -66,84 +66,17 @@ export class CLIPlannerProvider implements LLMProvider {
     let chunkIndex = 0;
     const sql = getDb();
     const decoder = new TextDecoder();
-    const isStreamJson = this.command === "claude"; // Claude uses stream-json
 
     const reader = proc.stdout.getReader();
-    let lineBuffer = "";
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const raw = decoder.decode(value, { stream: true });
-
-        if (isStreamJson) {
-          // Claude stream-json: each line is a JSON object with type + content
-          lineBuffer += raw;
-          const lines = lineBuffer.split("\n");
-          lineBuffer = lines.pop() ?? "";
-
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            try {
-              const event = JSON.parse(line) as Record<string, unknown>;
-              // Extract text content from assistant messages
-              if (event["type"] === "content_block_delta" || event["type"] === "assistant") {
-                const content = event["type"] === "content_block_delta"
-                  ? String((event["delta"] as Record<string, unknown>)?.["text"] ?? "")
-                  : "";
-                // For assistant type, extract from content array
-                let text = content;
-                if (!text && event["type"] === "assistant") {
-                  const msgContent = event["content"] as Array<Record<string, unknown>> | undefined;
-                  text = msgContent?.map(b => String(b["text"] ?? "")).join("") ?? "";
-                }
-                if (text) {
-                  contentParts.push(text);
-                  await storeChunk(sql, pipelineId, text, chunkIndex++);
-                }
-              }
-              // Also handle the result message with full content
-              if (event["type"] === "result") {
-                const result = event["result"] as string | undefined;
-                if (result && contentParts.length === 0) {
-                  contentParts.push(result);
-                  await storeChunk(sql, pipelineId, result, chunkIndex++);
-                }
-              }
-            } catch {
-              // Not valid JSON — treat as raw text
-              if (line.trim()) {
-                contentParts.push(line);
-                await storeChunk(sql, pipelineId, line, chunkIndex++);
-              }
-            }
-          }
-        } else {
-          // Codex/Gemini: raw text output, stream directly
-          contentParts.push(raw);
-          if (raw.trim()) {
-            await storeChunk(sql, pipelineId, raw, chunkIndex++);
-          }
-        }
-      }
-      // Process remaining buffer
-      if (lineBuffer.trim()) {
-        if (isStreamJson) {
-          try {
-            const event = JSON.parse(lineBuffer) as Record<string, unknown>;
-            if (event["type"] === "result") {
-              const result = event["result"] as string | undefined;
-              if (result && contentParts.length === 0) {
-                contentParts.push(result);
-                await storeChunk(sql, pipelineId, result, chunkIndex++);
-              }
-            }
-          } catch {
-            contentParts.push(lineBuffer);
-          }
-        } else {
-          contentParts.push(lineBuffer);
+        const text = decoder.decode(value, { stream: true });
+        if (text) {
+          contentParts.push(text);
+          await storeChunk(sql, pipelineId, text, chunkIndex++);
         }
       }
     } finally {
@@ -182,13 +115,12 @@ export class CLIPlannerProvider implements LLMProvider {
   private buildCliArgs(promptFile: string, userMsg: string, model?: string): string[] {
     switch (this.command) {
       case "claude":
-        // stream-json gives incremental output; --allowedTools "" disables tools
-        // so Claude outputs text only (no file writes)
+        // text output with no tools — Claude can only produce text, no file writes
         return [
           "-p", userMsg,
           "--system-prompt-file", promptFile,
           "--model", model ?? this.config.default_model,
-          "--output-format", "stream-json",
+          "--output-format", "text",
           "--allowedTools", "",
         ];
       case "codex":
