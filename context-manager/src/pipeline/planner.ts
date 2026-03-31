@@ -109,12 +109,24 @@ async function callClaudeHeadless(prompt: string): Promise<string> {
 
   log.info(`Planner job ${jobId}: launching detached claude process (prompt: ${prompt.length} chars)`);
 
-  // Launch fully detached — pipe prompt via stdin to avoid shell escaping issues
-  const script = `cat "${promptFile}" | claude --print --model claude-opus-4-6 --output-format text > "${outputFile}" 2> "${errorFile}"; echo $? > "${doneFile}"`;
-  Bun.spawn(["bash", "-c", script], {
-    stdout: "ignore",
-    stderr: "ignore",
-    stdin: "ignore",
+  // Launch in a separate systemd scope so it survives service restarts.
+  // Falls back to nohup+setsid if systemd-run is not available.
+  const claudeCmd = `cat "${promptFile}" | claude -p --model claude-opus-4-6 --output-format text > "${outputFile}" 2> "${errorFile}"; echo $? > "${doneFile}"`;
+  const proc = Bun.spawn(
+    ["systemd-run", "--user", "--scope", "--", "bash", "-c", claudeCmd],
+    { stdout: "ignore", stderr: "pipe", stdin: "ignore" },
+  );
+  // If systemd-run fails (not available), fallback to setsid
+  proc.exited.then(async (code) => {
+    if (code !== 0) {
+      const doneExists = await Bun.file(doneFile).exists();
+      if (!doneExists) {
+        log.warn(`systemd-run failed (exit ${code}), falling back to setsid`);
+        Bun.spawn(["setsid", "bash", "-c", claudeCmd], {
+          stdout: "ignore", stderr: "ignore", stdin: "ignore",
+        });
+      }
+    }
   });
 
   // Poll for completion (non-blocking, 2s interval)
