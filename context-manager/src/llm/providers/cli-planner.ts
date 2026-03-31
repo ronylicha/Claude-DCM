@@ -34,38 +34,37 @@ export class CLIPlannerProvider implements LLMProvider {
     const systemMsg = request.messages.find(m => m.role === "system")?.content ?? "";
     const userMsg = request.messages.find(m => m.role === "user")?.content ?? "";
 
-    // Write system prompt to temp file
-    const { writeFile } = await import("node:fs/promises");
+    // Write prompts to temp files (avoids shell escaping issues)
+    const { writeFile, readFile } = await import("node:fs/promises");
     const { randomUUID } = await import("node:crypto");
     const jobId = randomUUID().slice(0, 8);
     const tmpDir = "/tmp/dcm-planner";
     await Bun.spawn(["mkdir", "-p", tmpDir]).exited;
 
     const promptFile = `${tmpDir}/${jobId}.prompt`;
-    await writeFile(promptFile, systemMsg, "utf-8");
-
-    // Get pipeline_id from context if available (for streaming chunks to DB)
-    const pipelineId = (request as CLIPlannerRequest)._pipeline_id;
-
-    log.info(`CLI planner (${this.command}): starting job ${jobId}`);
-
-    // Build CLI command based on the tool
-    const args = this.buildCliArgs(promptFile, userMsg, request.model);
-
-    log.info(`CLI planner: ${this.command} ${args.join(" ").slice(0, 100)}...`);
-
-    // Run CLI in a detached scope (survives service restarts)
-    // Output goes to a temp file, we poll it for streaming
-    const { readFile } = await import("node:fs/promises");
+    const userFile = `${tmpDir}/${jobId}.user`;
+    const scriptFile = `${tmpDir}/${jobId}.sh`;
     const outputFile = `${tmpDir}/${jobId}.output`;
     const errorFile = `${tmpDir}/${jobId}.error`;
     const doneFile = `${tmpDir}/${jobId}.done`;
 
-    const cliCmd = `${this.command} ${args.map(a => a.includes(" ") ? `"${a}"` : a).join(" ")} > "${outputFile}" 2> "${errorFile}"; echo $? > "${doneFile}"`;
+    await writeFile(promptFile, systemMsg, "utf-8");
+    await writeFile(userFile, userMsg, "utf-8");
+
+    // Get pipeline_id from context if available (for streaming chunks to DB)
+    const pipelineId = (request as CLIPlannerRequest)._pipeline_id;
+    const model = request.model ?? this.config.default_model;
+
+    log.info(`CLI planner (${this.command}): starting job ${jobId}, model=${model}`);
+
+    // Write a shell script to avoid all escaping issues
+    const scriptContent = this.buildScript(promptFile, userFile, outputFile, errorFile, doneFile, model);
+    await writeFile(scriptFile, scriptContent, "utf-8");
+    await Bun.spawn(["chmod", "+x", scriptFile]).exited;
 
     // Launch in separate systemd scope so it survives service restarts
     Bun.spawn(
-      ["systemd-run", "--user", "--scope", "--", "bash", "-c", cliCmd],
+      ["systemd-run", "--user", "--scope", "--", "bash", scriptFile],
       { stdout: "ignore", stderr: "ignore", stdin: "ignore" },
     );
 
@@ -135,32 +134,38 @@ export class CLIPlannerProvider implements LLMProvider {
     };
   }
 
-  private buildCliArgs(promptFile: string, userMsg: string, model?: string): string[] {
+  /** Build a shell script that runs the CLI and redirects output to files.
+   *  All arguments are read from files — no shell escaping needed. */
+  private buildScript(
+    promptFile: string, userFile: string,
+    outputFile: string, errorFile: string, doneFile: string,
+    model: string,
+  ): string {
     switch (this.command) {
       case "claude":
-        // Let Claude use all tools (it needs them to work properly)
-        // Output is text — the post-processor will extract JSON from any format
-        return [
-          "-p", userMsg,
-          "--system-prompt-file", promptFile,
-          "--model", model ?? this.config.default_model,
-          "--output-format", "text",
-        ];
+        return `#!/bin/bash
+USER_MSG=$(cat "${userFile}")
+claude -p "$USER_MSG" --system-prompt-file "${promptFile}" --model "${model}" --output-format text > "${outputFile}" 2> "${errorFile}"
+echo $? > "${doneFile}"
+`;
       case "codex":
-        return [
-          "--quiet",
-          "--model", model ?? this.config.default_model,
-          "-p", userMsg,
-          "--system-prompt-file", promptFile,
-        ];
+        return `#!/bin/bash
+USER_MSG=$(cat "${userFile}")
+codex --quiet --model "${model}" -p "$USER_MSG" --system-prompt-file "${promptFile}" > "${outputFile}" 2> "${errorFile}"
+echo $? > "${doneFile}"
+`;
       case "gemini":
-        return [
-          "-p", userMsg,
-          "--system-prompt-file", promptFile,
-          "--model", model ?? this.config.default_model,
-        ];
+        return `#!/bin/bash
+USER_MSG=$(cat "${userFile}")
+gemini -p "$USER_MSG" --system-prompt-file "${promptFile}" --model "${model}" > "${outputFile}" 2> "${errorFile}"
+echo $? > "${doneFile}"
+`;
       default:
-        return ["-p", userMsg, "--system-prompt-file", promptFile];
+        return `#!/bin/bash
+USER_MSG=$(cat "${userFile}")
+${this.command} -p "$USER_MSG" --system-prompt-file "${promptFile}" > "${outputFile}" 2> "${errorFile}"
+echo $? > "${doneFile}"
+`;
     }
   }
 
