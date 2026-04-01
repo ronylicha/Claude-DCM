@@ -739,15 +739,17 @@ export async function evaluateWaveProgress(
         log.info(`Sprint ${sn} completed: ${report.summary}`);
       }
 
-      // Check if a new sprint should start
-      const nextSprints = await sql`
-        SELECT * FROM pipeline_sprints
-        WHERE pipeline_id = ${pipelineId} AND wave_start = ${nextWave} AND status = 'pending'
-      `;
-      for (const sprint of nextSprints) {
-        await sql`UPDATE pipeline_sprints SET status = 'running', started_at = NOW() WHERE id = ${sprint["id"]}`;
-        await recordEvent(sql, pipelineId, "sprint_start", { sprint_number: sprint["sprint_number"], name: sprint["name"] });
-        await publishEvent("global", "pipeline.sprint.started", { pipeline_id: pipelineId, sprint_number: sprint["sprint_number"] });
+      // Check if a new sprint should start (any of the newly queued waves)
+      for (const wn of waveNumbers) {
+        const nextSprints = await sql`
+          SELECT * FROM pipeline_sprints
+          WHERE pipeline_id = ${pipelineId} AND wave_start = ${wn} AND status = 'pending'
+        `;
+        for (const sprint of nextSprints) {
+          await sql`UPDATE pipeline_sprints SET status = 'running', started_at = NOW() WHERE id = ${sprint["id"]}`;
+          await recordEvent(sql, pipelineId, "sprint_start", { sprint_number: sprint["sprint_number"], name: sprint["name"] });
+          await publishEvent("global", "pipeline.sprint.started", { pipeline_id: pipelineId, sprint_number: sprint["sprint_number"] });
+        }
       }
     } else {
       // No more waves to queue — but are there still active waves?
@@ -878,8 +880,47 @@ async function handleFailedSteps(
         return;
       }
 
+      case "inject": {
+        // Inject a correction step, then re-run the guard
+        if (decision.injected_step) {
+          log.info(`Injecting correction step for wave ${waveNumber}: ${decision.injected_step.agent_type}`);
+
+          // Mark the failed guard as skipped
+          await sql`UPDATE pipeline_steps SET status = 'skipped' WHERE id = ${failedStep.id}`;
+
+          // Get next available step_order
+          const [maxOrd] = await sql<Array<{ max_order: number }>>`
+            SELECT COALESCE(MAX(step_order), -1) + 1 as max_order
+            FROM pipeline_steps WHERE pipeline_id = ${pipelineId} AND wave_number = ${waveNumber}
+          `;
+          const correctionOrder = maxOrd?.["max_order"] ?? 50;
+
+          // Insert correction step
+          const injected = decision.injected_step;
+          await sql`
+            INSERT INTO pipeline_steps (pipeline_id, wave_number, step_order, agent_type, description, skills, prompt, model, max_turns, status, retry_strategy, max_retries)
+            VALUES (${pipelineId}, ${waveNumber}, ${correctionOrder}, ${injected.agent_type}, ${injected.description}, ${injected.skills}, ${injected.prompt}, ${injected.model}, ${injected.max_turns}, 'queued', ${injected.retry_strategy}, ${injected.max_retries})
+          `;
+
+          await recordEvent(sql, pipelineId, "step_injected", {
+            wave: waveNumber,
+            agent_type: injected.agent_type,
+            message: `Correction step injected: ${injected.description}`,
+          });
+
+          // Launch correction
+          import("./executor").then(({ executeQueuedSteps }) => {
+            executeQueuedSteps(pipelineId).catch((err) => log.error("Correction executor failed:", err));
+          });
+
+          // The correction step will complete → evaluateWaveProgress will fire
+          // → runRegressionGuard will inject a new guard → cycle continues
+        }
+        break;
+      }
+
       default: {
-        // "proceed", "inject", "human" -- log and continue
+        // "proceed", "human" -- log and skip
         log.warn(`Unhandled decision action '${decision.action}', skipping step`);
         await sql`
           UPDATE pipeline_steps
@@ -940,29 +981,69 @@ async function runRegressionGuard(
   const pipeline = await getPipeline(pipelineId);
   const workspacePath = (pipeline?.["workspace_path"] as string) || "/tmp";
 
-  // Create a guard prompt
-  const guardPrompt = `Tu es un regression guard. Verifie que le travail de la wave ${waveNumber} "${waveName}" est correct.
+  // Create a thorough guard prompt
+  const guardPrompt = `Tu es un REGRESSION GUARD dans un pipeline d'orchestration DCM.
+Ta mission: verifier que la wave ${waveNumber} "${waveName}" a ete correctement implementee.
 
-Resultats de la wave:
+## Resultats des agents de cette wave
 ${stepSummaries}
 
-Workspace: ${workspacePath}
+## Workspace
+${workspacePath}
 
-Verifie:
-1. Les fichiers crees/modifies existent et sont syntaxiquement corrects
-2. Pas de fichiers manquants references dans les imports
-3. La structure suit le plan d'architecture
-4. Pas de regressions visibles (fichiers supprimes qui ne devraient pas l'etre)
+## Verifications OBLIGATOIRES (execute chacune)
 
-Reponds avec un resume court: OK si tout va bien, ou liste les problemes trouves.`;
+1. **Fichiers existent** — Verifie que chaque fichier mentionne dans les resultats existe reellement (ls ou cat)
+2. **Syntaxe correcte** — Pour les fichiers PHP: \`php -l fichier.php\`, pour TS/JS: verifie pas d'erreur de syntaxe evidente
+3. **Imports resolus** — Verifie que les imports/require referent des fichiers qui existent
+4. **Pas de regression** — Compare avec la structure attendue du plan d'architecture
+5. **Coherence** — Les fichiers crees sont-ils coherents entre eux (types, noms, conventions)
 
-  // Insert a temporary regression-guard step
+## Format de reponse
+
+Si TOUT est OK:
+\`\`\`
+GUARD_STATUS: PASS
+Toutes les verifications passent. [details]
+\`\`\`
+
+Si des PROBLEMES sont trouves:
+\`\`\`
+GUARD_STATUS: FAIL
+Problemes trouves:
+- [fichier]: [probleme precis]
+- [fichier]: [probleme precis]
+Actions correctives necessaires:
+- [correction 1]
+- [correction 2]
+\`\`\`
+
+IMPORTANT: Sois strict. Mieux vaut detecter un probleme maintenant que de le propager aux waves suivantes.`;
+
+  // Check if a guard already exists for this wave
+  const [existingGuard] = await sql`
+    SELECT id FROM pipeline_steps
+    WHERE pipeline_id = ${pipelineId} AND wave_number = ${waveNumber} AND agent_type = 'regression-guard'
+    LIMIT 1
+  `;
+  if (existingGuard) {
+    log.debug(`Regression guard already exists for wave ${waveNumber}, skipping`);
+    return;
+  }
+
+  // Get next available step_order for this wave
+  const [maxOrder] = await sql<Array<{ max_order: number }>>`
+    SELECT COALESCE(MAX(step_order), -1) + 1 as max_order
+    FROM pipeline_steps WHERE pipeline_id = ${pipelineId} AND wave_number = ${waveNumber}
+  `;
+  const guardOrder = maxOrder?.["max_order"] ?? 90;
+
   await sql`
     INSERT INTO pipeline_steps (
       pipeline_id, wave_number, step_order, agent_type, description,
       skills, prompt, model, max_turns, status, retry_strategy, max_retries
     ) VALUES (
-      ${pipelineId}, ${waveNumber}, 99, 'regression-guard',
+      ${pipelineId}, ${waveNumber}, ${guardOrder}, 'regression-guard',
       ${"Regression guard: validate wave " + waveNumber},
       ARRAY['workflow-clean-code'], ${guardPrompt}, 'sonnet', 5,
       'queued', 'same', 1
@@ -974,7 +1055,7 @@ Reponds avec un resume court: OK si tout va bien, ou liste les problemes trouves
     executeQueuedSteps(pipelineId).catch((err) => log.error("Guard executor failed:", err));
   });
 
-  log.info(`Regression guard queued for wave ${waveNumber}`);
+  log.info(`Regression guard queued for wave ${waveNumber} (step_order=${guardOrder})`);
 }
 
 // ============================================

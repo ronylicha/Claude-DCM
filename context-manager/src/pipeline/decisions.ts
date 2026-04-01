@@ -109,6 +109,28 @@ export function makeDecision(context: DecisionContext): Decision {
   if (step.status === "failed") {
     const category = getAgentCategory(step.agent_type);
 
+    if (step.agent_type === "regression-guard") {
+      // Regression guard failure = inject a correction step, then re-guard
+      log.warn("Regression guard failed — requesting correction", step.agent_type);
+      return {
+        action: "inject",
+        reason: `Regression guard found issues after ${step.max_retries} retries — injecting correction step`,
+        injected_step: {
+          order: 0,
+          agent_type: "Snipper",
+          description: `Fix issues found by regression guard: ${step.error ?? "validation errors"}`,
+          skills: ["workflow-clean-code"],
+          prompt: `The regression guard for wave ${step.wave_number} found problems:\n\n${step.error ?? "Unknown issues"}\n\nFix ALL the issues listed above. Work in the same workspace. When done, list what you fixed.`,
+          model: "sonnet",
+          max_turns: 15,
+          target_files: [],
+          target_directories: [],
+          retry_strategy: "enhanced",
+          max_retries: 2,
+        },
+      };
+    }
+
     if (category === "validator") {
       log.info("Validator step exhausted retries, skipping", step.agent_type);
       return {

@@ -104,7 +104,19 @@ async function launchAgent(
   await writeFile(promptFile, prompt, "utf-8");
 
   // Build the user message for the agent
-  const userMsg = `You are agent '${agentType}'. Execute the task described in the system prompt. Work in directory: ${workspacePath}. When done, summarize what you changed and list files modified.`;
+  const userMsg = `Tu es l'agent '${agentType}' dans un pipeline d'orchestration DCM.
+
+INSTRUCTIONS:
+1. Lis attentivement le system prompt — il contient ta tache precise
+2. Travaille dans le dossier: ${workspacePath}
+3. Execute la tache completement — pas de TODO, pas de placeholder, code complet et fonctionnel
+4. Ne demande JAMAIS confirmation — agis directement
+5. Si tu dois installer des dependances, fais-le
+
+QUAND TU AS FINI, fournis:
+- Resume de ce que tu as fait (2-3 phrases)
+- Liste des fichiers crees ou modifies (chemins complets)
+- Problemes rencontres (le cas echeant)`;
   await writeFile(userFile, userMsg, "utf-8");
 
   // Resolve full model ID
