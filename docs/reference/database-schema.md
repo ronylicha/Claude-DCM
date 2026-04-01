@@ -5,7 +5,7 @@ Complete schema for the DCM PostgreSQL database (`claude_context`).
 **PostgreSQL version:** 16+ (Docker ships with 17)
 **Extension required:** `pgcrypto` (provides `gen_random_uuid()`)
 **Schema file:** `context-manager/src/db/schema.sql`
-**Schema version:** 5.5.0
+**Schema version:** 5.7.0
 
 ---
 
@@ -741,14 +741,22 @@ CREATE TABLE pipeline_jobs (
     job_id TEXT NOT NULL,           -- Matches temp file prefix in tmp_dir
     job_type TEXT NOT NULL,         -- 'planner' | 'executor'
     tmp_dir TEXT NOT NULL,          -- '/tmp/dcm-planner' or '/tmp/dcm-executor'
-    status TEXT NOT NULL,           -- 'running' | 'completed'
+    status TEXT NOT NULL,           -- 'running' | 'completed' | 'lost'
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     completed_at TIMESTAMPTZ
 );
 ```
 
-Worker recovery flow:
-1. On startup, worker finds jobs with `status = 'running'`
-2. Checks if `{tmp_dir}/{job_id}.done` file exists
-3. If yes → reads output, parses result, updates pipeline/step
-4. If no → checks if process is alive, waits or relaunches
+**Status values:**
+
+| Status | Meaning |
+|--------|---------|
+| `running` | Job launched, process expected to be alive |
+| `completed` | `.done` file found and result processed |
+| `lost` | Temp files disappeared (service restart wiped `/tmp`) — cleaned by worker |
+
+Worker self-healing flow (every 10s cycle):
+1. **Check executor/planner jobs** — Scans for `.done` files, processes results
+2. **Cleanup stale jobs** — Marks jobs as `lost` when temp files are missing
+3. **Detect orphan steps** — Finds `running` steps with no live `claude` process → requeues (max 3 retries)
+4. **Launch queued steps** — Picks up requeued or newly ready steps and launches agents

@@ -460,6 +460,77 @@ NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
 ---
 
+## 13. Pipeline steps stuck in "running" forever
+
+**Symptom:** Pipeline steps show `running` in the dashboard but no Claude process is active. The pipeline does not advance.
+
+**Cause:** The DCM API service was restarted (manually, by watchdog, or OOM) while agents were running. The detached systemd scopes may have been killed, and `/tmp/dcm-executor/` was wiped.
+
+**Solution:**
+
+DCM v2.3.0+ handles this automatically. The worker supervisor:
+1. Detects orphan `running` steps with no active `claude` process
+2. Marks stale `pipeline_jobs` as `lost`
+3. Requeues orphan steps (up to 3 retries)
+4. Launches new agents for requeued steps
+
+If you need to trigger recovery manually:
+
+```bash
+# Check for running claude processes
+pgrep -af "claude.*-p"
+
+# Check pipeline steps status via API
+curl -s http://127.0.0.1:3847/api/pipelines/PIPELINE_ID/steps \
+  | python3 -c "import json,sys; [print(f'W{s[\"wave_number\"]} {s[\"status\"]:10s} {s[\"agent_type\"]}') for s in json.load(sys.stdin)['steps']]"
+
+# Force restart the API to trigger startup recovery
+systemctl --user restart dcm-api
+```
+
+Check worker logs for recovery activity:
+
+```bash
+journalctl --user -u dcm-api --since "5 minutes ago" | grep -iE "orphan|stale|requeue|recovery"
+```
+
+---
+
+## 14. Watchdog killing DCM API service
+
+**Symptom:** `journalctl --user -u dcm-api` shows `Watchdog timeout (limit 10min)!` followed by `SIGABRT`.
+
+**Cause:** The systemd unit had `WatchdogSec=600` but the Bun process never sends `sd_notify(WATCHDOG=1)` keepalives.
+
+**Solution:**
+
+DCM v2.3.0 sets `WatchdogSec=0` (disabled). If you still have an older unit file:
+
+```bash
+systemctl --user cat dcm-api.service | grep WatchdogSec
+```
+
+If it shows a non-zero value, edit the unit:
+
+```bash
+systemctl --user edit dcm-api.service
+```
+
+Add in the `[Service]` section override:
+
+```ini
+WatchdogSec=0
+```
+
+Then reload and restart:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user restart dcm-api
+```
+
+---
+
 ## General diagnostics
 
 ### Full health check

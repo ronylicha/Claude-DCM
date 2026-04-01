@@ -246,8 +246,8 @@ QUAND TU AS FINI, fournis:
  *   Otherwise → still running, leave alone
  */
 export async function recoverRunningAgents(): Promise<void> {
+  log.info("Recovery: checking for orphaned running agents...");
   const sql = getDb();
-  const { readFile } = await import("node:fs/promises");
 
   // 1. Find running pipelines with queued steps (executor died before launching)
   const pipelinesWithQueued = await sql<Array<{ pipeline_id: string }>>`

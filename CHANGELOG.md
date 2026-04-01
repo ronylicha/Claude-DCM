@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] - 2026-04-01
+
+### Added
+
+- **Self-healing Pipeline Worker** — Complete rewrite of the worker as an autonomous supervisor.
+  - 6 checks per cycle: planner jobs, executor jobs, stale jobs, orphan steps, stuck planning, queued steps
+  - First cycle after startup runs ALL checks immediately (no throttling)
+  - Detects orphan `running` steps with no active Claude process → auto-requeues
+  - Cleanup of stale `pipeline_jobs` whose temp files were lost after restart
+  - Retry limit (max 3) prevents infinite requeue loops → marks as `failed`
+  - Single `pgrep -af` call per cycle instead of one per step
+
+- **`step_id` column on `pipeline_jobs`** — Links jobs to specific pipeline steps for precise tracking.
+
+### Changed
+
+- **Worker startup** — All checks run on cycle 0 (immediate), replacing the fragile `import().then()` pattern.
+- **Orphan detection** — Moved from `executor.ts` (never called) into the worker's main cycle.
+- **Stale job cleanup** — New check marks `pipeline_jobs` as `lost` when temp files are missing.
+- **`checkQueuedSteps`** — No longer filters by active executor jobs (stale jobs blocked relaunches).
+
+### Fixed
+
+- **Watchdog killing DCM API** — `WatchdogSec=600` required `sd_notify` keepalives that were never sent. Disabled (`WatchdogSec=0`).
+- **`step_id` column missing** — Migration defined it but table pre-existed without it. Added `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
+- **`recoverRunningAgents()` never called** — Exported but never imported at startup. Now integrated directly in worker cycle.
+- **Silent SQL errors** — Worker catch blocks swallowed `step_id` column errors, making orphan detection silently fail.
+
 ## [2.2.0] - 2026-04-01
 
 ### Added
