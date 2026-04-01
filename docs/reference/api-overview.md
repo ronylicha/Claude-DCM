@@ -562,6 +562,28 @@ When a step fails, the decision engine evaluates the error and chooses one of:
 | `inject` | Insert an extra step before continuing |
 | `human` | Escalate to human decision |
 
+### Regression guard → improvement loop
+
+After each implementation wave, a regression guard validates the output. Guards produce structured observations:
+
+```
+GUARD_STATUS: PASS
+OBSERVATIONS:
+- Missing index on users.email column
+- No input validation on POST /api/invoices
+PRIORITY: MEDIUM
+```
+
+The runner processes observations based on priority:
+
+| Priority | Action |
+|----------|--------|
+| `HIGH` | Injects improvement wave — blocks further progress until resolved |
+| `MEDIUM` | Injects improvement wave — runs in parallel with next waves |
+| `LOW` | Logged only, no steps injected |
+
+Each observation is routed to a specialized agent (`qa-testing`, `security-specialist`, `performance-engineer`, `backend-laravel`, `frontend-react`, etc.) based on keyword detection.
+
 ### Examples
 
 ```bash

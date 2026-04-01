@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] - 2026-04-01
+
+### Added
+
+- **Guard Observation Processing** — Guards now feed improvements back into the pipeline.
+  - Guard prompt enriched: outputs structured `OBSERVATIONS:` list with `PRIORITY: HIGH|MEDIUM|LOW`
+  - `processGuardObservations()` extracts observations from PASS guards
+  - HIGH/MEDIUM priority → injects a new improvement wave with dedicated steps
+  - LOW priority → logged only, no action taken
+  - `detectAgentForObservation()` routes observations to the right agent type (qa-testing, security-specialist, performance-engineer, frontend-react, backend-laravel, etc.)
+  - Idempotent: `guard_observations_processed` event prevents double-processing
+  - Improvement steps are `pending` until `findReadyWaves()` picks them up
+
+### Changed
+
+- **Guard prompt** — Now requires structured output: `GUARD_STATUS`, `OBSERVATIONS`, `PRIORITY` fields.
+  - FAIL = blocking errors (syntax, missing files, regressions)
+  - PASS + OBSERVATIONS = functional code with improvement opportunities
+
 ## [2.3.0] - 2026-04-01
 
 ### Added
