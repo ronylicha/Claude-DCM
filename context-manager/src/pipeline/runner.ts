@@ -670,6 +670,15 @@ export async function evaluateWaveProgress(
       await runRegressionGuard(sql, pipelineId, waveNumber, completedWaveDef.name);
     }
 
+    // Process guard observations: if a guard just completed PASS with observations,
+    // analyze them and potentially inject improvement steps
+    const completedGuards = waveSteps.filter(
+      s => s.agent_type === "regression-guard" && s.status === "completed",
+    );
+    for (const guard of completedGuards) {
+      await processGuardObservations(sql, pipelineId, waveNumber, guard);
+    }
+
     // Find ALL waves whose dependencies are now fully satisfied
     const readyWaves = await findReadyWaves(sql, pipelineId);
 
@@ -1001,13 +1010,17 @@ ${workspacePath}
 
 ## Format de reponse
 
-Si TOUT est OK:
+Si TOUT est OK (avec ou sans observations):
 \`\`\`
 GUARD_STATUS: PASS
-Toutes les verifications passent. [details]
+Toutes les verifications passent.
+OBSERVATIONS:
+- [observation 1: amelioration possible, optimisation, pattern manquant, etc.]
+- [observation 2: ...]
+PRIORITY: [HIGH si blocage potentiel futur | MEDIUM si qualite | LOW si cosmetique]
 \`\`\`
 
-Si des PROBLEMES sont trouves:
+Si des PROBLEMES BLOQUANTS sont trouves:
 \`\`\`
 GUARD_STATUS: FAIL
 Problemes trouves:
@@ -1018,7 +1031,10 @@ Actions correctives necessaires:
 - [correction 2]
 \`\`\`
 
-IMPORTANT: Sois strict. Mieux vaut detecter un probleme maintenant que de le propager aux waves suivantes.`;
+IMPORTANT: Sois strict mais pragmatique.
+- FAIL = erreur de syntaxe, import cassé, fichier manquant, regression → bloque le pipeline
+- PASS + OBSERVATIONS = code fonctionnel mais améliorable → le runner decidera si une wave d'amélioration est nécessaire
+- Toujours lister tes observations, meme mineures. Le runner les utilise pour planifier des optimisations.`;
 
   // Check if a guard already exists for this wave
   const [existingGuard] = await sql`
@@ -1056,6 +1072,178 @@ IMPORTANT: Sois strict. Mieux vaut detecter un probleme maintenant que de le pro
   });
 
   log.info(`Regression guard queued for wave ${waveNumber} (step_order=${guardOrder})`);
+}
+
+// ============================================
+// Guard Observation Processing
+// ============================================
+
+/**
+ * After a regression guard PASS, extract its observations and decide
+ * whether to inject improvement steps. Only HIGH/MEDIUM priority
+ * observations trigger new steps. LOW observations are just logged.
+ *
+ * This makes the pipeline self-improving: guards don't just validate,
+ * they feed the runner with actionable improvements.
+ */
+async function processGuardObservations(
+  sql: ReturnType<typeof getDb>,
+  pipelineId: string,
+  waveNumber: number,
+  guardStep: PipelineStepRow,
+): Promise<void> {
+  const result = guardStep.result as Record<string, unknown> | null;
+  const summary = result?.["summary"] as string | undefined;
+  if (!summary) return;
+
+  // Only process if guard passed
+  if (!summary.includes("GUARD_STATUS: PASS")) return;
+
+  // Already processed this guard?
+  const guardId = guardStep.id;
+  const [alreadyProcessed] = await sql`
+    SELECT id FROM pipeline_events
+    WHERE pipeline_id = ${pipelineId}
+      AND event_type = 'guard_observations_processed'
+      AND data->>'guard_step_id' = ${guardId}
+    LIMIT 1
+  `;
+  if (alreadyProcessed) return;
+
+  // Extract observations
+  const obsMatch = summary.match(/OBSERVATIONS:\s*([\s\S]*?)(?:PRIORITY:|$)/i);
+  const priorityMatch = summary.match(/PRIORITY:\s*(HIGH|MEDIUM|LOW)/i);
+
+  if (!obsMatch || !obsMatch[1].trim()) {
+    log.debug(`Guard W${waveNumber}: PASS with no observations`);
+    return;
+  }
+
+  const observations = obsMatch[1].trim();
+  const priority = (priorityMatch?.[1] ?? "LOW").toUpperCase();
+
+  // Record that we processed this guard's observations
+  await recordEvent(sql, pipelineId, "guard_observations_processed", {
+    guard_step_id: guardId,
+    wave: waveNumber,
+    priority,
+    observations: observations.slice(0, 500),
+  });
+
+  // LOW priority: just log and move on
+  if (priority === "LOW") {
+    log.info(`Guard W${waveNumber}: PASS with LOW priority observations — logged, no action`);
+    return;
+  }
+
+  // HIGH or MEDIUM: inject improvement steps
+  log.info(`Guard W${waveNumber}: PASS with ${priority} observations — injecting improvement wave`);
+
+  const pipeline = await getPipeline(pipelineId);
+  if (!pipeline) return;
+  const workspacePath = (pipeline["workspace_path"] as string) || "/tmp";
+
+  // Find the max wave number to create a new improvement wave after current ones
+  const [maxWaveRow] = await sql<Array<{ max_wave: number }>>`
+    SELECT COALESCE(MAX(wave_number), 0) + 1 as max_wave
+    FROM pipeline_steps WHERE pipeline_id = ${pipelineId}
+  `;
+  const improvementWave = maxWaveRow?.["max_wave"] ?? waveNumber + 100;
+
+  // Parse individual observations into steps
+  const obsLines = observations
+    .split("\n")
+    .map(l => l.replace(/^[\s-*•]+/, "").trim())
+    .filter(l => l.length > 10);
+
+  if (obsLines.length === 0) return;
+
+  // Determine the right agent for each observation
+  const improvementPromptBase = `Tu es un agent d'amélioration dans un pipeline DCM.
+Le regression guard de la wave ${waveNumber} a validé le code (PASS) mais a identifié des améliorations.
+
+## Workspace
+${workspacePath}
+
+## Observation du guard
+`;
+
+  let stepOrder = 0;
+  const injectedDescriptions: string[] = [];
+
+  for (const obs of obsLines) {
+    // Determine agent type from observation content
+    const agentType = detectAgentForObservation(obs);
+    const prompt = improvementPromptBase + `${obs}
+
+## Instructions
+1. Analyse l'observation ci-dessus
+2. Implémente l'amélioration dans le workspace
+3. Vérifie que tes modifications ne cassent rien
+4. Code complet, pas de TODO, pas de placeholder`;
+
+    await sql`
+      INSERT INTO pipeline_steps (
+        pipeline_id, wave_number, step_order, agent_type, description,
+        skills, prompt, model, max_turns, status, retry_strategy, max_retries
+      ) VALUES (
+        ${pipelineId}, ${improvementWave}, ${stepOrder}, ${agentType},
+        ${"Improvement: " + obs.slice(0, 120)},
+        ARRAY['workflow-clean-code'], ${prompt}, 'sonnet', 10,
+        'pending', 'enhanced', 1
+      )
+    `;
+
+    injectedDescriptions.push(`${agentType}: ${obs.slice(0, 80)}`);
+    stepOrder++;
+  }
+
+  await recordEvent(sql, pipelineId, "improvement_wave_injected", {
+    source_wave: waveNumber,
+    improvement_wave: improvementWave,
+    priority,
+    step_count: stepOrder,
+    descriptions: injectedDescriptions,
+  });
+
+  await publishEvent("global", "pipeline.improvement.injected", {
+    pipeline_id: pipelineId,
+    source_wave: waveNumber,
+    improvement_wave: improvementWave,
+    priority,
+    step_count: stepOrder,
+  });
+
+  log.info(`Injected ${stepOrder} improvement step(s) in wave ${improvementWave} from guard observations (${priority})`);
+}
+
+/**
+ * Detect which agent type should handle an observation based on keywords.
+ */
+function detectAgentForObservation(observation: string): string {
+  const lower = observation.toLowerCase();
+
+  if (lower.includes("test") || lower.includes("couverture") || lower.includes("coverage"))
+    return "qa-testing";
+  if (lower.includes("security") || lower.includes("sécurité") || lower.includes("xss") || lower.includes("injection") || lower.includes("csrf"))
+    return "security-specialist";
+  if (lower.includes("performance") || lower.includes("optimis") || lower.includes("cache") || lower.includes("index"))
+    return "performance-engineer";
+  if (lower.includes("migration") || lower.includes("schema") || lower.includes("database") || lower.includes("index sql"))
+    return "database-admin";
+  if (lower.includes("react") || lower.includes("composant") || lower.includes("component") || lower.includes("frontend") || lower.includes("ui"))
+    return "frontend-react";
+  if (lower.includes("laravel") || lower.includes("controller") || lower.includes("service") || lower.includes("middleware") || lower.includes("php"))
+    return "backend-laravel";
+  if (lower.includes("type") || lower.includes("interface") || lower.includes("typescript"))
+    return "frontend-react";
+  if (lower.includes("doc") || lower.includes("readme") || lower.includes("comment"))
+    return "technical-writer";
+  if (lower.includes("lint") || lower.includes("format") || lower.includes("convention") || lower.includes("style"))
+    return "code-reviewer";
+
+  // Default: use Snipper for generic improvements
+  return "Snipper";
 }
 
 // ============================================
