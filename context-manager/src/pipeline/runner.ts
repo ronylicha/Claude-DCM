@@ -761,16 +761,44 @@ export async function evaluateWaveProgress(
         }
       }
     } else {
-      // No more waves to queue — but are there still active waves?
-      const activeWaveSteps = await sql<PipelineStepRow[]>`
-        SELECT * FROM pipeline_steps
-        WHERE pipeline_id = ${pipelineId} AND status IN ('queued', 'running', 'retrying')
+      // No more waves to queue — but are there still active or pending steps?
+      const remainingSteps = await sql<Array<{ status: string; cnt: string }>>`
+        SELECT status, COUNT(*)::text as cnt FROM pipeline_steps
+        WHERE pipeline_id = ${pipelineId} AND status IN ('queued', 'running', 'retrying', 'pending')
+        GROUP BY status
       `;
-      if (activeWaveSteps.length === 0) {
-        // Nothing queued, nothing running — pipeline is truly done
+      const activeCount = remainingSteps
+        .filter(r => ["queued", "running", "retrying"].includes(r["status"] as string))
+        .reduce((s, r) => s + parseInt(r["cnt"] as string, 10), 0);
+      const pendingCount = remainingSteps
+        .filter(r => r["status"] === "pending")
+        .reduce((s, r) => s + parseInt(r["cnt"] as string, 10), 0);
+
+      if (activeCount === 0 && pendingCount === 0) {
+        // Nothing active, nothing pending — pipeline is truly done
         await completePipeline(pipelineId, "completed");
+      } else if (activeCount > 0) {
+        log.debug(`No new waves to queue, but ${activeCount} steps still active — waiting`);
       } else {
-        log.debug(`No new waves to queue, but ${activeWaveSteps.length} steps still active — waiting`);
+        // Pending steps exist but findReadyWaves didn't pick them up
+        // This can happen if improvement waves were just injected — re-check
+        log.info(`${pendingCount} pending step(s) found after wave evaluation — re-checking`);
+        const retryReady = await findReadyWaves(sql, pipelineId);
+        if (retryReady.length > 0) {
+          const waveNumbers = retryReady.map(w => w.wave_number);
+          const maxWave = Math.max(...waveNumbers);
+          await sql`UPDATE pipelines SET current_wave = ${maxWave}, updated_at = ${nowISO()} WHERE id = ${pipelineId}`;
+          await sql`UPDATE pipeline_steps SET status = 'queued' WHERE pipeline_id = ${pipelineId} AND wave_number = ANY(${waveNumbers}) AND status = 'pending'`;
+          const totalNewSteps = retryReady.reduce((s, w) => s + w.step_count, 0);
+          log.info(`Late-discovered waves: ${retryReady.length} wave(s) queued [${waveNumbers.join(",")}] (${totalNewSteps} steps)`);
+          await publishEvent("global", "pipeline.waves.started", { pipeline_id: pipelineId, wave_numbers: waveNumbers, total_steps: totalNewSteps });
+          import("./executor").then(({ executeQueuedSteps }) => {
+            executeQueuedSteps(pipelineId).catch((err) => log.error("Late executor launch failed:", err));
+          });
+        } else {
+          log.warn(`${pendingCount} pending step(s) but none ready (deps not met?) — completing anyway`);
+          await completePipeline(pipelineId, "completed");
+        }
       }
     }
   } else {
@@ -1110,7 +1138,7 @@ async function processGuardObservations(
   `;
   if (alreadyProcessed) return;
 
-  // Extract observations
+  // Extract observations and priority
   const obsMatch = summary.match(/OBSERVATIONS:\s*([\s\S]*?)(?:PRIORITY:|$)/i);
   const priorityMatch = summary.match(/PRIORITY:\s*(HIGH|MEDIUM|LOW)/i);
 
@@ -1119,7 +1147,7 @@ async function processGuardObservations(
     return;
   }
 
-  const observations = obsMatch[1].trim();
+  const rawObservations = obsMatch[1].trim();
   const priority = (priorityMatch?.[1] ?? "LOW").toUpperCase();
 
   // Record that we processed this guard's observations
@@ -1127,7 +1155,7 @@ async function processGuardObservations(
     guard_step_id: guardId,
     wave: waveNumber,
     priority,
-    observations: observations.slice(0, 500),
+    observations: rawObservations.slice(0, 500),
   });
 
   // LOW priority: just log and move on
@@ -1143,22 +1171,22 @@ async function processGuardObservations(
   if (!pipeline) return;
   const workspacePath = (pipeline["workspace_path"] as string) || "/tmp";
 
-  // Find the max wave number to create a new improvement wave after current ones
+  // Find the max wave number to create a new improvement wave
   const [maxWaveRow] = await sql<Array<{ max_wave: number }>>`
     SELECT COALESCE(MAX(wave_number), 0) + 1 as max_wave
     FROM pipeline_steps WHERE pipeline_id = ${pipelineId}
   `;
   const improvementWave = maxWaveRow?.["max_wave"] ?? waveNumber + 100;
 
-  // Parse individual observations into steps
-  const obsLines = observations
-    .split("\n")
-    .map(l => l.replace(/^[\s-*•]+/, "").trim())
-    .filter(l => l.length > 10);
+  // Parse observations into coherent blocks (not line-by-line)
+  // An observation starts with "- [" or "- " at the beginning of a line
+  const observationBlocks = parseObservationBlocks(rawObservations);
 
-  if (obsLines.length === 0) return;
+  if (observationBlocks.length === 0) return;
 
-  // Determine the right agent for each observation
+  // Cap at 5 improvement steps max to avoid bloat
+  const cappedObs = observationBlocks.slice(0, 5);
+
   const improvementPromptBase = `Tu es un agent d'amélioration dans un pipeline DCM.
 Le regression guard de la wave ${waveNumber} a validé le code (PASS) mais a identifié des améliorations.
 
@@ -1171,8 +1199,7 @@ ${workspacePath}
   let stepOrder = 0;
   const injectedDescriptions: string[] = [];
 
-  for (const obs of obsLines) {
-    // Determine agent type from observation content
+  for (const obs of cappedObs) {
     const agentType = detectAgentForObservation(obs);
     const prompt = improvementPromptBase + `${obs}
 
@@ -1215,6 +1242,41 @@ ${workspacePath}
   });
 
   log.info(`Injected ${stepOrder} improvement step(s) in wave ${improvementWave} from guard observations (${priority})`);
+}
+
+/**
+ * Parse guard observations into coherent blocks.
+ * Each observation starts with "- " or "- [" at the start of a line.
+ * Continuation lines (without leading dash) are joined to the previous block.
+ *
+ * Example input:
+ *   - [file.ts:10] Import dupliqué, détail
+ *     suite de l'observation sur la ligne suivante
+ *   - [LOW] Commentaire manquant
+ *
+ * Returns: ["[file.ts:10] Import dupliqué, détail suite de l'observation...", "[LOW] Commentaire manquant"]
+ */
+function parseObservationBlocks(raw: string): string[] {
+  const blocks: string[] = [];
+  let current = "";
+
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // New observation block starts with "- " or "* " or "• "
+    if (/^[-*•]\s/.test(trimmed)) {
+      if (current) blocks.push(current);
+      current = trimmed.replace(/^[-*•]\s+/, "");
+    } else {
+      // Continuation of previous block
+      current += " " + trimmed;
+    }
+  }
+  if (current) blocks.push(current);
+
+  // Filter out very short blocks (less than 20 chars = noise)
+  return blocks.filter(b => b.length >= 20);
 }
 
 /**
@@ -1297,6 +1359,7 @@ async function findReadyWaves(
   // Find waves that are pending (all steps pending) AND whose deps are all completed
   const readyWaves: ReadyWave[] = [];
 
+  // Check plan waves (original plan)
   for (const wave of plan.waves) {
     const waveStatuses = stepsByWave.get(wave.number) ?? [];
 
@@ -1313,6 +1376,16 @@ async function findReadyWaves(
       wave_number: wave.number,
       step_count: waveStatuses.length,
     });
+  }
+
+  // Also check dynamically injected waves (improvement waves not in the plan)
+  // These have no depends_on — they're ready if all their steps are pending
+  const planWaveNumbers = new Set(plan.waves.map(w => w.number));
+  for (const [wn, statuses] of stepsByWave.entries()) {
+    if (planWaveNumbers.has(wn)) continue; // Already handled above
+    const allPending = statuses.every(s => s === "pending");
+    if (!allPending || statuses.length === 0) continue;
+    readyWaves.push({ wave_number: wn, step_count: statuses.length });
   }
 
   return readyWaves;
