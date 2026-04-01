@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.0] - 2026-04-01
+
+### Added
+
+- **Bundled Agents, Skills, Rules & CLAUDE.md** — DCM ships with all referenced assets.
+  - 65 agent definitions (`.md` files) covering all `subagent_type` values used in prompts
+  - 58 skill packages (folders with `SKILL.md`, references, steps) for all domain skills
+  - 5 command definitions for slash commands
+  - 9 rule files (backend-laravel, database, development, devops-cicd, frontend-react, mobile-react-native, protection-workflow, security, testing)
+  - `CLAUDE.md.template` — complete orchestration rules installed as `~/.claude/CLAUDE.md` on first install
+  - `dcm install` step 5d: `install_bundled_assets()` copies agents/skills/commands/rules to `~/.claude/`
+  - Agents and skills are only installed if not already present (no overwrite)
+  - Rules are always updated (DCM is the source of truth)
+  - CLAUDE.md is only installed if no user file exists
+
+### Changed
+
+- **`dcm` CLI** — v2.4.0 with `install_bundled_assets` function in install workflow.
+
 ## [2.4.0] - 2026-04-01
 
 ### Added

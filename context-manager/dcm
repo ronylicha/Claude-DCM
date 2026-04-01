@@ -4,7 +4,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="2.3.0"
+VERSION="2.4.0"
 
 # Colors
 RED='\033[0;31m'
@@ -76,6 +76,81 @@ usage() {
     echo "  dcm start            # Start everything"
     echo "  dcm status           # Check what's running"
     echo "  dcm supervisor status  # Detailed systemd status"
+}
+
+install_bundled_assets() {
+    local claude_dir="$HOME/.claude"
+    local agents_src="$SCRIPT_DIR/agents"
+    local skills_src="$SCRIPT_DIR/skills"
+    local commands_src="$SCRIPT_DIR/commands"
+    local agents_installed=0 skills_installed=0 cmds_installed=0
+
+    # Install agents (.md files → ~/.claude/agents/)
+    if [[ -d "$agents_src" ]]; then
+        mkdir -p "$claude_dir/agents"
+        for f in "$agents_src"/*.md; do
+            [[ -f "$f" ]] || continue
+            local name=$(basename "$f")
+            if [[ ! -f "$claude_dir/agents/$name" ]]; then
+                cp "$f" "$claude_dir/agents/$name"
+                ((agents_installed++))
+            fi
+        done
+    fi
+
+    # Install skills (directories → ~/.claude/skills/)
+    if [[ -d "$skills_src" ]]; then
+        mkdir -p "$claude_dir/skills"
+        for d in "$skills_src"/*/; do
+            [[ -d "$d" ]] || continue
+            local name=$(basename "$d")
+            if [[ ! -d "$claude_dir/skills/$name" ]]; then
+                cp -r "$d" "$claude_dir/skills/$name"
+                ((skills_installed++))
+            fi
+        done
+    fi
+
+    # Install commands (.md files + directories → ~/.claude/commands/)
+    if [[ -d "$commands_src" ]]; then
+        mkdir -p "$claude_dir/commands"
+        for item in "$commands_src"/*; do
+            [[ -e "$item" ]] || continue
+            local name=$(basename "$item")
+            if [[ ! -e "$claude_dir/commands/$name" ]]; then
+                cp -r "$item" "$claude_dir/commands/$name"
+                ((cmds_installed++))
+            fi
+        done
+    fi
+
+    # Install rules (.md files → ~/.claude/rules/)
+    local rules_src="$SCRIPT_DIR/rules"
+    local rules_installed=0
+    if [[ -d "$rules_src" ]]; then
+        mkdir -p "$claude_dir/rules"
+        for f in "$rules_src"/*.md; do
+            [[ -f "$f" ]] || continue
+            local name=$(basename "$f")
+            # Always overwrite rules (they're DCM's source of truth)
+            cp "$f" "$claude_dir/rules/$name"
+            ((rules_installed++))
+        done
+    fi
+
+    # Install CLAUDE.md template (only if no user CLAUDE.md exists)
+    local claude_md_src="$SCRIPT_DIR/CLAUDE.md.template"
+    if [[ -f "$claude_md_src" ]] && [[ ! -f "$claude_dir/CLAUDE.md" ]]; then
+        cp "$claude_md_src" "$claude_dir/CLAUDE.md"
+        echo "  CLAUDE.md: installed (new)"
+    else
+        echo "  CLAUDE.md: skipped (user file exists)"
+    fi
+
+    echo "  Agents: $agents_installed new ($(ls "$agents_src"/*.md 2>/dev/null | wc -l) bundled)"
+    echo "  Skills: $skills_installed new ($(ls -d "$skills_src"/*/ 2>/dev/null | wc -l) bundled)"
+    echo "  Commands: $cmds_installed new ($(ls "$commands_src" 2>/dev/null | wc -l) bundled)"
+    echo "  Rules: $rules_installed updated ($(ls "$rules_src"/*.md 2>/dev/null | wc -l) bundled)"
 }
 
 cmd_install() {
@@ -158,6 +233,11 @@ cmd_install() {
     else
         echo -e "  ${YELLOW}Agent registry import skipped (API not running)${NC}"
     fi
+
+    # Step 5d: Install bundled agents and skills
+    echo -e "${YELLOW}[5d/6]${NC} Installing bundled agents & skills..."
+    install_bundled_assets
+    echo -e "  ${GREEN}Bundled assets installed${NC}"
 
     # Step 6: Supervisor (systemd user services)
     echo -e "${YELLOW}[6/6]${NC} Installing supervisor (auto-start on boot)..."
