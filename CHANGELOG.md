@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.6.0] - 2026-04-03
+
+### Fixed
+
+- **Systemd PATH auto-detection** — `build_service_path()` detects binary locations for `claude`, `bun`, `node`, `npm`, `npx`, `git`, `curl`, `psql`, `jq`, `codex`, `gemini` and injects them into `Environment=PATH=` in all 3 service templates. Fixes `claude: command not found` when pipeline planner runs via systemd.
+- **WatchdogSec=0** — Disabled in API service template (was 600s, caused kills without sd_notify).
+- **Pipeline planning failure** — Root cause was missing PATH in systemd preventing `claude` CLI from being found.
+
+### Changed
+
+- **Service templates** — All 3 templates (`dcm-api`, `dcm-ws`, `dcm-dashboard`) now include `Environment=PATH=__SERVICE_PATH__`.
+- **`setup-supervisor.sh`** — `template_service()` replaces `__SERVICE_PATH__` with auto-detected PATH. Also checks `~/.local/bin`, `~/.bun/bin`, `~/.cargo/bin` as fallbacks.
+
 ## [2.5.0] - 2026-04-01
 
 ### Added

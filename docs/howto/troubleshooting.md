@@ -531,6 +531,33 @@ systemctl --user restart dcm-api
 
 ---
 
+## 15. Pipeline planner: "claude: command not found"
+
+**Symptom:** Pipeline stays in `planning` then fails. Logs show `claude : commande introuvable` or `command not found`.
+
+**Cause:** The systemd service has a minimal PATH that does not include `~/.local/bin` where `claude` is installed.
+
+**Solution:**
+
+DCM v2.6.0+ auto-detects all binary paths during `dcm install`. If you installed before v2.6.0, reload the supervisor:
+
+```bash
+cd context-manager
+bash scripts/setup-supervisor.sh reload
+```
+
+This regenerates all service files with the correct `Environment=PATH=...` line.
+
+To verify the fix:
+
+```bash
+systemctl --user cat dcm-api.service | grep "Environment=PATH"
+```
+
+You should see a PATH that includes `~/.local/bin` and `~/.bun/bin`.
+
+---
+
 ## General diagnostics
 
 ### Full health check
