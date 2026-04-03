@@ -10,6 +10,7 @@ StartLimitIntervalSec=60
 Type=simple
 WorkingDirectory=__DCM_ROOT__
 EnvironmentFile=__DCM_ROOT__/.env
+Environment=PATH=__SERVICE_PATH__
 ExecStart=__BUN_PATH__ run src/websocket-server.ts
 KillMode=mixed
 KillSignal=SIGTERM

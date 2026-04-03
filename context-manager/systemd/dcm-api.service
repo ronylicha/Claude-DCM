@@ -10,6 +10,7 @@ StartLimitIntervalSec=60
 Type=simple
 WorkingDirectory=__DCM_ROOT__
 EnvironmentFile=__DCM_ROOT__/.env
+Environment=PATH=__SERVICE_PATH__
 ExecStart=__BUN_PATH__ run src/server.ts
 ExecStartPost=/bin/sh -c 'for i in 1 2 3 4 5 6 7 8 9 10; do curl -s --connect-timeout 1 http://127.0.0.1:${PORT:-3847}/health | grep -q healthy && exit 0; sleep 1; done; exit 1'
 KillMode=mixed
@@ -17,7 +18,7 @@ KillSignal=SIGTERM
 TimeoutStopSec=30
 Restart=always
 RestartSec=5
-WatchdogSec=600
+WatchdogSec=0
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=dcm-api

@@ -11,6 +11,7 @@ Type=simple
 WorkingDirectory=__DASHBOARD_ROOT__
 Environment=NODE_ENV=production
 Environment=PORT=__DASHBOARD_PORT__
+Environment=PATH=__SERVICE_PATH__
 Environment=NEXT_PUBLIC_API_URL=http://127.0.0.1:__API_PORT__
 Environment=NEXT_PUBLIC_WS_URL=ws://127.0.0.1:__WS_PORT__
 ExecStartPre=/usr/bin/npx next build

@@ -44,6 +44,48 @@ if [[ -z "$BUN_PATH" ]]; then
     exit 1
 fi
 
+# Build a PATH that includes all dirs needed by DCM services
+# systemd user services inherit a minimal PATH, missing ~/.local/bin, ~/.bun/bin, nvm, cargo, etc.
+build_service_path() {
+    local dirs=()
+
+    # Always include standard system dirs
+    dirs+=("/usr/local/sbin" "/usr/local/bin" "/usr/sbin" "/usr/bin" "/sbin" "/bin")
+
+    # Add directory of each detected binary
+    for bin in claude bun node npm npx git curl psql jq codex gemini; do
+        local bin_path
+        bin_path="$(command -v "$bin" 2>/dev/null || true)"
+        if [[ -n "$bin_path" ]]; then
+            local bin_dir
+            bin_dir="$(dirname "$bin_path")"
+            # Avoid duplicates
+            local already=false
+            for d in "${dirs[@]}"; do
+                [[ "$d" == "$bin_dir" ]] && already=true && break
+            done
+            [[ "$already" == "false" ]] && dirs+=("$bin_dir")
+        fi
+    done
+
+    # Also check common user-local dirs that may not have binaries yet
+    for extra in "$HOME/.local/bin" "$HOME/.bun/bin" "$HOME/.cargo/bin"; do
+        if [[ -d "$extra" ]]; then
+            local already=false
+            for d in "${dirs[@]}"; do
+                [[ "$d" == "$extra" ]] && already=true && break
+            done
+            [[ "$already" == "false" ]] && dirs+=("$extra")
+        fi
+    done
+
+    # Join with ":"
+    local IFS=":"
+    echo "${dirs[*]}"
+}
+
+SERVICE_PATH="$(build_service_path)"
+
 # Check systemd user support
 check_systemd_user() {
     if ! systemctl --user status >/dev/null 2>&1; then
@@ -85,6 +127,7 @@ template_service() {
         -e "s|__API_PORT__|${API_PORT}|g" \
         -e "s|__WS_PORT__|${WS_PORT}|g" \
         -e "s|__DASHBOARD_PORT__|${DASHBOARD_PORT}|g" \
+        -e "s|__SERVICE_PATH__|${SERVICE_PATH}|g" \
         "$src" > "$dst"
 }
 
