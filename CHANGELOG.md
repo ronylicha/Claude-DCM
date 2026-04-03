@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.6.1] - 2026-04-03
+
+### Changed
+
+- **GitHub Pages site** — Complete overhaul of `index.html` to reflect v2.6.x.
+  - Hero: updated tagline, description, and version badge (v1.3.0 → v2.6.1)
+  - Stats: 143+ endpoints, 6 LLM providers, 26+ tables, 18 dashboard pages, 5 services
+  - Features: 12 cards covering Pipeline Engine, Sprint System, LLM Providers, Live Streaming, Smart Recovery, Guard & Observations, Docker, Bundled Assets
+  - Architecture: 5-service diagram (added Pipeline Engine + Redis)
+  - Dashboard preview: updated sidebar with Pipelines, Sprints, Settings pages
+  - Tech stack: added Redis, Three.js, Remotion
+  - Quick Start: added Docker option alongside native install
+  - New SVG logo (network constellation) replacing emoji favicon
+
+### Added
+
+- **Changelog section** on GitHub Pages site — displays v2.1.0 through v2.6.0 releases with links to full CHANGELOG.md
+
 ## [2.6.0] - 2026-04-03
 
 ### Fixed
