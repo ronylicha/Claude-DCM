@@ -149,6 +149,36 @@ export function ProjectHeader({
           >
             {project.path}
           </code>
+
+          {/* Context status indicator */}
+          <div className="flex items-center gap-2 mt-0.5">
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 text-[10px]',
+                analyzeStatus === 'running'
+                  ? 'text-[var(--md-sys-color-tertiary)]'
+                  : analyzeStatus === 'done'
+                    ? 'text-[var(--dcm-zone-green)]'
+                    : 'text-[var(--md-sys-color-outline)]',
+              )}
+            >
+              <span
+                className={cn(
+                  'w-1.5 h-1.5 rounded-full',
+                  analyzeStatus === 'running'
+                    ? 'bg-[var(--md-sys-color-tertiary)] animate-pulse'
+                    : analyzeStatus === 'done'
+                      ? 'bg-[var(--dcm-zone-green)]'
+                      : 'bg-[var(--md-sys-color-outline-variant)]',
+                )}
+              />
+              {analyzeStatus === 'running'
+                ? 'Context updating...'
+                : analyzeStatus === 'done'
+                  ? 'Context up to date'
+                  : 'Context not generated'}
+            </span>
+          </div>
         </div>
 
         {/* Action buttons */}
