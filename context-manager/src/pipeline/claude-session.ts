@@ -733,6 +733,19 @@ async function handleAutoFinalize(
         }
       }
 
+      // Queue all pending steps for execution
+      await sql`
+        UPDATE pipeline_steps SET status = 'queued'
+        WHERE pipeline_id = ${pipelineId} AND status = 'pending'
+      `;
+
+      // Notify pipeline dashboard of new steps
+      await publishEvent("global", "pipeline.step.updated", {
+        pipeline_id: pipelineId,
+        source: "epic_finalize",
+        tasks_added: proposedTasks.length,
+      });
+
       log.info(
         `Finalized ${proposedTasks.length} task(s) for epic ${epicId.slice(0, 8)} → pipeline ${pipelineId.slice(0, 8)}`,
       );

@@ -173,8 +173,8 @@ export default function ProjectBoardPage() {
 
   return (
     <>
-      {/* Full-height flex column — board takes all remaining space */}
-      <div className="flex flex-col gap-4 p-6 h-full min-h-0">
+      {/* Scrollable project page */}
+      <div className="flex flex-col gap-4 p-6 min-h-full">
         {/* Back link */}
         <div className="flex items-center">
           <Link href="/projects">
@@ -203,8 +203,8 @@ export default function ProjectBoardPage() {
         {/* Progress summary bar */}
         <BoardSummaryBar stats={stats} board={board} />
 
-        {/* Kanban board — flex-1 so it fills remaining height */}
-        <div className="flex-1 min-h-0 overflow-hidden">
+        {/* Kanban board */}
+        <div>
           <KanbanBoard
             board={board}
             onTransition={handleTransition}

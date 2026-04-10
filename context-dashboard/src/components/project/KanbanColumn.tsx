@@ -85,7 +85,7 @@ export function KanbanColumn({
           'flex flex-col gap-2 p-2 overflow-y-auto',
           'scrollbar-thin scrollbar-thumb-[var(--md-sys-color-outline-variant)] scrollbar-track-transparent',
         )}
-        style={{ maxHeight: 'calc(100vh - 280px)', minHeight: '80px' }}
+        style={{ minHeight: '80px' }}
         role="list"
         aria-label={`${title} epics`}
       >
