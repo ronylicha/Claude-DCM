@@ -165,10 +165,7 @@ export async function analyzeProject(projectId: string): Promise<void> {
         "--system-prompt", ANALYZER_SYSTEM_PROMPT,
         "--model", "claude-sonnet-4-6",
         "--output-format", "text",
-        "--max-turns", "10",
-        "--tools", "Read,Bash,Grep,Glob",
-        "--strict-mcp-config",
-        "--mcp-config", emptyMcpFile,
+        "--max-turns", "20",
       ],
       {
         stdout: "pipe",
