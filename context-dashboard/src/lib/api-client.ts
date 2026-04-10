@@ -1558,6 +1558,28 @@ export const apiClient = {
   },
 
   // ==========================================
+  // Step Output - /api/pipelines/:id/steps/:stepId/output
+  // ==========================================
+  getStepOutput: (pipelineId: string, stepId: string, sinceIndex?: number) => {
+    const params = sinceIndex !== undefined ? `?since_index=${sinceIndex}` : '';
+    return apiFetch<{
+      step_id: string;
+      pipeline_id: string;
+      agent_type: string;
+      status: string;
+      wave_number: number;
+      step_order: number;
+      chunks: Array<{ chunk: string; chunk_index: number; created_at: string }>;
+      full_text: string;
+      is_live: boolean;
+      latest_index: number;
+      error: string | null;
+      started_at: string | null;
+      completed_at: string | null;
+    }>(`/api/pipelines/${pipelineId}/steps/${stepId}/output${params}`);
+  },
+
+  // ==========================================
   // Planner Settings - /api/settings/planner
   // ==========================================
   getPlannerSettings: () =>
