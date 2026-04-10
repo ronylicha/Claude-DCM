@@ -297,7 +297,7 @@ async function checkOrphanRunningSteps(): Promise<void> {
     if (isAlive) continue;
 
     // Process not found — is it too young to declare dead?
-    if (ageMinutes < 10) continue;
+    if (ageMinutes < 2) continue;
 
     // Check output file activity as a last resort
     const hasActivity = await checkOutputActivity(stepId);
