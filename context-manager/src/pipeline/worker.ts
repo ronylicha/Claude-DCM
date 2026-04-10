@@ -477,9 +477,64 @@ async function checkOutputActivity(stepId: string): Promise<boolean> {
   }
 }
 
-// Streaming chunks are handled by cli-planner.ts polling loop — worker no longer duplicates.
-async function streamNewChunks(_pipelineId: string, _outputFile: string): Promise<void> {
-  // No-op: cli-planner.ts parseStreamEvents() stores structured JSON chunks directly.
+// Stream structured events from executor output files (stream-json NDJSON format).
+// For planner jobs, cli-planner.ts handles streaming directly.
+// For executor jobs after server restart, the worker takes over.
+const lastOutputSizes = new Map<string, number>();
+
+async function streamNewChunks(pipelineId: string, outputFile: string): Promise<void> {
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const content = await readFile(outputFile, "utf-8").catch(() => "");
+    const lastSize = lastOutputSizes.get(outputFile) ?? 0;
+
+    if (content.length <= lastSize || content.length === 0) return;
+
+    const newBytes = content.slice(lastSize);
+    lastOutputSizes.set(outputFile, content.length);
+
+    // Parse stream-json NDJSON into structured events
+    const events: Array<Record<string, string>> = [];
+    for (const line of newBytes.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const raw = JSON.parse(line) as Record<string, unknown>;
+        if (raw["type"] === "assistant") {
+          const msg = raw["message"] as Record<string, unknown> | undefined;
+          const blocks = msg?.["content"] as Array<Record<string, unknown>> | undefined;
+          if (!Array.isArray(blocks)) continue;
+          for (const block of blocks) {
+            const bt = block["type"] as string;
+            if (bt === "text" && block["text"]) {
+              events.push({ kind: "text", content: (block["text"] as string).slice(0, 500) });
+            } else if (bt === "tool_use") {
+              const name = block["name"] as string ?? "";
+              const input = block["input"] as Record<string, unknown> ?? {};
+              const detail = String(input["file_path"] ?? input["command"] ?? input["pattern"] ?? input["skill"] ?? "").slice(0, 100);
+              events.push({ kind: "action", tool: name, detail });
+            }
+          }
+        }
+      } catch { continue; }
+    }
+
+    // Store structured events
+    const sql = getDb();
+    for (const evt of events) {
+      const chunkIdx = Math.floor(content.length / 200);
+      await sql`
+        INSERT INTO planning_output (pipeline_id, chunk, chunk_index)
+        VALUES (${pipelineId}, ${JSON.stringify(evt)}, ${chunkIdx})
+      `.catch(() => {});
+    }
+
+    if (events.length > 0) {
+      await publishEvent("global", "pipeline.agent.output", {
+        pipeline_id: pipelineId,
+        events_count: events.length,
+      });
+    }
+  } catch { /* ignore */ }
 }
 
 function cleanupJobFiles(tmpDir: string, jobId: string): void {
