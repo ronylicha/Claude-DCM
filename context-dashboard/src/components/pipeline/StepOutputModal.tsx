@@ -17,6 +17,7 @@ import {
 import { cn, formatDuration } from '@/lib/utils';
 import { apiClient } from '@/lib/api-client';
 import type { PipelineStep } from '@/lib/api-client';
+import { type StreamEvent, groupStreamEvents, EventBlock, parseChunkToEvents } from './EventBlocks';
 
 interface StepOutputModalProps {
   open: boolean;
@@ -61,7 +62,7 @@ function StatusBadge({ status }: { status: string }) {
 export function StepOutputModal({ open, onClose, pipelineId, step }: StepOutputModalProps) {
   const [copied, setCopied] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
-  const outputRef = useRef<HTMLPreElement>(null);
+  const outputRef = useRef<HTMLDivElement>(null);
 
   const isRunning =
     step.status === 'running' || step.status === 'pending' || step.status === 'queued';
@@ -289,21 +290,45 @@ export function StepOutputModal({ open, onClose, pipelineId, step }: StepOutputM
             </div>
           ) : (
             <>
-              <pre
+              <div
                 ref={outputRef}
-                onScroll={handleScroll}
+                onScroll={handleScroll as unknown as React.UIEventHandler<HTMLDivElement>}
                 className={cn(
-                  'flex-1 overflow-auto m-0 p-4',
-                  'text-[12px] leading-relaxed whitespace-pre-wrap break-words font-mono',
-                  'text-[var(--md-sys-color-on-surface)]',
+                  'flex-1 overflow-auto p-4 space-y-2',
                   'bg-[var(--md-sys-color-surface-container-lowest)]',
                 )}
               >
-                {outputText}
+                {(() => {
+                  // Parse chunks into structured events
+                  const allEvents: StreamEvent[] = [];
+                  if (data?.chunks) {
+                    for (const c of data.chunks) {
+                      allEvents.push(...parseChunkToEvents(c.chunk));
+                    }
+                  } else if (outputText) {
+                    // Fallback: split text output into lines and parse
+                    for (const line of outputText.split('\n')) {
+                      allEvents.push(...parseChunkToEvents(line));
+                    }
+                  }
+                  const grouped = groupStreamEvents(allEvents);
+                  if (grouped.length > 0) {
+                    return grouped.map((group, i) => <EventBlock key={i} group={group} />);
+                  }
+                  // Fallback to raw text if no structured events
+                  return (
+                    <pre className="text-[12px] leading-relaxed whitespace-pre-wrap break-words font-mono text-[var(--md-sys-color-on-surface)] m-0">
+                      {outputText}
+                    </pre>
+                  );
+                })()}
                 {isRunning && (
-                  <span className="inline-block w-2 h-4 bg-[var(--md-sys-color-primary)] animate-pulse ml-0.5 align-middle" />
+                  <div className="flex items-center gap-2 py-1">
+                    <Loader2 className="h-3.5 w-3.5 text-[var(--md-sys-color-primary)] animate-spin" />
+                    <span className="text-[11px] text-[var(--md-sys-color-outline)]">Agent working...</span>
+                  </div>
                 )}
-              </pre>
+              </div>
 
               {/* Jump to bottom button (visible when auto-scroll disabled) */}
               {!autoScroll && (
