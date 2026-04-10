@@ -42,7 +42,8 @@ export function SessionToolbar({
           role="switch"
           aria-checked={autoExecute}
           onClick={onToggleAutoExecute}
-          className="flex items-center gap-1.5 cursor-pointer"
+          className="flex items-center gap-1.5 cursor-pointer group relative"
+          title="Auto-execute: les tâches proposées par Claude sont automatiquement approuvées et lancées sans validation manuelle"
         >
           <span className="text-[11px] text-[var(--md-sys-color-outline)]">Auto</span>
           <div
