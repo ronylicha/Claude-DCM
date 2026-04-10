@@ -406,7 +406,7 @@ function PlanningEventBlock({ group }: { group: EventGroup }) {
 
 function PlanningLiveView({ pipelineId }: { pipelineId: string }) {
   const [events, setEvents] = useState<PlanningEvent[]>([]);
-  const [latestIndex, setLatestIndex] = useState(0);
+  const latestIndexRef = useRef(0);
   const [isFollowing, setIsFollowing] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isFollowingRef = useRef(true);
@@ -431,7 +431,7 @@ function PlanningLiveView({ pipelineId }: { pipelineId: string }) {
     const poll = async () => {
       while (active) {
         try {
-          const data = await apiClient.getPlanningOutput(pipelineId, latestIndex);
+          const data = await apiClient.getPlanningOutput(pipelineId, latestIndexRef.current);
           if (data.count > 0 && active) {
             const incoming = data.chunks.map((c) => {
               try {
@@ -441,7 +441,7 @@ function PlanningLiveView({ pipelineId }: { pipelineId: string }) {
               }
             });
             setEvents((prev) => [...prev, ...incoming]);
-            setLatestIndex(data.latest_index + 1);
+            latestIndexRef.current = data.latest_index + 1;
             if (isFollowingRef.current && scrollRef.current) {
               requestAnimationFrame(() => {
                 if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
