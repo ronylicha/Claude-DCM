@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -53,6 +53,8 @@ export default function ProjectBoardPage() {
 
   const [epicDialogOpen, setEpicDialogOpen] = useState(false);
   const [sessionEpicId, setSessionEpicId] = useState<string | null>(null);
+  const [analyzeStatus, setAnalyzeStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const analyzeAbortRef = useRef<AbortController | null>(null);
 
   const { data, isLoading, error, refetch } = useProjectBoard(projectId);
   const { transitionEpic } = useEpicMutations(projectId);
@@ -61,6 +63,17 @@ export default function ProjectBoardPage() {
   const sessionEpic = sessionEpicId
     ? Object.values(data?.board ?? {}).flat().find((e) => e.id === sessionEpicId)
     : null;
+
+  // Derive analyzeStatus from project metadata when data is loaded
+  const metadataAnalyzeStatus = data?.project?.metadata?.analyze_status as string | undefined;
+  const effectiveAnalyzeStatus: 'idle' | 'running' | 'done' | 'error' =
+    analyzeStatus === 'running'
+      ? 'running'
+      : metadataAnalyzeStatus === 'done'
+        ? 'done'
+        : metadataAnalyzeStatus === 'error'
+          ? 'error'
+          : analyzeStatus;
 
   // ── Handlers ────────────────────────────────
 
@@ -91,6 +104,34 @@ export default function ProjectBoardPage() {
   const handleEpicCreated = useCallback(() => {
     setEpicDialogOpen(false);
   }, []);
+
+  const handleAnalyze = useCallback(async () => {
+    if (analyzeStatus === 'running') return;
+
+    analyzeAbortRef.current?.abort();
+    const controller = new AbortController();
+    analyzeAbortRef.current = controller;
+
+    setAnalyzeStatus('running');
+
+    try {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3847';
+      const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/analyze`, {
+        method: 'POST',
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Analyze request failed: ${response.status}`);
+      }
+
+      await refetch();
+      setAnalyzeStatus('done');
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
+      setAnalyzeStatus('error');
+    }
+  }, [analyzeStatus, projectId, refetch]);
 
   // ── Back button (shared across states) ──────
 
@@ -155,6 +196,8 @@ export default function ProjectBoardPage() {
           stats={stats}
           onCreateEpic={handleCreateEpic}
           onCreatePipeline={handleCreatePipeline}
+          onAnalyze={handleAnalyze}
+          analyzeStatus={effectiveAnalyzeStatus}
         />
 
         {/* Progress summary bar */}

@@ -1,6 +1,6 @@
 'use client';
 
-import { Plus, GitBranch, FolderKanban, Layers } from 'lucide-react';
+import { Plus, GitBranch, FolderKanban, Layers, ScanSearch, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import type { Project } from '@/lib/api-client';
@@ -18,6 +18,8 @@ interface ProjectHeaderProps {
   };
   onCreateEpic: () => void;
   onCreatePipeline: () => void;
+  onAnalyze?: () => void;
+  analyzeStatus?: 'idle' | 'running' | 'done' | 'error';
 }
 
 // ============================================
@@ -91,6 +93,8 @@ export function ProjectHeader({
   stats,
   onCreateEpic,
   onCreatePipeline,
+  onAnalyze,
+  analyzeStatus = 'idle',
 }: ProjectHeaderProps) {
   const projectStatus = resolveProjectStatus(project.metadata);
   const statusStyle = STATUS_STYLE[projectStatus];
@@ -149,6 +153,47 @@ export function ProjectHeader({
 
         {/* Action buttons */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Analyze button */}
+          <div className="relative inline-flex items-center">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onAnalyze}
+              disabled={analyzeStatus === 'running'}
+              aria-label="Analyze project"
+              className={cn(
+                'border-[var(--md-sys-color-outline-variant)]',
+                'text-[var(--md-sys-color-on-surface-variant)]',
+                'hover:bg-[var(--md-sys-color-surface-container-high)]',
+                'hover:text-[var(--md-sys-color-on-surface)]',
+                'disabled:opacity-60',
+              )}
+            >
+              {analyzeStatus === 'running' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <ScanSearch className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+              Analyze
+            </Button>
+            {analyzeStatus === 'done' && (
+              <span
+                className={cn(
+                  'absolute -top-1.5 -right-1.5',
+                  'inline-flex items-center px-1.5 py-0.5 rounded-full',
+                  'text-[9px] font-semibold uppercase tracking-wider leading-none',
+                  'text-[var(--dcm-zone-green)]',
+                  'bg-[color-mix(in_srgb,var(--dcm-zone-green)_14%,transparent)]',
+                  'border border-[color-mix(in_srgb,var(--dcm-zone-green)_30%,transparent)]',
+                )}
+                aria-label="Analysis complete"
+              >
+                Analyzed
+              </span>
+            )}
+          </div>
+
           <Button
             type="button"
             variant="outline"

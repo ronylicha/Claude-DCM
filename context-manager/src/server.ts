@@ -103,6 +103,8 @@ import {
   postProjectPipeline,
   postSyncEpicsFromPipeline,
   patchProject,
+  analyzeProjectHandler,
+  analyzeAllProjectsHandler,
 } from "./api/project-pipelines";
 import {
   startEpicSession,
@@ -647,6 +649,8 @@ app.delete("/api/projects/:id/epics/:epicId", deleteProjectEpic);
 app.get("/api/projects/:id/pipelines", getProjectPipelines);
 app.post("/api/projects/:id/pipelines", postProjectPipeline);
 app.post("/api/projects/:id/sync-epics", postSyncEpicsFromPipeline);
+app.post("/api/projects/:id/analyze", analyzeProjectHandler);
+app.post("/api/projects/analyze-all", analyzeAllProjectsHandler);
 app.patch("/api/projects/:id", patchProject);
 
 // ============================================

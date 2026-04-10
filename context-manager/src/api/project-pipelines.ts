@@ -5,6 +5,8 @@
  *   POST /api/projects/:id/pipelines   — create pipeline attached to a project
  *   POST /api/projects/:id/sync-epics  — sync epics from a pipeline plan
  *   PATCH /api/projects/:id            — partial update of a project
+ *   POST /api/projects/:id/analyze     — trigger codebase analysis for one project
+ *   POST /api/projects/analyze-all     — trigger codebase analysis for all pending projects
  * @module api/project-pipelines
  */
 
@@ -12,6 +14,7 @@ import type { Context } from "hono";
 import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
 import { createLogger } from "../lib/logger";
+import { analyzeProject, analyzeAllProjects } from "../pipeline/project-analyzer";
 
 const log = createLogger("ProjectPipelines");
 
@@ -489,6 +492,112 @@ export async function patchProject(c: Context): Promise<Response> {
     return c.json(
       {
         error: "Failed to update project",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
+    );
+  }
+}
+
+/**
+ * POST /api/projects/:id/analyze
+ * Trigger an automatic codebase analysis for a single project.
+ * The analysis runs asynchronously in the background — this handler
+ * returns 202 immediately and fires analyzeProject() without awaiting it.
+ * Clients can poll the project's metadata.analyze_status ('running'|'done'|'error').
+ * Returns { success, project_id, message }
+ */
+export async function analyzeProjectHandler(c: Context): Promise<Response> {
+  try {
+    const projectId = c.req.param("id");
+    if (!projectId) {
+      return c.json({ error: "Missing project ID" }, 400);
+    }
+
+    const sql = getDb();
+
+    // Verify project exists before firing off the background task
+    const check = await sql<{ id: string; analyze_status: string | null }[]>`
+      SELECT id, metadata->>'analyze_status' AS analyze_status
+      FROM projects
+      WHERE id = ${projectId}
+    `;
+    if (check.length === 0) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    if (check[0]?.analyze_status === "running") {
+      return c.json(
+        { error: "Analysis already running for this project", project_id: projectId },
+        409,
+      );
+    }
+
+    // Fire-and-forget: do not await so the HTTP response is immediate
+    analyzeProject(projectId).catch((err) => {
+      log.error(`Background analyzeProject failed for ${projectId}:`, err);
+    });
+
+    log.info(`POST /api/projects/${projectId}/analyze: analysis triggered`);
+
+    return c.json(
+      {
+        success: true,
+        project_id: projectId,
+        message: "Analysis started. Poll metadata.analyze_status for progress.",
+      },
+      202,
+    );
+  } catch (error) {
+    log.error("POST /api/projects/:id/analyze error:", error);
+    return c.json(
+      {
+        error: "Failed to trigger analysis",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
+    );
+  }
+}
+
+/**
+ * POST /api/projects/analyze-all
+ * Trigger codebase analysis for all projects that do not yet have
+ * analyze_status='done' or have no epics.
+ * Runs sequentially in the background to avoid overloading the Claude rate limit.
+ * Returns { success, message } immediately (202), with stats published via event.
+ */
+export async function analyzeAllProjectsHandler(c: Context): Promise<Response> {
+  try {
+    // Fire-and-forget sequential processing
+    analyzeAllProjects()
+      .then(({ analyzed, skipped, errors }) => {
+        log.info(
+          `analyzeAllProjects completed: analyzed=${analyzed} skipped=${skipped} errors=${errors}`,
+        );
+        return publishEvent("global", "projects.analyze-all.completed", {
+          analyzed,
+          skipped,
+          errors,
+        });
+      })
+      .catch((err) => {
+        log.error("Background analyzeAllProjects failed:", err);
+      });
+
+    return c.json(
+      {
+        success: true,
+        message:
+          "Bulk analysis started. Projects without analyze_status=done will be processed sequentially.",
+      },
+      202,
+    );
+  } catch (error) {
+    log.error("POST /api/projects/analyze-all error:", error);
+    return c.json(
+      {
+        error: "Failed to trigger bulk analysis",
         message: error instanceof Error ? error.message : "Unknown error",
       },
       500,
