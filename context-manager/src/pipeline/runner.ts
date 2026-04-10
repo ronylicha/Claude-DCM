@@ -434,6 +434,43 @@ export async function startPipeline(pipelineId: string): Promise<PipelineRow> {
     );
   }
 
+  // Auto-link pipeline to project if not already linked
+  if (!pipeline.project_id && pipeline.workspace_path) {
+    try {
+      const [project] = await sql<Array<{ id: string }>>`
+        SELECT id FROM projects WHERE path = ${pipeline.workspace_path} LIMIT 1
+      `;
+      if (project) {
+        await sql`UPDATE pipelines SET project_id = ${project.id} WHERE id = ${pipelineId}`;
+        pipeline.project_id = project.id;
+        log.info(`Auto-linked pipeline ${pipelineId} to project ${project.id}`);
+      } else {
+        // Create project from workspace path
+        const name = pipeline.workspace_path.split("/").filter(Boolean).pop() ?? "Project";
+        const [newProject] = await sql<Array<{ id: string }>>`
+          INSERT INTO projects (path, name) VALUES (${pipeline.workspace_path}, ${name})
+          ON CONFLICT (path) DO UPDATE SET updated_at = NOW()
+          RETURNING id
+        `;
+        if (newProject) {
+          await sql`UPDATE pipelines SET project_id = ${newProject.id} WHERE id = ${pipelineId}`;
+          pipeline.project_id = newProject.id;
+          log.info(`Auto-created project ${newProject.id} and linked to pipeline ${pipelineId}`);
+        }
+      }
+    } catch (err) {
+      log.warn(`Failed to auto-link project for pipeline ${pipelineId}:`, err);
+    }
+  }
+
+  // Auto-create epics from plan if pipeline has a project but no epics yet
+  if (pipeline.project_id) {
+    try {
+      const { createEpicsFromPipelinePlan } = await import("./epic-sync");
+      await createEpicsFromPipelinePlan(pipelineId);
+    } catch { /* optional */ }
+  }
+
   // Initialize workspace (clone/pull git repo if configured)
   await initializeWorkspace(pipeline);
 
@@ -617,6 +654,12 @@ export async function updateStepStatus(
   // Evaluate wave progress when a step reaches a terminal state
   if (isTerminal(status)) {
     await evaluateWaveProgress(currentStep.pipeline_id, currentStep.wave_number);
+
+    // Sync epic statuses based on step progress
+    try {
+      const { syncEpicStatusFromPipeline } = await import("./epic-sync");
+      await syncEpicStatusFromPipeline(currentStep.pipeline_id);
+    } catch { /* epic sync optional */ }
   }
 }
 
