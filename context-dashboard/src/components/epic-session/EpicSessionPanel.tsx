@@ -61,18 +61,31 @@ export function EpicSessionPanel({ epicId, epicTitle, projectId, open, onClose }
     if (!open || sessionId) return;
     const create = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/epics/${epicId}/session`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model, auto_execute: autoExecute }),
-        });
+        let res: Response;
+        if (epicId === 'new') {
+          // New epic — use epic-chat endpoint (creates epic + session in one call)
+          res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/epic-chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model }),
+          });
+        } else {
+          // Existing epic — create session for it
+          res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/epics/${epicId}/session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model, auto_execute: autoExecute }),
+          });
+        }
         const data = await res.json();
         if (data.success && data.session) {
           setSessionId(data.session.id);
           setMessages([{
             id: 'system-init',
             role: 'system',
-            content: `Session started for epic: ${epicTitle}`,
+            content: epicId === 'new'
+              ? 'New epic session started. Describe what you want to build.'
+              : `Session started for epic: ${epicTitle}`,
             content_type: 'text',
             created_at: new Date().toISOString(),
           }]);

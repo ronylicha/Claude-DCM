@@ -78,7 +78,8 @@ export default function ProjectBoardPage() {
   // ── Handlers ────────────────────────────────
 
   const handleCreateEpic = useCallback(() => {
-    setEpicDialogOpen(true);
+    // Open epic chat directly — creates epic + session in one call
+    setSessionEpicId('new');
   }, []);
 
   const handleCreatePipeline = useCallback(() => {
@@ -107,28 +108,26 @@ export default function ProjectBoardPage() {
 
   const handleAnalyze = useCallback(async () => {
     if (analyzeStatus === 'running') return;
-
-    analyzeAbortRef.current?.abort();
-    const controller = new AbortController();
-    analyzeAbortRef.current = controller;
-
     setAnalyzeStatus('running');
 
     try {
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3847';
-      const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/analyze`, {
-        method: 'POST',
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Analyze request failed: ${response.status}`);
-      }
-
-      await refetch();
-      setAnalyzeStatus('done');
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') return;
+      await fetch(`${API_BASE_URL}/api/projects/${projectId}/analyze`, { method: 'POST' });
+      // Analysis runs in background — poll for completion
+      const poll = setInterval(async () => {
+        const res = await refetch();
+        const status = (res.data?.project as Record<string, unknown>)?.metadata as Record<string, unknown> | undefined;
+        if (status?.analyze_status === 'done') {
+          setAnalyzeStatus('done');
+          clearInterval(poll);
+        } else if (status?.analyze_status === 'error') {
+          setAnalyzeStatus('error');
+          clearInterval(poll);
+        }
+      }, 3000);
+      // Safety timeout
+      setTimeout(() => clearInterval(poll), 300000);
+    } catch {
       setAnalyzeStatus('error');
     }
   }, [analyzeStatus, projectId, refetch]);
