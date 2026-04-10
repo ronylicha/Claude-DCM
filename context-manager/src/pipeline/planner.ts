@@ -24,8 +24,8 @@ const log = createLogger("Planner");
 // Constants
 // ============================================
 
-/** Maximum chars per document to include in the planner prompt */
-const MAX_DOC_CHARS = 4000;
+/** Maximum chars per document to include in the planner prompt (Opus handles 1M context) */
+const MAX_DOC_CHARS = 200000;
 
 /** Path to the skill-index for agent/skill reference */
 const SKILL_INDEX_PATH = new URL(
@@ -280,14 +280,12 @@ Tu as acces a TOUS tes outils habituels (Bash, Read, Write, Grep, Glob, Agent, S
 
 # WORKFLOW
 
-## Phase 1 — Exploration complete
-Explore le projet en profondeur :
-- Structure des dossiers, fichiers cles, configs
-- Code source, schemas DB, API routes, composants
-- README, documentation, git history si pertinent
-- Charge les skills pertinents pour mieux comprendre la stack
-- Utilise internet/MCP si tu as besoin de references
-- Prends le temps qu'il faut — un plan bien informe vaut mieux qu'un plan bacle
+## Phase 1 — Exploration rapide
+IMPORTANT : les documents fournis plus bas (architecture, PRD) contiennent DEJA toutes les infos du projet. NE LES CHERCHE PAS sur le disque — ils sont dans ton contexte.
+- Lis les documents fournis ci-dessous (ils sont COMPLETS, pas tronques)
+- Explore uniquement le workspace pour voir la structure existante (1-2 commandes max)
+- Charge 2-3 skills pertinents pour la stack si necessaire
+- NE RELIS PAS les memes fichiers plusieurs fois
 
 ## Phase 2 — Generation du plan JSON
 Quand tu as une comprehension complete, produis le plan JSON.
