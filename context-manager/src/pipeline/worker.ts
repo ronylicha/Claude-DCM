@@ -462,30 +462,9 @@ async function checkOutputActivity(stepId: string): Promise<boolean> {
   }
 }
 
-async function streamNewChunks(pipelineId: string, outputFile: string): Promise<void> {
-  try {
-    const { readFile } = await import("node:fs/promises");
-    const content = await readFile(outputFile, "utf-8").catch(() => "");
-    const lastSize = lastOutputSizes.get(outputFile) ?? 0;
-
-    if (content.length > lastSize && content.length > 0) {
-      const newChunk = content.slice(lastSize);
-      lastOutputSizes.set(outputFile, content.length);
-
-      const sql = getDb();
-      const chunkIndex = Math.floor(content.length / 200);
-      await sql`
-        INSERT INTO planning_output (pipeline_id, chunk, chunk_index)
-        VALUES (${pipelineId}, ${newChunk.slice(0, 5000)}, ${chunkIndex})
-      `.catch(() => {});
-
-      await publishEvent("global", "pipeline.planning.chunk", {
-        pipeline_id: pipelineId,
-        chunk: newChunk.slice(0, 1000),
-        chunk_index: chunkIndex,
-      });
-    }
-  } catch { /* ignore */ }
+// Streaming chunks are handled by cli-planner.ts polling loop — worker no longer duplicates.
+async function streamNewChunks(_pipelineId: string, _outputFile: string): Promise<void> {
+  // No-op: cli-planner.ts parseStreamEvents() stores structured JSON chunks directly.
 }
 
 function cleanupJobFiles(tmpDir: string, jobId: string): void {
