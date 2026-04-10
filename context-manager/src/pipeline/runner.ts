@@ -657,6 +657,11 @@ export async function updateStepStatus(
     await syncEpicStatusFromPipeline(currentStep.pipeline_id);
   } catch { /* epic sync optional */ }
 
+  // Sync sprint statuses based on step progress
+  try {
+    await syncSprintStatus(currentStep.pipeline_id, currentStep.wave_number);
+  } catch { /* sprint sync optional */ }
+
   // Evaluate wave progress when a step reaches a terminal state
   if (isTerminal(status)) {
     await evaluateWaveProgress(currentStep.pipeline_id, currentStep.wave_number);
@@ -680,6 +685,65 @@ export async function updateStepStatus(
       retry_count: retryCount,
       reason: "auto_retry",
     });
+  }
+}
+
+// ============================================
+// Sprint Status Sync
+// ============================================
+
+async function syncSprintStatus(pipelineId: string, waveNumber: number): Promise<void> {
+  const sql = getDb();
+  // Find sprints that contain this wave
+  const sprints = await sql<Array<Record<string, unknown>>>`
+    SELECT id, sprint_number, name, status, wave_start, wave_end
+    FROM pipeline_sprints
+    WHERE pipeline_id = ${pipelineId}
+      AND wave_start <= ${waveNumber}
+      AND wave_end >= ${waveNumber}
+      AND status NOT IN ('completed', 'failed', 'skipped')
+  `;
+
+  for (const sprint of sprints) {
+    const ws = Number(sprint["wave_start"]);
+    const we = Number(sprint["wave_end"]);
+
+    // Count step progress within this sprint's wave range
+    const [counts] = await sql<Array<{ total: number; completed: number; running: number }>>`
+      SELECT
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE status = 'completed') as completed,
+        COUNT(*) FILTER (WHERE status = 'running') as running
+      FROM pipeline_steps
+      WHERE pipeline_id = ${pipelineId}
+        AND wave_number >= ${ws} AND wave_number <= ${we}
+    `;
+
+    const total = Number(counts?.total ?? 0);
+    const completed = Number(counts?.completed ?? 0);
+    const running = Number(counts?.running ?? 0);
+
+    if (total > 0 && completed === total && sprint["status"] !== "completed") {
+      await sql`
+        UPDATE pipeline_sprints SET status = 'completed', completed_at = NOW()
+        WHERE id = ${sprint["id"]}
+      `;
+      await publishEvent("global", "pipeline.sprint.completed", {
+        pipeline_id: pipelineId,
+        sprint_number: sprint["sprint_number"],
+        name: sprint["name"],
+      });
+    } else if ((running > 0 || completed > 0) && sprint["status"] === "pending") {
+      await sql`
+        UPDATE pipeline_sprints SET status = 'running', started_at = COALESCE(started_at, NOW())
+        WHERE id = ${sprint["id"]}
+      `;
+      await publishEvent("global", "pipeline.sprint.started", {
+        pipeline_id: pipelineId,
+        sprint_number: sprint["sprint_number"],
+        name: sprint["name"],
+      });
+    }
   }
 }
 
