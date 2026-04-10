@@ -35,6 +35,7 @@ import {
   Hash,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ProjectImportDialog } from "@/components/project/ProjectImportDialog";
 
 type SortField = "name" | "path" | "created_at" | "updated_at";
 type SortDirection = "asc" | "desc";
@@ -115,6 +116,7 @@ export default function ProjectsPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [page, setPage] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const limit = 20;
   const queryClient = useQueryClient();
 
@@ -243,13 +245,20 @@ export default function ProjectsPage() {
   }
 
   return (
+    <>
     <PageContainer
       title="Projects"
       description="Manage your Claude Code projects"
       actions={
-        <Badge variant="secondary">
-          {totalProjects} {totalProjects === 1 ? "project" : "projects"}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Button variant="default" size="sm" onClick={() => setImportOpen(true)}>
+            <FolderOpen className="h-4 w-4 mr-1.5" />
+            Import Project
+          </Button>
+          <Badge variant="secondary">
+            {totalProjects} {totalProjects === 1 ? "project" : "projects"}
+          </Badge>
+        </div>
       }
     >
       {/* KPI Cards */}
@@ -513,5 +522,8 @@ export default function ProjectsPage() {
         </CardContent>
       </Card>
     </PageContainer>
+
+    <ProjectImportDialog open={importOpen} onOpenChange={setImportOpen} />
+    </>
   );
 }
