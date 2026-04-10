@@ -167,7 +167,7 @@ export class CLIPlannerProvider implements LLMProvider {
       case "claude":
         return `#!/bin/bash
 USER_MSG=$(cat "${userFile}")
-stdbuf -oL -eL claude -p "$USER_MSG" --system-prompt-file "${promptFile}" --model "${model}" --output-format stream-json --max-turns 1 < /dev/null > "${outputFile}" 2> "${errorFile}"
+stdbuf -oL -eL claude -p "$USER_MSG" --system-prompt-file "${promptFile}" --model "${model}" --output-format stream-json --max-turns 15 < /dev/null > "${outputFile}" 2> "${errorFile}"
 echo $? > "${doneFile}"
 `;
       case "codex":
