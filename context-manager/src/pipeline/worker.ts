@@ -480,7 +480,7 @@ async function checkOutputActivity(stepId: string): Promise<boolean> {
 // Stream structured events from executor output files (stream-json NDJSON format).
 // For planner jobs, cli-planner.ts handles streaming directly.
 // For executor jobs after server restart, the worker takes over.
-const lastOutputSizes = new Map<string, number>();
+// (lastOutputSizes declared above)
 
 async function streamNewChunks(pipelineId: string, outputFile: string): Promise<void> {
   try {
