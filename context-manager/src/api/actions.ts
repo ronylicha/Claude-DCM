@@ -239,6 +239,11 @@ export async function postAction(c: Context): Promise<Response> {
       session_id: body.session_id,
     });
 
+    // Sync with project pipeline/epics if this action modifies files in a project
+    if (body.project_path && ["builtin", "command"].includes(body.tool_type) && success) {
+      syncActionWithProject(body.project_path, body.tool_name, body.file_paths ?? [], body.session_id ?? null).catch(() => {});
+    }
+
     return c.json({
       success: true,
       action: {
@@ -262,6 +267,55 @@ export async function postAction(c: Context): Promise<Response> {
       500
     );
   }
+}
+
+/**
+ * Sync CLI actions with the project's pipeline and epics.
+ * When code is modified via CLI (Edit/Write/Bash), detect the project,
+ * find running pipelines, and update context + epic progress.
+ */
+async function syncActionWithProject(
+  projectPath: string,
+  toolName: string,
+  filePaths: string[],
+  sessionId: string | null,
+): Promise<void> {
+  const sql = getDb();
+
+  // Find the project
+  const [project] = await sql<Array<{ id: string }>>`
+    SELECT id FROM projects WHERE path = ${projectPath} LIMIT 1
+  `;
+  if (!project) return;
+
+  // Find running pipelines for this project
+  const pipelines = await sql<Array<{ id: string }>>`
+    SELECT id FROM pipelines
+    WHERE project_id = ${project.id} AND status = 'running'
+  `;
+
+  // Sync epic statuses for each running pipeline
+  for (const pipeline of pipelines) {
+    try {
+      const { syncEpicStatusFromPipeline } = await import("../pipeline/epic-sync");
+      await syncEpicStatusFromPipeline(pipeline.id);
+    } catch { /* optional */ }
+  }
+
+  // Publish project activity event (dashboard updates)
+  await publishEvent("global", "project.activity", {
+    project_id: project.id,
+    tool: toolName,
+    files: filePaths.slice(0, 10),
+    session_id: sessionId,
+  });
+
+  // Increment project context version (marks context as needing refresh)
+  await sql`
+    UPDATE projects
+    SET context_version = context_version + 1, updated_at = NOW()
+    WHERE id = ${project.id}
+  `.catch(() => {});
 }
 
 /**
