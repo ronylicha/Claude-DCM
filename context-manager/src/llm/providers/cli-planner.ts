@@ -80,6 +80,8 @@ export class CLIPlannerProvider implements LLMProvider {
 
     let lastSize = 0;
     let chunkIndex = 0;
+    const isStreamJson = this.command === "claude";
+    let lastStreamTextLen = 0;
 
     // Poll the output file for new content + stream chunks to DB
     // The worker.ts also polls — this is a fast-path for when the service doesn't restart
@@ -93,9 +95,20 @@ export class CLIPlannerProvider implements LLMProvider {
           try {
             const currentContent = await readFile(outputFile, "utf-8");
             if (currentContent.length > lastSize) {
-              const newChunk = currentContent.slice(lastSize);
+              const prevSize = lastSize;
               lastSize = currentContent.length;
-              await storeChunk(sql, pipelineId, newChunk, chunkIndex++);
+              if (isStreamJson) {
+                // Parse stream-json NDJSON, extract clean text delta for dashboard
+                const allText = extractStreamText(currentContent);
+                if (allText.length > lastStreamTextLen) {
+                  const delta = allText.slice(lastStreamTextLen);
+                  lastStreamTextLen = allText.length;
+                  await storeChunk(sql, pipelineId, delta, chunkIndex++);
+                }
+              } else {
+                const newChunk = currentContent.slice(prevSize);
+                await storeChunk(sql, pipelineId, newChunk, chunkIndex++);
+              }
             }
           } catch {
             // File not ready yet
@@ -104,7 +117,8 @@ export class CLIPlannerProvider implements LLMProvider {
           if (doneExists) {
             clearInterval(pollInterval);
             const exitCode = (await readFile(doneFile, "utf-8").catch(() => "1")).trim();
-            const output = await readFile(outputFile, "utf-8").catch(() => "");
+            const rawOutput = await readFile(outputFile, "utf-8").catch(() => "");
+            const output = isStreamJson ? extractStreamResult(rawOutput) : rawOutput;
             const stderr = await readFile(errorFile, "utf-8").catch(() => "");
 
             // Cleanup temp files
@@ -155,7 +169,7 @@ export class CLIPlannerProvider implements LLMProvider {
       case "claude":
         return `#!/bin/bash
 USER_MSG=$(cat "${userFile}")
-stdbuf -oL -eL claude -p "$USER_MSG" --system-prompt-file "${promptFile}" --model "${model}" --output-format text < /dev/null > "${outputFile}" 2> "${errorFile}"
+stdbuf -oL -eL claude -p "$USER_MSG" --system-prompt-file "${promptFile}" --model "${model}" --output-format stream-json < /dev/null > "${outputFile}" 2> "${errorFile}"
 echo $? > "${doneFile}"
 `;
       case "codex":
@@ -216,4 +230,51 @@ async function storeChunk(
   } catch {
     // Don't let DB errors break the stream
   }
+}
+
+/**
+ * Extract cumulative text from the last assistant event in stream-json NDJSON.
+ * Each assistant event contains the full response text for that turn.
+ * Returns "" if no assistant event with text found yet.
+ */
+function extractStreamText(content: string): string {
+  const lines = content.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]?.trim();
+    if (!line) continue;
+    try {
+      const event = JSON.parse(line) as Record<string, unknown>;
+      if (event["type"] === "assistant") {
+        const msg = event["message"] as Record<string, unknown> | undefined;
+        const blocks = msg?.["content"] as Array<{ type: string; text?: string }> | undefined;
+        if (Array.isArray(blocks)) {
+          return blocks
+            .filter(b => b.type === "text" && b.text)
+            .map(b => b.text!)
+            .join("");
+        }
+      }
+    } catch { continue; }
+  }
+  return "";
+}
+
+/**
+ * Extract final text from completed stream-json output.
+ * Prioritizes the `result` event, falls back to last assistant text,
+ * then raw output for non-stream formats.
+ */
+function extractStreamResult(output: string): string {
+  const lines = output.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]?.trim();
+    if (!line) continue;
+    try {
+      const event = JSON.parse(line) as Record<string, unknown>;
+      if (event["type"] === "result" && typeof event["result"] === "string") {
+        return event["result"];
+      }
+    } catch { continue; }
+  }
+  return extractStreamText(output) || output;
 }
