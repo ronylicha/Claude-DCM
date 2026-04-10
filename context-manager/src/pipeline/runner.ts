@@ -651,15 +651,35 @@ export async function updateStepStatus(
     (durationMs ? ` in ${formatDuration(durationMs)}` : ""),
   );
 
+  // Sync epic statuses on any status change (running → in_progress, completed → done)
+  try {
+    const { syncEpicStatusFromPipeline } = await import("./epic-sync");
+    await syncEpicStatusFromPipeline(currentStep.pipeline_id);
+  } catch { /* epic sync optional */ }
+
   // Evaluate wave progress when a step reaches a terminal state
   if (isTerminal(status)) {
     await evaluateWaveProgress(currentStep.pipeline_id, currentStep.wave_number);
+  }
 
-    // Sync epic statuses based on step progress
-    try {
-      const { syncEpicStatusFromPipeline } = await import("./epic-sync");
-      await syncEpicStatusFromPipeline(currentStep.pipeline_id);
-    } catch { /* epic sync optional */ }
+  // Auto-retry on failure if retries remaining
+  if (status === "failed" && currentStep.retry_count < (currentStep.max_retries ?? 2)) {
+    const retryCount = currentStep.retry_count + 1;
+    log.info(
+      `Auto-retrying step ${stepId} (${currentStep.agent_type}) — attempt ${retryCount}/${currentStep.max_retries ?? 2}`,
+    );
+    await sql`
+      UPDATE pipeline_steps
+      SET status = 'queued', retry_count = ${retryCount}, error = NULL, started_at = NULL, completed_at = NULL
+      WHERE id = ${stepId}
+    `;
+    await publishEvent("global", "pipeline.step.updated", {
+      pipeline_id: currentStep.pipeline_id,
+      step_id: stepId,
+      status: "queued",
+      retry_count: retryCount,
+      reason: "auto_retry",
+    });
   }
 }
 

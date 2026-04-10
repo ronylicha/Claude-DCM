@@ -30,6 +30,7 @@ interface EpicWithProgress {
   wave_end: number;
   total_steps: number;
   completed_steps: number;
+  running_steps: number;
 }
 
 interface TransitionRecord {
@@ -68,21 +69,26 @@ export async function syncEpicStatusFromPipeline(pipelineId: string): Promise<vo
   // progress calculation used elsewhere (dashboard, etc.).
   const epics = await sql<EpicWithProgress[]>`
     SELECT
-      ep.epic_id,
-      ep.project_id,
-      ep.pipeline_id,
-      ep.title,
-      ep.status,
-      ep.wave_start,
-      ep.wave_end,
-      ep.total_steps,
-      ep.completed_steps
-    FROM v_epic_progress ep
-    WHERE ep.pipeline_id = ${pipelineId}
-      AND ep.wave_start  IS NOT NULL
-      AND ep.wave_end    IS NOT NULL
-      AND ep.status      NOT IN ('done', 'cancelled')
-    ORDER BY ep.wave_start ASC
+      e.id AS epic_id,
+      e.project_id,
+      e.pipeline_id,
+      e.title,
+      e.status,
+      e.wave_start,
+      e.wave_end,
+      COUNT(ps.id) AS total_steps,
+      COUNT(ps.id) FILTER (WHERE ps.status = 'completed') AS completed_steps,
+      COUNT(ps.id) FILTER (WHERE ps.status = 'running') AS running_steps
+    FROM project_epics e
+    LEFT JOIN pipeline_steps ps ON ps.pipeline_id = e.pipeline_id
+      AND ps.wave_number >= e.wave_start
+      AND ps.wave_number <= e.wave_end
+    WHERE e.pipeline_id = ${pipelineId}
+      AND e.wave_start IS NOT NULL
+      AND e.wave_end IS NOT NULL
+      AND e.status NOT IN ('done', 'cancelled')
+    GROUP BY e.id, e.project_id, e.pipeline_id, e.title, e.status, e.wave_start, e.wave_end
+    ORDER BY e.wave_start ASC
   `;
 
   if (epics.length === 0) {
@@ -97,6 +103,7 @@ export async function syncEpicStatusFromPipeline(pipelineId: string): Promise<vo
   for (const epic of epics) {
     const total = Number(epic.total_steps);
     const completed = Number(epic.completed_steps);
+    const running = Number(epic.running_steps);
     const currentStatus = epic.status;
 
     let targetStatus: string | null = null;
@@ -104,8 +111,8 @@ export async function syncEpicStatusFromPipeline(pipelineId: string): Promise<vo
     if (total > 0 && completed === total && currentStatus !== "done") {
       // All steps done — mark the epic as done
       targetStatus = "done";
-    } else if (completed > 0 && currentStatus === "todo") {
-      // At least one step done — move from todo to in_progress
+    } else if ((completed > 0 || running > 0) && currentStatus === "todo") {
+      // At least one step running or done — move from todo to in_progress
       targetStatus = "in_progress";
     }
 
