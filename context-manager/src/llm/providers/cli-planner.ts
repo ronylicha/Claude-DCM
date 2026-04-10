@@ -81,7 +81,6 @@ export class CLIPlannerProvider implements LLMProvider {
     let lastSize = 0;
     let chunkIndex = 0;
     const isStreamJson = this.command === "claude";
-    let lastStreamTextLen = 0;
 
     // Poll the output file for new content + stream chunks to DB
     // The worker.ts also polls — this is a fast-path for when the service doesn't restart
@@ -98,12 +97,11 @@ export class CLIPlannerProvider implements LLMProvider {
               const prevSize = lastSize;
               lastSize = currentContent.length;
               if (isStreamJson) {
-                // Parse stream-json NDJSON, extract clean text delta for dashboard
-                const allText = extractStreamText(currentContent);
-                if (allText.length > lastStreamTextLen) {
-                  const delta = allText.slice(lastStreamTextLen);
-                  lastStreamTextLen = allText.length;
-                  await storeChunk(sql, pipelineId, delta, chunkIndex++);
+                // Parse new stream-json events into human-readable blocks
+                const newBytes = currentContent.slice(prevSize);
+                const formatted = formatStreamEvents(newBytes);
+                if (formatted) {
+                  await storeChunk(sql, pipelineId, formatted, chunkIndex++);
                 }
               } else {
                 const newChunk = currentContent.slice(prevSize);
@@ -233,8 +231,80 @@ async function storeChunk(
 }
 
 /**
+ * Format new stream-json NDJSON lines into human-readable activity blocks.
+ * Parses each event and produces structured output:
+ *  - tool_use  → "▸ Lecture: path" / "▸ Commande: cmd" / "◆ Skill: name"
+ *  - text      → raw text (the plan being generated)
+ *  - thinking  → skipped
+ *  - system    → hook names
+ */
+function formatStreamEvents(newContent: string): string {
+  const parts: string[] = [];
+  for (const line of newContent.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const event = JSON.parse(line) as Record<string, unknown>;
+      const type = event["type"] as string;
+
+      if (type === "assistant") {
+        const msg = event["message"] as Record<string, unknown> | undefined;
+        const blocks = msg?.["content"] as Array<Record<string, unknown>> | undefined;
+        if (!Array.isArray(blocks)) continue;
+        for (const block of blocks) {
+          const bt = block["type"] as string;
+          if (bt === "text" && block["text"]) {
+            parts.push(`\n${block["text"] as string}\n`);
+          } else if (bt === "tool_use") {
+            parts.push(formatToolAction(
+              block["name"] as string,
+              block["input"] as Record<string, unknown> | undefined,
+            ));
+          }
+        }
+      } else if (type === "system") {
+        const sub = event["subtype"] as string;
+        if (sub === "hook_started") {
+          parts.push(`◆ Hook: ${event["hook_name"] ?? ""}\n`);
+        }
+      }
+    } catch { continue; }
+  }
+  return parts.join("");
+}
+
+/** Format a tool_use content block into a concise action label. */
+function formatToolAction(name: string, input: Record<string, unknown> | undefined): string {
+  if (!input) return `▸ ${name}\n`;
+  switch (name) {
+    case "Read":
+      return `▸ Lecture: ${input["file_path"] ?? "fichier"}\n`;
+    case "Write":
+      return `▸ Écriture: ${input["file_path"] ?? "fichier"}\n`;
+    case "Edit":
+      return `▸ Modification: ${input["file_path"] ?? "fichier"}\n`;
+    case "Grep":
+      return `▸ Recherche: "${input["pattern"] ?? ""}"\n`;
+    case "Glob":
+      return `▸ Fichiers: ${input["pattern"] ?? ""}\n`;
+    case "Bash": {
+      const cmd = String(input["command"] ?? "").slice(0, 80);
+      return `▸ Commande: ${cmd}${cmd.length >= 80 ? "…" : ""}\n`;
+    }
+    case "Skill":
+      return `◆ Skill: ${input["skill"] ?? ""}\n`;
+    case "Agent": {
+      const desc = input["description"] as string ?? "";
+      const agent = input["subagent_type"] as string ?? "";
+      return `◆ Agent${agent ? ` (${agent})` : ""}: ${desc}\n`;
+    }
+    default:
+      return `▸ ${name}\n`;
+  }
+}
+
+/**
  * Extract cumulative text from the last assistant event in stream-json NDJSON.
- * Each assistant event contains the full response text for that turn.
+ * Used by extractStreamResult as fallback for plan text extraction.
  * Returns "" if no assistant event with text found yet.
  */
 function extractStreamText(content: string): string {
