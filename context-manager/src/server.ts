@@ -105,9 +105,12 @@ import {
   patchProject,
   analyzeProjectHandler,
   analyzeAllProjectsHandler,
+  getProjectContext,
+  postRefreshContext,
 } from "./api/project-pipelines";
 import {
   startEpicSession,
+  startEpicChat,
   sendMessage as sendEpicMessage,
   endSession as endEpicSession,
   getSession as getEpicSession,
@@ -651,6 +654,8 @@ app.post("/api/projects/:id/pipelines", postProjectPipeline);
 app.post("/api/projects/:id/sync-epics", postSyncEpicsFromPipeline);
 app.post("/api/projects/:id/analyze", analyzeProjectHandler);
 app.post("/api/projects/analyze-all", analyzeAllProjectsHandler);
+app.get("/api/projects/:id/context", getProjectContext);
+app.post("/api/projects/:id/context/refresh", postRefreshContext);
 app.patch("/api/projects/:id", patchProject);
 
 // ============================================
@@ -658,6 +663,7 @@ app.patch("/api/projects/:id", patchProject);
 // ============================================
 
 app.post("/api/projects/:projectId/epics/:epicId/session", startEpicSession);
+app.post("/api/projects/:projectId/epic-chat", startEpicChat);
 app.post("/api/epic-sessions/:sessionId/message", sendEpicMessage);
 app.post("/api/epic-sessions/:sessionId/end", endEpicSession);
 app.get("/api/epic-sessions/:sessionId", getEpicSession);

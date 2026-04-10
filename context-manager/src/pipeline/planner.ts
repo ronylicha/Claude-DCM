@@ -274,32 +274,30 @@ REPONSE : UNIQUEMENT le JSON valide, rien d'autre. Pas de markdown, pas de texte
 function buildPlannerPrompt(input: PipelineInput, catalog: string): string {
   const sections: string[] = [];
 
-  sections.push(`Tu es un architecte logiciel expert. Ta mission : produire un plan d'execution JSON pour un pipeline d'agents AI.
+  sections.push(`Tu es un architecte logiciel senior. Ta mission : analyser un projet et produire un plan d'execution JSON ultra-detaille pour un pipeline d'agents AI.
 
-# WORKFLOW OBLIGATOIRE (suis ces phases dans l'ordre)
+Tu as acces a TOUS tes outils habituels (Bash, Read, Write, Grep, Glob, Agent, Skill, MCP servers, internet). Utilise-les librement pour comprendre le projet en profondeur.
 
-## Phase 1 — Exploration rapide (3-5 tours max)
-Tu as acces a des outils (Bash, Read, Grep, Glob). Utilise-les pour :
-- Comprendre la structure du projet : \`ls\`, \`find -maxdepth 3\`
-- Lire les fichiers cles : package.json, schemas DB, configs, entry points
-- STOP apres 5 fichiers lus — les documents fournis plus bas contiennent deja l'essentiel
-- NE REPETE PAS une exploration deja faite. Si tu as vu la structure, avance.
+# WORKFLOW
 
-## Phase 2 — Generation du plan JSON (dernier tour)
-Une fois que tu comprends le projet, genere le plan JSON IMMEDIATEMENT.
-- Le JSON est ta DERNIERE reponse textuelle
-- Commence directement par { et termine par }
-- Pas de texte explicatif avant/apres
-- Pas de fences markdown
+## Phase 1 — Exploration complete
+Explore le projet en profondeur :
+- Structure des dossiers, fichiers cles, configs
+- Code source, schemas DB, API routes, composants
+- README, documentation, git history si pertinent
+- Charge les skills pertinents pour mieux comprendre la stack
+- Utilise internet/MCP si tu as besoin de references
+- Prends le temps qu'il faut — un plan bien informe vaut mieux qu'un plan bacle
+
+## Phase 2 — Generation du plan JSON
+Quand tu as une comprehension complete, produis le plan JSON.
+- Ton DERNIER message doit contenir UNIQUEMENT le JSON
+- Commence par { et termine par }
+- Pas de texte avant/apres, pas de fences markdown
 - Le JSON doit etre parsable par JSON.parse()
 
-# REGLES CRITIQUES (non-negociable)
-- Tu as MAXIMUM 15 tours. Chaque tour compte. Ne boucle pas.
-- NE CHARGE PAS de skills (Skill tool) — le plan specifie les skills pour chaque agent, ils les chargeront eux-memes.
-- NE CREE PAS de fichiers (Write tool) — retourne le JSON dans ta reponse texte.
-- NE RE-EXPLORE PAS ce que les documents fournis decrivent deja.
-- Des que tu penses "j'ai une vue complete" → GENERE LE JSON. Pas de tour supplementaire.
-- Si tu as deja explore et que tu hesites → GENERE LE JSON avec ce que tu sais. Un plan imparfait vaut mieux qu'une boucle infinie.`);
+# REGLE UNIQUE ET ABSOLUE
+Ta DERNIERE reponse textuelle doit etre le JSON du plan. Tout ce que tu fais avant (exploration, skills, recherche) est libre. Mais le dernier message = JSON pur.`);
 
   // Instructions
   sections.push(`\n# INSTRUCTIONS DE L'UTILISATEUR\n\n${input.instructions}`);

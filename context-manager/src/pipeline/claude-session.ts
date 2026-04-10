@@ -67,6 +67,8 @@ export interface SpawnClaudeSessionParams {
   conversationHistory: Array<{ role: string; content: string }>;
   userMessage: string;
   model: string;
+  /** Optional override: skips the BRAINSTORM_SYSTEM_PROMPT template and uses this verbatim. */
+  systemPromptOverride?: string;
 }
 
 interface DcmTaskPayload {
@@ -79,6 +81,11 @@ interface DcmTaskPayload {
   step_order?: number;
   skills?: string[];
   prompt?: string;
+}
+
+interface DcmMetaPayload {
+  action: "set_title" | "finalize" | string;
+  title?: string;
 }
 
 // ============================================
@@ -106,6 +113,7 @@ export async function spawnClaudeSession(params: SpawnClaudeSessionParams): Prom
     conversationHistory,
     userMessage,
     model,
+    systemPromptOverride,
   } = params;
 
   // Kill any previously active process for this session
@@ -125,12 +133,32 @@ export async function spawnClaudeSession(params: SpawnClaudeSessionParams): Prom
   const systemPromptFile = `${tmpDir}/session-${jobId}.system`;
 
   try {
-    // Build system prompt from template
-    const systemPrompt = BRAINSTORM_SYSTEM_PROMPT
-      .replace("{projectName}", projectName)
-      .replace("{workspacePath}", workspacePath)
-      .replace("{epicTitle}", epicTitle)
-      .replace("{epicDescription}", epicDescription.trim());
+    // Build system prompt: use override if provided, otherwise expand the default template
+    let systemPrompt = systemPromptOverride
+      ? systemPromptOverride
+      : BRAINSTORM_SYSTEM_PROMPT
+          .replace("{projectName}", projectName)
+          .replace("{workspacePath}", workspacePath)
+          .replace("{epicTitle}", epicTitle)
+          .replace("{epicDescription}", epicDescription.trim());
+
+    // Inject project context if available
+    try {
+      const ctxSql = getDb();
+      const epicRows = await ctxSql<Array<{ project_id: string }>>`
+        SELECT project_id FROM project_epics WHERE id = ${epicId}
+      `;
+      const contextProjectId = epicRows[0]?.project_id;
+      if (contextProjectId) {
+        const { getProjectContextForAgent } = await import("./project-context");
+        const projectContext = await getProjectContextForAgent(contextProjectId, epicDescription);
+        if (projectContext) {
+          systemPrompt += `\n\n# CONTEXTE DU PROJET\n${projectContext}`;
+        }
+      }
+    } catch {
+      // Context module not available or no context data — proceed without it
+    }
 
     await writeFile(systemPromptFile, systemPrompt, "utf-8");
 
@@ -196,8 +224,19 @@ export async function spawnClaudeSession(params: SpawnClaudeSessionParams): Prom
     // Stream stdout and collect the full assistant text
     const fullText = await streamOutput(proc, sessionId);
 
+    // Resolve project_id for dcm-meta processing (set_title, finalize)
+    let projectId: string | undefined;
+    try {
+      const epicRows = await sql<Array<{ project_id: string }>>`
+        SELECT project_id FROM project_epics WHERE id = ${epicId}
+      `;
+      projectId = epicRows[0]?.project_id;
+    } catch {
+      // Non-critical: finalize will fall back gracefully
+    }
+
     // Persist results and broadcast final events
-    await handleSessionCompletion(sessionId, epicId, fullText, sql);
+    await handleSessionCompletion(sessionId, epicId, fullText, sql, projectId);
 
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : "Unknown error";
@@ -405,18 +444,44 @@ async function streamOutput(
 
 /**
  * After the Claude process exits:
- * 1. Parse dcm-task fenced blocks from the response.
- * 2. Insert proposed tasks into `epic_proposed_tasks`.
- * 3. Persist the assistant message into `epic_messages`.
- * 4. Update `epic_sessions` status back to 'waiting'.
- * 5. Broadcast the `epic.session.message` event.
+ * 1. Parse dcm-meta fenced blocks and apply side-effects (set_title, finalize).
+ * 2. Parse dcm-task fenced blocks from the response.
+ * 3. Insert proposed tasks into `epic_proposed_tasks`.
+ * 4. Persist the assistant message into `epic_messages`.
+ * 5. Update `epic_sessions` status back to 'waiting'.
+ * 6. Broadcast the `epic.session.message` event.
  */
 async function handleSessionCompletion(
   sessionId: string,
   epicId: string,
   fullText: string,
   sql: ReturnType<typeof getDb>,
+  projectId?: string,
 ): Promise<void> {
+  // ---- Process dcm-meta blocks ----
+  const metaBlocks = extractDcmMeta(fullText);
+  for (const meta of metaBlocks) {
+    try {
+      if (meta.action === "set_title" && meta.title) {
+        await sql`
+          UPDATE project_epics
+          SET title = ${meta.title}, updated_at = now()
+          WHERE id = ${epicId}
+        `;
+        await publishEvent(`epic-sessions/${sessionId}`, "epic.meta.set_title", {
+          session_id: sessionId,
+          epic_id: epicId,
+          title: meta.title,
+        });
+        log.info(`Epic ${epicId.slice(0, 8)} title updated to: "${meta.title}"`);
+      } else if (meta.action === "finalize") {
+        await handleAutoFinalize(sessionId, epicId, sql, projectId);
+      }
+    } catch (metaErr) {
+      log.error(`Failed to process dcm-meta block (action=${meta.action}):`, metaErr);
+    }
+  }
+
   const tasks = extractDcmTasks(fullText);
   const hasProposals = tasks.length > 0;
   const contentType = hasProposals ? "task_proposal" : "text";
@@ -527,6 +592,168 @@ function extractDcmTasks(text: string): DcmTaskPayload[] {
   }
 
   return tasks;
+}
+
+// ============================================
+// Internal: Parse dcm-meta Blocks
+// ============================================
+
+/**
+ * Extract all ```dcm-meta ... ``` fenced code blocks from the response text
+ * and parse their JSON payloads.
+ *
+ * Blocks with invalid JSON are skipped with a warning.
+ */
+function extractDcmMeta(text: string): DcmMetaPayload[] {
+  const metas: DcmMetaPayload[] = [];
+  const BLOCK_REGEX = /```dcm-meta\s*\n([\s\S]*?)\n```/g;
+
+  let match: RegExpExecArray | null;
+  while ((match = BLOCK_REGEX.exec(text)) !== null) {
+    const raw = match[1]?.trim();
+    if (!raw) continue;
+
+    try {
+      const payload = JSON.parse(raw) as DcmMetaPayload;
+      if (!payload.action) {
+        log.warn('dcm-meta block missing required "action" field — skipping');
+        continue;
+      }
+      metas.push(payload);
+    } catch (parseErr) {
+      log.warn("Failed to parse dcm-meta block:", parseErr, "| raw:", raw.slice(0, 200));
+    }
+  }
+
+  return metas;
+}
+
+// ============================================
+// Internal: Auto-Finalize
+// ============================================
+
+/**
+ * Handle the `finalize` dcm-meta action:
+ * 1. Auto-approve all proposed tasks in 'proposed' status.
+ * 2. Ensure the epic has a linked pipeline (ensureEpicPipeline).
+ * 3. Insert pipeline_steps for each approved task.
+ * 4. Mark proposed tasks as 'executing'.
+ * 5. Publish epic.auto_finalized event.
+ * 6. Mark the session as 'ended'.
+ */
+async function handleAutoFinalize(
+  sessionId: string,
+  epicId: string,
+  sql: ReturnType<typeof getDb>,
+  projectId?: string,
+): Promise<void> {
+  log.info(`Auto-finalizing epic ${epicId.slice(0, 8)} session ${sessionId.slice(0, 8)}`);
+
+  // Fetch all proposed tasks for this session
+  const proposedTasks = await sql<Array<{
+    id: string;
+    title: string;
+    description: string | null;
+    agent_type: string;
+    wave_number: number;
+    step_order: number;
+    model: string;
+    prompt: string | null;
+    skills: string[];
+  }>>`
+    SELECT id, title, description, agent_type, wave_number, step_order, model, prompt, skills
+    FROM epic_proposed_tasks
+    WHERE session_id = ${sessionId} AND status = 'proposed'
+  `;
+
+  if (proposedTasks.length === 0) {
+    log.info(`No proposed tasks to finalize for session ${sessionId.slice(0, 8)}`);
+  } else {
+    // Resolve epic project_id if not provided
+    let resolvedProjectId = projectId;
+    if (!resolvedProjectId) {
+      const [epicRow] = await sql<Array<{ project_id: string }>>`
+        SELECT project_id FROM project_epics WHERE id = ${epicId}
+      `;
+      resolvedProjectId = epicRow?.project_id;
+    }
+
+    if (!resolvedProjectId) {
+      log.error(`Cannot finalize epic ${epicId}: project_id not found`);
+    } else {
+      const { ensureEpicPipeline } = await import("./epic-sync");
+      const { pipeline_id: pipelineId } = await ensureEpicPipeline(epicId, resolvedProjectId);
+
+      for (const task of proposedTasks) {
+        try {
+          // Auto-approve
+          await sql`
+            UPDATE epic_proposed_tasks
+            SET status = 'approved', decided_at = now()
+            WHERE id = ${task.id}
+          `;
+
+          // Insert pipeline step
+          const [step] = await sql<Array<{ id: string }>>`
+            INSERT INTO pipeline_steps (
+              pipeline_id, wave_number, step_order, agent_type,
+              description, skills, prompt, model, status
+            ) VALUES (
+              ${pipelineId},
+              ${task.wave_number},
+              ${task.step_order},
+              ${task.agent_type},
+              ${task.description ?? null},
+              ${sql.array(task.skills)},
+              ${task.prompt ?? null},
+              ${task.model},
+              'pending'
+            )
+            ON CONFLICT (pipeline_id, wave_number, step_order)
+            DO UPDATE SET
+              agent_type  = EXCLUDED.agent_type,
+              description = EXCLUDED.description,
+              skills      = EXCLUDED.skills,
+              prompt      = EXCLUDED.prompt,
+              model       = EXCLUDED.model,
+              status      = 'pending'
+            RETURNING id
+          `;
+
+          const stepId = step?.id;
+
+          // Link step back to proposed task and mark as executing
+          await sql`
+            UPDATE epic_proposed_tasks
+            SET status = 'executing', pipeline_step_id = ${stepId ?? null}
+            WHERE id = ${task.id}
+          `;
+        } catch (taskErr) {
+          log.error(`Failed to finalize task "${task.title}":`, taskErr);
+        }
+      }
+
+      log.info(
+        `Finalized ${proposedTasks.length} task(s) for epic ${epicId.slice(0, 8)} → pipeline ${pipelineId.slice(0, 8)}`,
+      );
+    }
+  }
+
+  // Publish auto_finalized event
+  await publishEvent(`epic-sessions/${sessionId}`, "epic.auto_finalized", {
+    session_id: sessionId,
+    epic_id: epicId,
+    task_count: proposedTasks.length,
+  });
+
+  // End the session
+  await sql`
+    UPDATE epic_sessions
+    SET status = 'ended', ended_at = now(), updated_at = now()
+    WHERE id = ${sessionId}
+  `;
+
+  log.info(`Session ${sessionId.slice(0, 8)} ended after auto-finalize`);
 }
 
 // ============================================

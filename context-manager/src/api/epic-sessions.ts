@@ -23,6 +23,12 @@ const StartEpicSessionSchema = z.object({
   system_context: z.string().optional(),
 });
 
+/** Schema for starting an epic chat (chat as entry point) */
+const StartEpicChatSchema = z.object({
+  initial_message: z.string().optional(),
+  model: z.string().optional().default("claude-opus-4-6"),
+});
+
 /** Schema for sending a message */
 const SendMessageSchema = z.object({
   content: z.string().min(1, "content is required"),
@@ -192,6 +198,132 @@ export async function startEpicSession(c: Context): Promise<Response> {
     return c.json(
       {
         error: "Failed to start epic session",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
+    );
+  }
+}
+
+/**
+ * POST /api/projects/:projectId/epic-chat
+ * Create a new epic with a linked session and optionally fire Claude immediately.
+ * The chat is the ENTRY POINT: the epic is created with a placeholder title that
+ * Claude will update via a dcm-meta block once it deduces a descriptive name.
+ */
+export async function startEpicChat(c: Context): Promise<Response> {
+  try {
+    const projectId = c.req.param("projectId");
+
+    const raw = await c.req.json().catch(() => ({}));
+    const parseResult = StartEpicChatSchema.safeParse(raw);
+    if (!parseResult.success) {
+      return c.json(
+        { error: "Validation failed", details: parseResult.error.flatten().fieldErrors },
+        400,
+      );
+    }
+    const body = parseResult.data;
+
+    const sql = getDb();
+
+    // Verify the project exists
+    const projects = await sql<ProjectRow[]>`
+      SELECT id, path, name FROM projects WHERE id = ${projectId}
+    `;
+
+    if (projects.length === 0) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    const project = projects[0]!;
+
+    // Create a placeholder epic
+    const epics = await sql<EpicRow[]>`
+      INSERT INTO project_epics (project_id, title, status)
+      VALUES (${projectId}, 'New Epic', 'in_progress')
+      RETURNING id, project_id, pipeline_id, title, description
+    `;
+
+    const epic = epics[0]!;
+
+    // System prompt with dcm-meta instructions
+    const systemPrompt =
+      `Tu es un Tech Lead senior. L'utilisateur te decrit un besoin pour son projet.\n\n` +
+      `WORKFLOW :\n` +
+      `1. Discute et clarifie le besoin\n` +
+      `2. Propose une approche technique\n` +
+      `3. Quand le plan est clair, cree les taches\n\n` +
+      `Pour creer une tache, emets ce format (un par tache) :\n\n` +
+      `\`\`\`dcm-task\n` +
+      `{"action":"create_task","title":"...","description":"...","agent_type":"Snipper","model":"sonnet","wave_number":0,"step_order":0,"skills":["workflow-clean-code"],"prompt":"Prompt complet pour l'agent..."}\n` +
+      `\`\`\`\n\n` +
+      `Tu peux creer plusieurs taches dans un message.\n\n` +
+      `INSTRUCTIONS SUPPLEMENTAIRES :\n` +
+      `- Au cours de la conversation, deduis un titre descriptif pour cet epic.\n` +
+      `  Quand tu as un titre, emets un bloc : \`\`\`dcm-meta\n{"action":"set_title","title":"Le titre"}\`\`\`\n` +
+      `- Quand l'utilisateur te dit que c'est bon ou que tu as assez d'info,\n` +
+      `  cree les taches via les blocs dcm-task habituels puis emets : \`\`\`dcm-meta\n{"action":"finalize"}\`\`\`\n` +
+      `- Le bloc finalize declenche la creation des taches dans le pipeline et le lancement de l'implementation.\n\n` +
+      `Projet: ${project.name ?? projectId}\n` +
+      `Workspace: ${project.path}`;
+
+    // Create the session linked to the new epic
+    const sessions = await sql<EpicSessionRow[]>`
+      INSERT INTO epic_sessions (epic_id, status, model, system_prompt, auto_execute)
+      VALUES (${epic.id}, 'active', ${body.model}, ${systemPrompt}, false)
+      RETURNING *
+    `;
+
+    const session = sessions[0]!;
+
+    await publishEvent("epic-sessions", "epic.session.created", {
+      session_id: session.id,
+      epic_id: epic.id,
+      project_id: projectId,
+      workspace_path: project.path,
+      entry_point: "chat",
+    });
+
+    log.info(`Epic chat created: epic=${epic.id} session=${session.id} project=${projectId}`);
+
+    // If an initial message is provided, insert it and spawn Claude immediately
+    if (body.initial_message) {
+      await sql`
+        INSERT INTO epic_messages (session_id, role, content, content_type)
+        VALUES (${session.id}, 'user', ${body.initial_message}, 'text')
+      `;
+
+      // Load the freshly inserted message as conversation history
+      const conversationHistory = await sql<EpicMessageRow[]>`
+        SELECT id, session_id, role, content, content_type, metadata, created_at
+        FROM epic_messages
+        WHERE session_id = ${session.id}
+        ORDER BY created_at ASC
+      `;
+
+      spawnClaudeSession({
+        sessionId: session.id,
+        epicId: epic.id,
+        projectName: project.name ?? "",
+        epicTitle: epic.title,
+        epicDescription: "",
+        workspacePath: project.path,
+        conversationHistory,
+        userMessage: body.initial_message,
+        model: body.model,
+        systemPromptOverride: systemPrompt,
+      }).catch((err) => {
+        log.error(`spawnClaudeSession failed for chat session ${session.id}:`, err);
+      });
+    }
+
+    return c.json({ success: true, epic, session }, 201);
+  } catch (error) {
+    log.error("POST /api/projects/:projectId/epic-chat error:", error);
+    return c.json(
+      {
+        error: "Failed to start epic chat",
         message: error instanceof Error ? error.message : "Unknown error",
       },
       500,

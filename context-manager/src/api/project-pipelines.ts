@@ -15,6 +15,7 @@ import { z } from "zod";
 import { getDb, publishEvent } from "../db/client";
 import { createLogger } from "../lib/logger";
 import { analyzeProject, analyzeAllProjects } from "../pipeline/project-analyzer";
+import { buildProjectContext } from "../pipeline/project-context";
 
 const log = createLogger("ProjectPipelines");
 
@@ -553,6 +554,121 @@ export async function analyzeProjectHandler(c: Context): Promise<Response> {
     return c.json(
       {
         error: "Failed to trigger analysis",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
+    );
+  }
+}
+
+// ============================================
+// Context handlers
+// ============================================
+
+interface ProjectContextRow {
+  context_type: string;
+  title: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  version: number;
+  updated_at: string;
+}
+
+interface ProjectContextMeta {
+  context_version: number;
+  last_context_scan: string | null;
+}
+
+/**
+ * GET /api/projects/:id/context
+ * Return all persisted context sections for a project.
+ * Returns { contexts: ProjectContextRow[], project_version: number, last_scan: string | null }
+ */
+export async function getProjectContext(c: Context): Promise<Response> {
+  try {
+    const projectId = c.req.param("id");
+    if (!projectId) {
+      return c.json({ error: "Missing project ID" }, 400);
+    }
+
+    const sql = getDb();
+
+    const projectRows = await sql<ProjectContextMeta[]>`
+      SELECT context_version, last_context_scan
+      FROM projects
+      WHERE id = ${projectId}
+    `;
+    if (projectRows.length === 0) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    const meta = projectRows[0]!;
+
+    const contexts = await sql<ProjectContextRow[]>`
+      SELECT context_type, title, content, metadata, version, updated_at
+      FROM project_context
+      WHERE project_id = ${projectId}
+      ORDER BY context_type ASC
+    `;
+
+    return c.json({
+      contexts,
+      project_version: meta.context_version,
+      last_scan: meta.last_context_scan ?? null,
+    });
+  } catch (error) {
+    log.error("GET /api/projects/:id/context error:", error);
+    return c.json(
+      {
+        error: "Failed to retrieve project context",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      500,
+    );
+  }
+}
+
+/**
+ * POST /api/projects/:id/context/refresh
+ * Trigger an async context rebuild for the project.
+ * Returns 202 immediately; the rebuild runs in the background.
+ * Returns { success, message }
+ */
+export async function postRefreshContext(c: Context): Promise<Response> {
+  try {
+    const projectId = c.req.param("id");
+    if (!projectId) {
+      return c.json({ error: "Missing project ID" }, 400);
+    }
+
+    const sql = getDb();
+
+    const check = await sql<{ id: string }[]>`
+      SELECT id FROM projects WHERE id = ${projectId}
+    `;
+    if (check.length === 0) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    // Fire-and-forget: do not await
+    buildProjectContext(projectId).catch((err) => {
+      log.error(`Background buildProjectContext failed project=${projectId}:`, err);
+    });
+
+    log.info(`POST /api/projects/${projectId}/context/refresh: context refresh triggered`);
+
+    return c.json(
+      {
+        success: true,
+        message: "Context refresh started",
+      },
+      202,
+    );
+  } catch (error) {
+    log.error("POST /api/projects/:id/context/refresh error:", error);
+    return c.json(
+      {
+        error: "Failed to trigger context refresh",
         message: error instanceof Error ? error.message : "Unknown error",
       },
       500,
