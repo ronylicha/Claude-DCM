@@ -41,6 +41,10 @@ export class CLIPlannerProvider implements LLMProvider {
     const tmpDir = "/tmp/dcm-planner";
     await Bun.spawn(["mkdir", "-p", tmpDir]).exited;
 
+    // Empty MCP config to prevent MCP servers from starting
+    const emptyMcpFile = `${tmpDir}/empty-mcp.json`;
+    await writeFile(emptyMcpFile, '{"mcpServers":{}}', "utf-8");
+
     const promptFile = `${tmpDir}/${jobId}.prompt`;
     const userFile = `${tmpDir}/${jobId}.user`;
     const scriptFile = `${tmpDir}/${jobId}.sh`;
@@ -167,7 +171,7 @@ export class CLIPlannerProvider implements LLMProvider {
       case "claude":
         return `#!/bin/bash
 USER_MSG=$(cat "${userFile}")
-stdbuf -oL -eL claude --bare -p "$USER_MSG" --system-prompt-file "${promptFile}" --model "${model}" --output-format stream-json --max-turns 15 --tools "Read,Bash,Grep,Glob" < /dev/null > "${outputFile}" 2> "${errorFile}"
+stdbuf -oL -eL claude -p "$USER_MSG" --system-prompt-file "${promptFile}" --model "${model}" --output-format stream-json --max-turns 15 --tools "Read,Bash,Grep,Glob" --strict-mcp-config --mcp-config "${tmpDir}/empty-mcp.json" < /dev/null > "${outputFile}" 2> "${errorFile}"
 echo $? > "${doneFile}"
 `;
       case "codex":
