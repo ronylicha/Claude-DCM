@@ -225,7 +225,25 @@ function PipelineControls({
 function PlanningLiveView({ pipelineId }: { pipelineId: string }) {
   const [output, setOutput] = useState('');
   const [latestIndex, setLatestIndex] = useState(0);
+  const [isFollowing, setIsFollowing] = useState(true);
   const outputRef = useRef<HTMLDivElement>(null);
+  const isFollowingRef = useRef(true);
+
+  // Keep ref in sync so the polling closure always reads the latest value
+  isFollowingRef.current = isFollowing;
+
+  // Detect manual scroll-up → pause auto-follow
+  useEffect(() => {
+    const el = outputRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      if (atBottom && !isFollowingRef.current) setIsFollowing(true);
+      if (!atBottom && isFollowingRef.current) setIsFollowing(false);
+    };
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // Poll for new chunks every 1.5s
   useEffect(() => {
@@ -237,8 +255,7 @@ function PlanningLiveView({ pipelineId }: { pipelineId: string }) {
           if (data.count > 0 && active) {
             setOutput((prev) => prev + data.chunks.map((c) => c.chunk).join(''));
             setLatestIndex(data.latest_index + 1);
-            // Auto-scroll
-            if (outputRef.current) {
+            if (isFollowingRef.current && outputRef.current) {
               outputRef.current.scrollTop = outputRef.current.scrollHeight;
             }
           }
@@ -252,16 +269,24 @@ function PlanningLiveView({ pipelineId }: { pipelineId: string }) {
     return () => { active = false; };
   }, [pipelineId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const scrollToBottom = () => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+    setIsFollowing(true);
+  };
+
   return (
     <div
       className={cn(
-        'rounded-[16px] overflow-hidden',
+        'rounded-[16px] overflow-hidden flex flex-col',
         'bg-[var(--md-sys-color-surface-container)]',
         'border border-[color-mix(in_srgb,var(--md-sys-color-tertiary)_20%,transparent)]',
+        'h-[calc(100vh-12rem)]',
       )}
     >
       {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-[var(--md-sys-color-outline-variant)]">
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-[var(--md-sys-color-outline-variant)] shrink-0">
         <Loader2 className="h-5 w-5 text-[var(--md-sys-color-tertiary)] animate-spin" />
         <div>
           <h3 className="text-[14px] font-semibold text-[var(--md-sys-color-on-surface)]">
@@ -274,18 +299,38 @@ function PlanningLiveView({ pipelineId }: { pipelineId: string }) {
       </div>
 
       {/* Live output terminal */}
-      <div
-        ref={outputRef}
-        className={cn(
-          'p-4 max-h-[400px] overflow-y-auto',
-          'bg-[#1a1a2e] text-[#e0e0e0]',
-          'font-mono text-[12px] leading-relaxed whitespace-pre-wrap',
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={outputRef}
+          className={cn(
+            'absolute inset-0 p-4 overflow-y-auto',
+            'bg-[#1a1a2e] text-[#e0e0e0]',
+            'font-mono text-[12px] leading-relaxed whitespace-pre-wrap',
+          )}
+        >
+          {output || (
+            <span className="text-[#666] italic">Waiting for LLM output...</span>
+          )}
+          <span className="inline-block w-2 h-4 bg-[var(--md-sys-color-tertiary)] animate-pulse ml-0.5 align-text-bottom" />
+        </div>
+
+        {/* "Back to live" button — visible only when user scrolled up */}
+        {!isFollowing && (
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            className={cn(
+              'absolute bottom-4 right-4 flex items-center gap-1.5',
+              'px-3 py-1.5 rounded-full text-[11px] font-medium cursor-pointer',
+              'bg-[var(--md-sys-color-tertiary)] text-[var(--md-sys-color-on-tertiary)]',
+              'shadow-lg hover:brightness-110 transition-all duration-200',
+              'animate-in fade-in slide-in-from-bottom-2',
+            )}
+          >
+            <ArrowLeft className="h-3 w-3 rotate-[-90deg]" />
+            Live
+          </button>
         )}
-      >
-        {output || (
-          <span className="text-[#666] italic">Waiting for LLM output...</span>
-        )}
-        <span className="inline-block w-2 h-4 bg-[var(--md-sys-color-tertiary)] animate-pulse ml-0.5 align-text-bottom" />
       </div>
     </div>
   );
