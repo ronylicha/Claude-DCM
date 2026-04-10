@@ -479,8 +479,46 @@ async function injectPlan(pipelineId: string, rawOutput: string): Promise<void> 
     const pipeline = await getPipeline(pipelineId);
     if (!pipeline) return;
 
+    // Extract text from stream-json NDJSON if applicable
+    let textOutput = rawOutput;
+    if (rawOutput.includes('"type":"result"')) {
+      // stream-json format: extract the result text from the last result event
+      const lines = rawOutput.split("\n");
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i]?.trim();
+        if (!line) continue;
+        try {
+          const evt = JSON.parse(line) as Record<string, unknown>;
+          if (evt["type"] === "result" && typeof evt["result"] === "string") {
+            textOutput = evt["result"];
+            break;
+          }
+        } catch { continue; }
+      }
+      // Fallback: try last assistant event
+      if (textOutput === rawOutput) {
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try {
+            const evt = JSON.parse(lines[i]?.trim() ?? "") as Record<string, unknown>;
+            if (evt["type"] === "assistant") {
+              const blocks = (evt["message"] as Record<string, unknown>)?.["content"] as Array<Record<string, unknown>> | undefined;
+              if (Array.isArray(blocks)) {
+                for (const b of blocks) {
+                  if (b["type"] === "text" && typeof b["text"] === "string" && (b["text"] as string).length > 1000) {
+                    textOutput = b["text"] as string;
+                    break;
+                  }
+                }
+              }
+              if (textOutput !== rawOutput) break;
+            }
+          } catch { continue; }
+        }
+      }
+    }
+
     let plan: Record<string, unknown> | null = null;
-    const jsonMatch = rawOutput.match(/(\{[\s\S]*"waves"[\s\S]*"sprints"[\s\S]*\})/);
+    const jsonMatch = textOutput.match(/(\{[\s\S]*"waves"[\s\S]*"sprints"[\s\S]*\})/);
     if (jsonMatch) {
       try {
         const parsed = JSON.parse(jsonMatch[1]);
