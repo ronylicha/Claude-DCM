@@ -274,18 +274,32 @@ REPONSE : UNIQUEMENT le JSON valide, rien d'autre. Pas de markdown, pas de texte
 function buildPlannerPrompt(input: PipelineInput, catalog: string): string {
   const sections: string[] = [];
 
-  sections.push(`Tu es un architecte logiciel expert. Tu dois produire un plan d'execution structure pour un pipeline d'agents AI.
+  sections.push(`Tu es un architecte logiciel expert. Ta mission : produire un plan d'execution JSON pour un pipeline d'agents AI.
 
-Tu recois des instructions, des documents optionnels, et un catalogue d'agents/skills disponibles.
-Tu dois analyser le travail demande et produire un plan JSON detaille avec des waves, des steps, et des sprints.
+# WORKFLOW OBLIGATOIRE (suis ces phases dans l'ordre)
 
-# IMPORTANT
-- Reponds UNIQUEMENT avec un bloc JSON valide (pas de texte avant/apres)
-- Le JSON doit etre parsable directement
-- Sois exhaustif dans le decoupage : autant de sprints et waves que necessaire
-- Chaque step doit avoir un prompt detaille et scope pour l'agent qui l'executera
-- Les sprints groupent les waves logiquement (1 sprint = 1 livrable coherent)
-- Un sprint peut contenir 1 a N waves`);
+## Phase 1 — Exploration rapide (3-5 tours max)
+Tu as acces a des outils (Bash, Read, Grep, Glob). Utilise-les pour :
+- Comprendre la structure du projet : \`ls\`, \`find -maxdepth 3\`
+- Lire les fichiers cles : package.json, schemas DB, configs, entry points
+- STOP apres 5 fichiers lus — les documents fournis plus bas contiennent deja l'essentiel
+- NE REPETE PAS une exploration deja faite. Si tu as vu la structure, avance.
+
+## Phase 2 — Generation du plan JSON (dernier tour)
+Une fois que tu comprends le projet, genere le plan JSON IMMEDIATEMENT.
+- Le JSON est ta DERNIERE reponse textuelle
+- Commence directement par { et termine par }
+- Pas de texte explicatif avant/apres
+- Pas de fences markdown
+- Le JSON doit etre parsable par JSON.parse()
+
+# REGLES CRITIQUES (non-negociable)
+- Tu as MAXIMUM 15 tours. Chaque tour compte. Ne boucle pas.
+- NE CHARGE PAS de skills (Skill tool) — le plan specifie les skills pour chaque agent, ils les chargeront eux-memes.
+- NE CREE PAS de fichiers (Write tool) — retourne le JSON dans ta reponse texte.
+- NE RE-EXPLORE PAS ce que les documents fournis decrivent deja.
+- Des que tu penses "j'ai une vue complete" → GENERE LE JSON. Pas de tour supplementaire.
+- Si tu as deja explore et que tu hesites → GENERE LE JSON avec ce que tu sais. Un plan imparfait vaut mieux qu'une boucle infinie.`);
 
   // Instructions
   sections.push(`\n# INSTRUCTIONS DE L'UTILISATEUR\n\n${input.instructions}`);
@@ -367,45 +381,37 @@ Produis EXACTEMENT ce JSON (pas de markdown, pas de \`\`\`json, juste le JSON br
 
 # REGLES POUR LE PLAN
 
-## Execution et dependances (CRITIQUE)
+## Dependances et parallelisme
 
-Le runner execute les waves dans l'ordre de leur numero. Les steps DANS une wave sont lances en parallele.
-Le champ \`depends_on\` d'une wave contient les numeros des waves qui DOIVENT etre terminees AVANT que cette wave puisse demarrer.
+Le runner execute les waves par numero. Les steps DANS une wave tournent en parallele.
+\`depends_on\` = numeros des waves qui doivent finir AVANT celle-ci.
 
-Exemples de patterns :
-- Wave 0 (Explore) → pas de dependance : \`"depends_on": []\`
-- Wave 1 (Backend) depend de l'exploration : \`"depends_on": [0]\`
-- Wave 2 (Frontend) depend aussi de l'exploration mais PAS du backend → \`"depends_on": [0]\` → les waves 1 et 2 tournent EN PARALLELE
-- Wave 3 (Integration) depend du backend ET du frontend : \`"depends_on": [1, 2]\` → attend que les deux soient finies
-- Wave 4 (Tests) depend de l'integration : \`"depends_on": [3]\`
+Pattern type pour maximiser le parallelisme :
+- Wave 0 (Explore) → \`"depends_on": []\`
+- Wave 1 (Backend) + Wave 2 (Frontend) → \`"depends_on": [0]\` → PARALLELES
+- Wave 3 (Integration) → \`"depends_on": [1, 2]\` → attend les deux
+- Wave 4 (Tests/Review) → \`"depends_on": [3]\`
 
-Tu dois identifier les dependances reelles et maximiser le parallelisme :
-- Si deux waves sont independantes (ex: backend et frontend), elles doivent avoir les memes depends_on pour tourner en parallele
-- Si une wave a besoin du resultat d'une autre, elle doit la lister dans depends_on
-- Le \`"parallel": true\` indique que les steps DANS cette wave peuvent tourner en parallele
+## Structure des waves
 
-## Waves et steps
+1. **Wave 0 = Exploration** : agent Explore, analyse le codebase. depends_on: []
+2. **Waves implementation** : agents specialises du catalogue. Paralleliser backend/frontend/DB si independants.
+3. **Wave validation** : code-reviewer obligatoire. Depend de toutes les waves d'implementation.
+4. **Waves optionnelles** : security, tests, performance si pertinent.
+5. **on_failure** : "abort" (waves critiques), "retry" (implementation), "continue" (validation).
 
-1. **Wave 0 TOUJOURS = Exploration** : un agent Explore qui analyse le codebase et comprend le contexte. depends_on: []
-2. **Waves d'implementation** : utilise les agents les plus pertinents du catalogue. Plusieurs waves paralleles si les domaines sont independants (ex: backend et frontend).
-3. **Wave de validation** : toujours inclure un code-reviewer. depend de TOUTES les waves d'implementation.
-4. **Waves optionnelles** : security-specialist, test-engineer, performance-engineer selon le besoin. Apres la validation.
-5. **on_failure** : "abort" pour les waves critiques (exploration, setup DB), "retry" pour l'implementation, "continue" pour la validation/tests.
-6. **Pas de wave vide** : chaque wave doit avoir au moins 1 step.
+## Steps — regles
+
+- **Modeles** : haiku (exploration/review), sonnet (implementation), opus (architecture complexe)
+- **max_turns** : 3-5 (trivial), 5-10 (simple), 10-20 (modere), 20-30 (complexe)
+- **Prompts AUTONOMES** : chaque agent ne connait PAS le plan global. Son prompt doit inclure :
+  contexte du projet, objectif precis, fichiers a toucher, contraintes, format de retour. Min 200 mots.
+- **Skills** : toujours "workflow-clean-code" + skills specifiques au domaine
 
 ## Sprints
 
-Les sprints groupent les waves en livrables coherents. Chaque sprint = un commit git potentiel.
-- Un sprint peut contenir 1 a N waves
-- Autant de sprints que necessaire (pas forcement 3)
-- Objectifs precis et mesurables pour chaque sprint
-
-## Steps
-
-1. **Modeles** : haiku pour exploration/review simple, sonnet pour implementation, opus pour architecture complexe
-2. **max_turns** : 3-5 pour trivial, 5-10 pour simple, 10-20 pour modere, 20-30 pour complexe
-3. **Prompts** : DETAILLES et SCOPES. Chaque prompt doit etre autonome — l'agent ne connait PAS le plan global. Inclure le contexte, l'objectif precis, les fichiers a toucher, les contraintes, et le format de retour attendu. Minimum 200 mots.
-4. **Skills** : toujours inclure "workflow-clean-code" + les skills specifiques au domaine de l'agent`);
+Groupent les waves en livrables coherents (1 sprint = 1 commit potentiel).
+Autant de sprints que necessaire. Objectifs precis et mesurables.`);
 
   return sections.join("\n");
 }
