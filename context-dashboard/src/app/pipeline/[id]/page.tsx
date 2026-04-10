@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
+  ArrowDown,
   GitBranch,
   CheckCircle2,
   XCircle,
@@ -15,6 +16,14 @@ import {
   Square,
   Loader2,
   Timer,
+  FileText,
+  Search,
+  Terminal,
+  Sparkles,
+  Bot,
+  Zap,
+  Pencil,
+  FolderSearch,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDuration } from '@/lib/utils';
@@ -222,19 +231,190 @@ function PipelineControls({
 // Planning Live View
 // ============================================
 
+// ============================================
+// Planning event types & rendering
+// ============================================
+
+interface PlanningEvent {
+  kind: string;
+  [key: string]: unknown;
+}
+
+interface EventGroup {
+  kind: string;
+  events: PlanningEvent[];
+}
+
+function groupPlanningEvents(events: PlanningEvent[]): EventGroup[] {
+  const groups: EventGroup[] = [];
+  for (const evt of events) {
+    const last = groups[groups.length - 1];
+    if (
+      (evt.kind === 'skill' && last?.kind === 'skill') ||
+      (evt.kind === 'action' && last?.kind === 'action') ||
+      (evt.kind === 'system' && last?.kind === 'system') ||
+      (evt.kind === 'thinking' && last?.kind === 'thinking')
+    ) {
+      last.events.push(evt);
+    } else {
+      groups.push({ kind: evt.kind, events: [evt] });
+    }
+  }
+  return groups;
+}
+
+const ACTION_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  Read: FileText,
+  Write: Pencil,
+  Edit: Pencil,
+  Grep: Search,
+  Glob: FolderSearch,
+  Bash: Terminal,
+};
+
+function PlanningEventBlock({ group }: { group: EventGroup }) {
+  switch (group.kind) {
+    case 'skill':
+      return (
+        <div
+          className={cn(
+            'rounded-[12px] p-3',
+            'bg-[color-mix(in_srgb,var(--md-sys-color-tertiary)_8%,transparent)]',
+            'border border-[color-mix(in_srgb,var(--md-sys-color-tertiary)_20%,transparent)]',
+          )}
+        >
+          <div className="flex items-center gap-1.5 mb-2">
+            <Sparkles className="h-3.5 w-3.5 text-[var(--md-sys-color-tertiary)]" />
+            <span className="text-[11px] font-semibold text-[var(--md-sys-color-tertiary)] uppercase tracking-wider">
+              Skills
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {group.events.map((e, i) => (
+              <span
+                key={i}
+                className={cn(
+                  'inline-flex px-2.5 py-1 rounded-full text-[11px] font-medium',
+                  'bg-[var(--md-sys-color-tertiary-container)] text-[var(--md-sys-color-on-tertiary-container)]',
+                )}
+              >
+                {e.name as string}
+              </span>
+            ))}
+          </div>
+        </div>
+      );
+
+    case 'action':
+      return (
+        <div
+          className={cn(
+            'rounded-[12px] p-3',
+            'bg-[var(--md-sys-color-surface-container)]',
+            'border border-[var(--md-sys-color-outline-variant)]',
+          )}
+        >
+          <div className="space-y-1.5">
+            {group.events.map((e, i) => {
+              const Icon = ACTION_ICONS[e.tool as string] ?? Activity;
+              return (
+                <div key={i} className="flex items-start gap-2 text-[12px]">
+                  <Icon className="h-3.5 w-3.5 text-[var(--md-sys-color-primary)] shrink-0 mt-0.5" />
+                  <span className="font-medium text-[var(--md-sys-color-on-surface-variant)] shrink-0">
+                    {e.label as string}
+                  </span>
+                  {(e.detail as string) ? (
+                    <span className="text-[var(--md-sys-color-outline)] truncate font-mono text-[11px]">
+                      {e.detail as string}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+
+    case 'text':
+      return (
+        <div
+          className={cn(
+            'rounded-[12px] p-4',
+            'bg-[var(--md-sys-color-primary-container)]',
+            'border border-[color-mix(in_srgb,var(--md-sys-color-primary)_20%,transparent)]',
+          )}
+        >
+          <p className="text-[13px] leading-relaxed text-[var(--md-sys-color-on-primary-container)] whitespace-pre-wrap">
+            {group.events.map((e) => e.content as string).join('\n')}
+          </p>
+        </div>
+      );
+
+    case 'agent':
+      return (
+        <div
+          className={cn(
+            'rounded-[12px] p-3',
+            'bg-[color-mix(in_srgb,var(--dcm-zone-green)_8%,transparent)]',
+            'border border-[color-mix(in_srgb,var(--dcm-zone-green)_20%,transparent)]',
+          )}
+        >
+          {group.events.map((e, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Bot className="h-3.5 w-3.5 text-[var(--dcm-zone-green)]" />
+              {(e.agent as string) ? (
+                <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-[color-mix(in_srgb,var(--dcm-zone-green)_15%,transparent)] text-[var(--dcm-zone-green)]">
+                  {e.agent as string}
+                </span>
+              ) : null}
+              <span className="text-[12px] text-[var(--md-sys-color-on-surface)]">
+                {e.description as string}
+              </span>
+            </div>
+          ))}
+        </div>
+      );
+
+    case 'thinking':
+      return (
+        <div className="flex items-center gap-2 py-1 px-1">
+          <Loader2 className="h-3.5 w-3.5 text-[var(--md-sys-color-outline)] animate-spin" />
+          <span className="text-[11px] text-[var(--md-sys-color-outline)] italic">
+            Réflexion en cours...
+          </span>
+        </div>
+      );
+
+    case 'system':
+      return (
+        <div className="flex items-center gap-2 py-1 px-1">
+          <Zap className="h-3 w-3 text-[var(--md-sys-color-outline)]" />
+          <span className="text-[11px] text-[var(--md-sys-color-outline)]">
+            {group.events.map((e) => e.label as string).join(', ')}
+          </span>
+        </div>
+      );
+
+    default:
+      return null;
+  }
+}
+
+// ============================================
+// Planning Live View
+// ============================================
+
 function PlanningLiveView({ pipelineId }: { pipelineId: string }) {
-  const [output, setOutput] = useState('');
+  const [events, setEvents] = useState<PlanningEvent[]>([]);
   const [latestIndex, setLatestIndex] = useState(0);
   const [isFollowing, setIsFollowing] = useState(true);
-  const outputRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const isFollowingRef = useRef(true);
-
-  // Keep ref in sync so the polling closure always reads the latest value
   isFollowingRef.current = isFollowing;
 
   // Detect manual scroll-up → pause auto-follow
   useEffect(() => {
-    const el = outputRef.current;
+    const el = scrollRef.current;
     if (!el) return;
     const handleScroll = () => {
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
@@ -253,10 +433,19 @@ function PlanningLiveView({ pipelineId }: { pipelineId: string }) {
         try {
           const data = await apiClient.getPlanningOutput(pipelineId, latestIndex);
           if (data.count > 0 && active) {
-            setOutput((prev) => prev + data.chunks.map((c) => c.chunk).join(''));
+            const incoming = data.chunks.map((c) => {
+              try {
+                return JSON.parse(c.chunk) as PlanningEvent;
+              } catch {
+                return { kind: 'text', content: c.chunk } as PlanningEvent;
+              }
+            });
+            setEvents((prev) => [...prev, ...incoming]);
             setLatestIndex(data.latest_index + 1);
-            if (isFollowingRef.current && outputRef.current) {
-              outputRef.current.scrollTop = outputRef.current.scrollHeight;
+            if (isFollowingRef.current && scrollRef.current) {
+              requestAnimationFrame(() => {
+                if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+              });
             }
           }
         } catch {
@@ -270,11 +459,11 @@ function PlanningLiveView({ pipelineId }: { pipelineId: string }) {
   }, [pipelineId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scrollToBottom = () => {
-    if (outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight;
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     setIsFollowing(true);
   };
+
+  const grouped = useMemo(() => groupPlanningEvents(events), [events]);
 
   return (
     <div
@@ -288,7 +477,7 @@ function PlanningLiveView({ pipelineId }: { pipelineId: string }) {
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-3 border-b border-[var(--md-sys-color-outline-variant)] shrink-0">
         <Loader2 className="h-5 w-5 text-[var(--md-sys-color-tertiary)] animate-spin" />
-        <div>
+        <div className="flex-1 min-w-0">
           <h3 className="text-[14px] font-semibold text-[var(--md-sys-color-on-surface)]">
             Generating execution plan...
           </h3>
@@ -296,25 +485,33 @@ function PlanningLiveView({ pipelineId }: { pipelineId: string }) {
             LLM is analyzing your instructions and documents
           </p>
         </div>
+        <div className="text-[11px] tabular-nums text-[var(--md-sys-color-outline)]">
+          {events.length} event{events.length > 1 ? 's' : ''}
+        </div>
       </div>
 
-      {/* Live output terminal */}
+      {/* Event blocks */}
       <div className="relative flex-1 min-h-0">
         <div
-          ref={outputRef}
+          ref={scrollRef}
           className={cn(
             'absolute inset-0 p-4 overflow-y-auto',
-            'bg-[#1a1a2e] text-[#e0e0e0]',
-            'font-mono text-[12px] leading-relaxed whitespace-pre-wrap',
+            'bg-[var(--md-sys-color-surface)]',
+            'space-y-2',
           )}
         >
-          {output || (
-            <span className="text-[#666] italic">Waiting for LLM output...</span>
+          {grouped.length === 0 && (
+            <div className="flex items-center justify-center h-full gap-2 text-[13px] text-[var(--md-sys-color-outline)]">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Waiting for LLM output...
+            </div>
           )}
-          <span className="inline-block w-2 h-4 bg-[var(--md-sys-color-tertiary)] animate-pulse ml-0.5 align-text-bottom" />
+          {grouped.map((group, i) => (
+            <PlanningEventBlock key={i} group={group} />
+          ))}
         </div>
 
-        {/* "Back to live" button — visible only when user scrolled up */}
+        {/* "Back to live" floating button */}
         {!isFollowing && (
           <button
             type="button"
@@ -324,10 +521,9 @@ function PlanningLiveView({ pipelineId }: { pipelineId: string }) {
               'px-3 py-1.5 rounded-full text-[11px] font-medium cursor-pointer',
               'bg-[var(--md-sys-color-tertiary)] text-[var(--md-sys-color-on-tertiary)]',
               'shadow-lg hover:brightness-110 transition-all duration-200',
-              'animate-in fade-in slide-in-from-bottom-2',
             )}
           >
-            <ArrowLeft className="h-3 w-3 rotate-[-90deg]" />
+            <ArrowDown className="h-3 w-3" />
             Live
           </button>
         )}

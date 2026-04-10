@@ -97,11 +97,11 @@ export class CLIPlannerProvider implements LLMProvider {
               const prevSize = lastSize;
               lastSize = currentContent.length;
               if (isStreamJson) {
-                // Parse new stream-json events into human-readable blocks
+                // Parse new stream-json events into structured JSON chunks
                 const newBytes = currentContent.slice(prevSize);
-                const formatted = formatStreamEvents(newBytes);
-                if (formatted) {
-                  await storeChunk(sql, pipelineId, formatted, chunkIndex++);
+                const events = parseStreamEvents(newBytes);
+                for (const evt of events) {
+                  await storeChunk(sql, pipelineId, JSON.stringify(evt), chunkIndex++);
                 }
               } else {
                 const newChunk = currentContent.slice(prevSize);
@@ -231,74 +231,63 @@ async function storeChunk(
 }
 
 /**
- * Format new stream-json NDJSON lines into human-readable activity blocks.
- * Parses each event and produces structured output:
- *  - tool_use  → "▸ Lecture: path" / "▸ Commande: cmd" / "◆ Skill: name"
- *  - text      → raw text (the plan being generated)
- *  - thinking  → skipped
- *  - system    → hook names
+ * Parse new stream-json NDJSON lines into structured event objects.
+ * Each event is stored as a separate JSON chunk in the DB for the dashboard
+ * to render as distinct visual blocks.
  */
-function formatStreamEvents(newContent: string): string {
-  const parts: string[] = [];
+function parseStreamEvents(newContent: string): Array<Record<string, string>> {
+  const events: Array<Record<string, string>> = [];
   for (const line of newContent.split("\n")) {
     if (!line.trim()) continue;
     try {
-      const event = JSON.parse(line) as Record<string, unknown>;
-      const type = event["type"] as string;
+      const raw = JSON.parse(line) as Record<string, unknown>;
+      const type = raw["type"] as string;
 
       if (type === "assistant") {
-        const msg = event["message"] as Record<string, unknown> | undefined;
+        const msg = raw["message"] as Record<string, unknown> | undefined;
         const blocks = msg?.["content"] as Array<Record<string, unknown>> | undefined;
         if (!Array.isArray(blocks)) continue;
         for (const block of blocks) {
           const bt = block["type"] as string;
           if (bt === "text" && block["text"]) {
-            parts.push(`\n${block["text"] as string}\n`);
+            events.push({ kind: "text", content: block["text"] as string });
           } else if (bt === "tool_use") {
-            parts.push(formatToolAction(
-              block["name"] as string,
-              block["input"] as Record<string, unknown> | undefined,
-            ));
+            const name = block["name"] as string ?? "";
+            const input = block["input"] as Record<string, unknown> ?? {};
+            if (name === "Skill") {
+              events.push({ kind: "skill", name: String(input["skill"] ?? "") });
+            } else if (name === "Agent") {
+              events.push({
+                kind: "agent",
+                agent: String(input["subagent_type"] ?? ""),
+                description: String(input["description"] ?? ""),
+              });
+            } else {
+              const detail = actionDetail(name, input);
+              events.push({ kind: "action", tool: name, label: detail.label, detail: detail.detail ?? "" });
+            }
+          } else if (bt === "thinking") {
+            events.push({ kind: "thinking" });
           }
         }
-      } else if (type === "system") {
-        const sub = event["subtype"] as string;
-        if (sub === "hook_started") {
-          parts.push(`◆ Hook: ${event["hook_name"] ?? ""}\n`);
-        }
+      } else if (type === "system" && raw["subtype"] === "hook_started") {
+        events.push({ kind: "system", label: String(raw["hook_name"] ?? "") });
       }
     } catch { continue; }
   }
-  return parts.join("");
+  return events;
 }
 
-/** Format a tool_use content block into a concise action label. */
-function formatToolAction(name: string, input: Record<string, unknown> | undefined): string {
-  if (!input) return `▸ ${name}\n`;
+/** Extract a human-readable label + detail for a tool_use action. */
+function actionDetail(name: string, input: Record<string, unknown>): { label: string; detail?: string } {
   switch (name) {
-    case "Read":
-      return `▸ Lecture: ${input["file_path"] ?? "fichier"}\n`;
-    case "Write":
-      return `▸ Écriture: ${input["file_path"] ?? "fichier"}\n`;
-    case "Edit":
-      return `▸ Modification: ${input["file_path"] ?? "fichier"}\n`;
-    case "Grep":
-      return `▸ Recherche: "${input["pattern"] ?? ""}"\n`;
-    case "Glob":
-      return `▸ Fichiers: ${input["pattern"] ?? ""}\n`;
-    case "Bash": {
-      const cmd = String(input["command"] ?? "").slice(0, 80);
-      return `▸ Commande: ${cmd}${cmd.length >= 80 ? "…" : ""}\n`;
-    }
-    case "Skill":
-      return `◆ Skill: ${input["skill"] ?? ""}\n`;
-    case "Agent": {
-      const desc = input["description"] as string ?? "";
-      const agent = input["subagent_type"] as string ?? "";
-      return `◆ Agent${agent ? ` (${agent})` : ""}: ${desc}\n`;
-    }
-    default:
-      return `▸ ${name}\n`;
+    case "Read": return { label: "Lecture", detail: String(input["file_path"] ?? "") };
+    case "Write": return { label: "Écriture", detail: String(input["file_path"] ?? "") };
+    case "Edit": return { label: "Modification", detail: String(input["file_path"] ?? "") };
+    case "Grep": return { label: "Recherche", detail: String(input["pattern"] ?? "") };
+    case "Glob": return { label: "Fichiers", detail: String(input["pattern"] ?? "") };
+    case "Bash": return { label: "Commande", detail: String(input["command"] ?? "").slice(0, 100) };
+    default: return { label: name };
   }
 }
 
