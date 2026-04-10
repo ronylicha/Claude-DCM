@@ -67,19 +67,34 @@ export async function generatePlan(
   // 3. Call the configured planner provider
   let rawOutput = await callClaudeHeadless(prompt, pipelineId);
 
-  // 4. If output is not valid JSON, check for a written file in workspace
+  // 4. If output does not look like JSON, try workspace file recovery first
   if (!looksLikeJson(rawOutput)) {
     rawOutput = await tryRecoverPlanFromWorkspace(rawOutput, input);
   }
 
-  // 5. If still not valid JSON, post-process with a fast LLM to extract the plan
-  if (!looksLikeJson(rawOutput)) {
-    log.info("Raw output is not JSON — post-processing with fast LLM to extract plan...");
-    rawOutput = await postProcessWithLLM(rawOutput, pipelineId);
+  // 5. Try to parse the plan. If parsing fails (invalid JSON, mixed markdown+JSON,
+  // unescaped backslashes, text preamble, etc.), delegate to a fast LLM that
+  // re-extracts and reformats the JSON, then retry parsing.
+  let plan: PipelinePlan;
+  try {
+    plan = parsePlanOutput(rawOutput, input);
+  } catch (firstError) {
+    log.warn(`First parse attempt failed: ${(firstError as Error).message}`);
+    log.info("Post-processing raw output with fast LLM to reformat JSON...");
+    const reformatted = await postProcessWithLLM(rawOutput, pipelineId);
+    try {
+      plan = parsePlanOutput(reformatted, input);
+      log.info("Plan parsed successfully after LLM reformatting");
+    } catch (secondError) {
+      log.error(`LLM reformat also failed: ${(secondError as Error).message}`);
+      log.error(`Raw LLM output head: ${rawOutput.slice(0, 300)}`);
+      log.error(`Reformatted output head: ${reformatted.slice(0, 300)}`);
+      throw new Error(
+        `Plan generation failed. Original: ${(firstError as Error).message}. ` +
+        `After LLM reformat: ${(secondError as Error).message}`,
+      );
+    }
   }
-
-  // 6. Parse the JSON response (throws on invalid output)
-  const plan = parsePlanOutput(rawOutput, input);
 
   const elapsed = Math.round(performance.now() - startMs);
   log.info(
@@ -202,19 +217,38 @@ async function postProcessWithLLM(rawOutput: string, pipelineId?: string): Promi
       messages: [
         {
           role: "system",
-          content: `Tu es un extracteur JSON. Tu recois le resultat brut d'un planificateur AI qui a genere un plan d'execution.
-Le plan peut etre dans un fichier mentionne, dans du texte libre, dans des blocs de code, ou en JSON direct.
+          content: `Tu es un REFORMATTEUR/EXTRACTEUR de JSON strict. Tu recois le resultat brut d'un planificateur AI qui a genere un plan d'execution mais dont la sortie est invalide ou malformee.
 
-Ta seule tache : extraire le JSON du plan et le retourner PROPREMENT.
-- Si le plan est deja en JSON valide, retourne-le tel quel
-- Si le plan est dans du texte, extrait la structure JSON
-- Si le plan mentionne qu'il a ecrit un fichier, reconstruit le JSON a partir des informations disponibles
+Problemes frequents a corriger :
+- Texte explicatif en prefixe ou suffixe du JSON ("J'ai analyse...", "Voici le plan:")
+- Listes markdown (- **Item**) melangees avec du JSON
+- Backslashes non echappes dans des strings (chemins de fichiers, regex)
+- Caracteres de controle non echappes (sauts de ligne dans des strings)
+- Blocs de code fences (\`\`\`json ... \`\`\`) autour du JSON
+- Commentaires // ou /* */ invalides en JSON
+- Virgules trainantes
+- Guillemets simples au lieu de doubles
+- JSON tronque (reconstruit la fin si possible)
 
-Retourne UNIQUEMENT le JSON valide du plan, rien d'autre. Pas de texte, pas de markdown.`,
+TA MISSION :
+1. Extraire la structure JSON du plan (waves, sprints, steps)
+2. Corriger TOUTES les erreurs de syntaxe
+3. Retourner un JSON 100% valide et parsable
+
+STRUCTURE ATTENDUE :
+{
+  "name": "string",
+  "waves": [{"number": 0, "name": "...", "steps": [...]}],
+  "sprints": [...],
+  "required_skills": [...],
+  "constraints": {...}
+}
+
+REPONSE : UNIQUEMENT le JSON valide, rien d'autre. Pas de markdown, pas de texte explicatif, pas de fences \`\`\`. Commence par { et termine par }.`,
         },
         {
           role: "user",
-          content: `Voici l'output brut du planificateur. Extrait le JSON du plan:\n\n${truncate(rawOutput, 15000)}`,
+          content: `Voici l'output brut du planificateur a reformater en JSON valide :\n\n${truncate(rawOutput, 30000)}`,
         },
       ],
       max_tokens: 16384,
@@ -222,10 +256,10 @@ Retourne UNIQUEMENT le JSON valide du plan, rien d'autre. Pas de texte, pas de m
       _pipeline_id: pipelineId,
     } as import("../llm").ChatCompletionRequest & { _pipeline_id?: string });
 
-    log.info(`Post-processor: extracted ${response.content.length} chars in ${response.duration_ms}ms`);
+    log.info(`Post-processor: reformatted ${rawOutput.length} → ${response.content.length} chars in ${response.duration_ms}ms`);
     return response.content;
   } catch (error) {
-    log.error("Post-processing failed:", error);
+    log.error("LLM post-processing failed:", error);
     return rawOutput;
   }
 }
@@ -381,32 +415,129 @@ Les sprints groupent les waves en livrables coherents. Chaque sprint = un commit
 // ============================================
 
 /**
+ * Sanitize common LLM JSON issues: unescaped backslashes inside string values.
+ * The LLM sometimes outputs backslashes (file paths, regex) that are not valid JSON escapes.
+ * This walks the string char-by-char and escapes lone backslashes inside string literals.
+ */
+function sanitizeJsonString(input: string): string {
+  const out: string[] = [];
+  let inString = false;
+  let i = 0;
+  while (i < input.length) {
+    const ch = input[i];
+    if (!inString) {
+      if (ch === '"') inString = true;
+      out.push(ch as string);
+      i++;
+      continue;
+    }
+    // inside a string
+    if (ch === '"') {
+      inString = false;
+      out.push(ch as string);
+      i++;
+      continue;
+    }
+    if (ch === "\\") {
+      const next = input[i + 1];
+      // Valid JSON escapes: " \ / b f n r t u
+      if (next && '"\\/bfnrtu'.includes(next)) {
+        out.push(ch as string, next as string);
+        i += 2;
+      } else {
+        // Escape the lone backslash
+        out.push("\\\\");
+        i++;
+      }
+      continue;
+    }
+    // Unescaped control chars inside strings → escape them
+    const code = (ch as string).charCodeAt(0);
+    if (code < 0x20) {
+      if (code === 0x0a) out.push("\\n");
+      else if (code === 0x0d) out.push("\\r");
+      else if (code === 0x09) out.push("\\t");
+      else out.push(`\\u${code.toString(16).padStart(4, "0")}`);
+      i++;
+      continue;
+    }
+    out.push(ch as string);
+    i++;
+  }
+  return out.join("");
+}
+
+/**
  * Parse the raw output from Claude Opus into a validated PipelinePlan.
  * Handles JSON extraction from potentially wrapped output.
  */
 function parsePlanOutput(raw: string, input: PipelineInput): PipelinePlan {
   let jsonStr = raw.trim();
 
-  // Strip markdown code fences if present
-  const fenceMatch = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-  if (fenceMatch?.[1]) {
-    jsonStr = fenceMatch[1].trim();
+  // Strip outer markdown code fences if present.
+  // The JSON may contain nested ``` fences inside string values (agent prompts
+  // with bash/json code examples), so we must match the OUTERMOST fence pair
+  // (first occurrence from start, last occurrence from end).
+  if (jsonStr.startsWith("```")) {
+    // Remove opening fence line (```json\n or ```\n)
+    const firstNewline = jsonStr.indexOf("\n");
+    if (firstNewline !== -1) {
+      jsonStr = jsonStr.slice(firstNewline + 1);
+    }
+    // Remove trailing fence (last ``` in the string)
+    const lastFence = jsonStr.lastIndexOf("```");
+    if (lastFence !== -1) {
+      jsonStr = jsonStr.slice(0, lastFence);
+    }
+    jsonStr = jsonStr.trim();
   }
 
-  // Try to find JSON object boundaries
+  // Find the outermost JSON object: first { to its matching } via brace counting.
+  // This handles cases where there's leading text or trailing text around the JSON.
   const firstBrace = jsonStr.indexOf("{");
-  const lastBrace = jsonStr.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+  if (firstBrace !== -1) {
+    let depth = 0;
+    let lastBrace = -1;
+    let inString = false;
+    let escaped = false;
+    for (let i = firstBrace; i < jsonStr.length; i++) {
+      const ch = jsonStr[i];
+      if (escaped) { escaped = false; continue; }
+      if (ch === "\\") { escaped = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) { lastBrace = i; break; }
+      }
+    }
+    if (lastBrace > firstBrace) {
+      jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+    } else {
+      // Fallback: use last } in the string
+      const naiveLast = jsonStr.lastIndexOf("}");
+      if (naiveLast > firstBrace) {
+        jsonStr = jsonStr.substring(firstBrace, naiveLast + 1);
+      }
+    }
   }
 
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(jsonStr) as Record<string, unknown>;
   } catch (parseError) {
-    log.error(`Failed to parse plan JSON: ${(parseError as Error).message}`);
-    log.error(`Raw output (first 500 chars): ${raw.slice(0, 500)}`);
-    throw new Error(`LLM returned invalid JSON: ${(parseError as Error).message}. Raw output: ${raw.slice(0, 200)}`);
+    // Attempt to fix common LLM JSON issues: unescaped backslashes in strings
+    log.warn(`Initial JSON parse failed: ${(parseError as Error).message}. Attempting sanitization...`);
+    try {
+      const sanitized = sanitizeJsonString(jsonStr);
+      parsed = JSON.parse(sanitized) as Record<string, unknown>;
+      log.info("JSON parsed successfully after sanitization");
+    } catch (secondError) {
+      log.error(`Failed to parse plan JSON even after sanitization: ${(secondError as Error).message}`);
+      log.error(`Raw output (first 500 chars): ${raw.slice(0, 500)}`);
+      throw new Error(`LLM returned invalid JSON: ${(parseError as Error).message}. Raw output: ${raw.slice(0, 200)}`);
+    }
   }
 
   // Validate required fields

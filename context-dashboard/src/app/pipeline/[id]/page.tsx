@@ -668,7 +668,7 @@ export default function PipelineDetailPage() {
               {/* Steps grid — always visible */}
               <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
                 {waveSteps.map((step) => (
-                  <StepCard key={step.id} step={step} />
+                  <StepCard key={step.id} step={step} pipelineId={pipelineId} />
                 ))}
               </div>
             </div>

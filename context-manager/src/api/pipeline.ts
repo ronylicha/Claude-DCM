@@ -737,6 +737,117 @@ export async function getPlanningOutput(c: Context): Promise<Response> {
 }
 
 /**
+ * GET /api/pipelines/:id/steps/:stepId/output - Live output stream for a single step
+ *
+ * Returns the accumulated output chunks produced by the executor for a specific
+ * step, optionally filtered by `since_index` for incremental polling.
+ *
+ * Chunk indexing scheme used by executor (see pipeline/executor.ts):
+ *   chunk_index = 10000 + wave_number * 1000 + step_order * 100 + Math.floor(size / 500)
+ *
+ * That gives each step a dedicated 100-slot range. We derive it from the step
+ * metadata to select only the chunks belonging to this step.
+ *
+ * If no live chunks are available (e.g. step completed long ago, files cleaned,
+ * service restarted), fall back to the stored `step.result.summary` / `step.result.output`.
+ *
+ * Query params:
+ *   - since_index: minimum chunk_index to return (for incremental polling)
+ *
+ * @param c - Hono context
+ */
+export async function getStepOutput(c: Context): Promise<Response> {
+  try {
+    const id = c.req.param("id");
+    const stepId = c.req.param("stepId");
+    if (!id || !stepId) return c.json({ error: "Missing pipeline ID or step ID" }, 400);
+
+    const parsedSinceIndex = parseInt(c.req.query("since_index") ?? "0", 10);
+    const sinceIndex = Number.isFinite(parsedSinceIndex) && parsedSinceIndex >= 0 ? parsedSinceIndex : 0;
+
+    const sql = (await import("../db/client")).getDb();
+
+    // Fetch step metadata to know its range + current status
+    const stepRows = await sql<Array<{
+      wave_number: number;
+      step_order: number;
+      agent_type: string;
+      status: string;
+      result: Record<string, unknown> | null;
+      error: string | null;
+      started_at: string | null;
+      completed_at: string | null;
+    }>>`
+      SELECT wave_number, step_order, agent_type, status, result, error,
+             started_at::text AS started_at, completed_at::text AS completed_at
+      FROM pipeline_steps
+      WHERE id = ${stepId} AND pipeline_id = ${id}
+    `;
+
+    const step = stepRows[0];
+    if (!step) return c.json({ error: "Step not found" }, 404);
+
+    const wave = Number(step.wave_number);
+    const order = Number(step.step_order);
+    const baseIdx = 10000 + wave * 1000 + order * 100;
+    const endIdx = baseIdx + 99;
+    const effectiveSince = Math.max(sinceIndex, baseIdx);
+
+    // Fetch chunks belonging to this step
+    const chunks = await sql<Array<{ chunk: string; chunk_index: number; created_at: string }>>`
+      SELECT chunk, chunk_index, created_at
+      FROM planning_output
+      WHERE pipeline_id = ${id}
+        AND chunk_index >= ${effectiveSince}
+        AND chunk_index <= ${endIdx}
+      ORDER BY chunk_index ASC
+    `;
+
+    // Join chunks, stripping the "[agent_type] " prefix that the executor prepends
+    const prefix = `[${step.agent_type}] `;
+    const liveText = chunks
+      .map((row) => {
+        const raw = String(row.chunk);
+        return raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
+      })
+      .join("");
+
+    // Fallback to stored result when no live chunks (common after restart or for old steps)
+    let fallbackText = "";
+    if (chunks.length === 0 && step.result && typeof step.result === "object") {
+      const r = step.result;
+      if (typeof r.summary === "string") fallbackText = r.summary;
+      else if (typeof r.output === "string") fallbackText = r.output;
+      else fallbackText = JSON.stringify(r, null, 2);
+    }
+
+    return c.json({
+      step_id: stepId,
+      pipeline_id: id,
+      agent_type: step.agent_type,
+      status: step.status,
+      wave_number: wave,
+      step_order: order,
+      chunks,
+      full_text: liveText || fallbackText,
+      is_live: chunks.length > 0,
+      latest_index: chunks.length > 0
+        ? Number(chunks[chunks.length - 1]?.chunk_index ?? sinceIndex)
+        : sinceIndex,
+      error: step.error,
+      started_at: step.started_at,
+      completed_at: step.completed_at,
+    });
+  } catch (error) {
+    log.error("GET step output error:", error);
+    return c.json(
+      { error: "Failed to fetch step output", message: error instanceof Error ? error.message : "Unknown" },
+      500,
+    );
+  }
+}
+
+/**
  * GET /api/pipelines/:id/sprints/:number/report - Get sprint detail with report
  * @param c - Hono context
  */

@@ -15,6 +15,7 @@ import {
 import { cn } from '@/lib/utils';
 import { formatDuration } from '@/lib/utils';
 import type { PipelineStep } from '@/lib/api-client';
+import { StepOutputModal } from './StepOutputModal';
 
 // ============================================
 // Status styling
@@ -137,15 +138,32 @@ function ResultSummary({ result }: { result: Record<string, unknown> }) {
 
 interface StepCardProps {
   step: PipelineStep;
+  pipelineId?: string;
 }
 
-export function StepCard({ step }: StepCardProps) {
+export function StepCard({ step, pipelineId }: StepCardProps) {
   const style = getStepStatus(step.status);
   const StatusIcon = style.icon;
   const isRunning = step.status === 'running';
   const isPendingOrQueued = step.status === 'pending' || step.status === 'queued';
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const canOpenModal = Boolean(pipelineId);
+
+  const handleClick = () => {
+    if (canOpenModal) setModalOpen(true);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!canOpenModal) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setModalOpen(true);
+    }
+  };
 
   return (
+    <>
     <div
       className={cn(
         'rounded-[12px] p-4',
@@ -155,9 +173,13 @@ export function StepCard({ step }: StepCardProps) {
         style.border,
         isRunning && 'shadow-[var(--md-sys-elevation-1)]',
         isPendingOrQueued && 'opacity-60',
+        canOpenModal && 'cursor-pointer hover:bg-[var(--md-sys-color-surface-container-high)] hover:shadow-[var(--md-sys-elevation-1)] focus-visible:outline-2 focus-visible:outline-[var(--md-sys-color-primary)] focus-visible:outline-offset-2',
       )}
-      role="article"
-      aria-label={`Step: ${step.agent_type}, ${style.labelText}`}
+      role={canOpenModal ? 'button' : 'article'}
+      tabIndex={canOpenModal ? 0 : undefined}
+      onClick={canOpenModal ? handleClick : undefined}
+      onKeyDown={canOpenModal ? handleKeyDown : undefined}
+      aria-label={`Step: ${step.agent_type}, ${style.labelText}${canOpenModal ? ' — click to view output' : ''}`}
     >
       {/* Header: agent type + status */}
       <div className="flex items-start justify-between gap-3 mb-2">
@@ -246,5 +268,15 @@ export function StepCard({ step }: StepCardProps) {
         <ResultSummary result={step.result} />
       )}
     </div>
+
+    {canOpenModal && pipelineId && (
+      <StepOutputModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        pipelineId={pipelineId}
+        step={step}
+      />
+    )}
+    </>
   );
 }
