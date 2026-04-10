@@ -122,15 +122,15 @@ QUAND TU AS FINI, fournis:
   // Resolve full model ID
   const modelId = resolveModelId(model);
 
-  // Build the shell script (avoids escaping issues)
+  // Build the shell script — echo pipe fixes stdin, stream-json for live output
   const script = [
     "#!/bin/bash",
     `cd "${workspacePath}"`,
     `USER_MSG=$(cat "${userFile}")`,
-    `claude -p "$USER_MSG" \\`,
+    `echo "" | claude -p "$USER_MSG" \\`,
     `  --system-prompt-file "${promptFile}" \\`,
     `  --model "${modelId}" \\`,
-    `  --output-format text \\`,
+    `  --output-format stream-json \\`,
     `  > "${outputFile}" 2> "${errorFile}"`,
     `echo $? > "${doneFile}"`,
   ].join("\n");
@@ -155,9 +155,9 @@ QUAND TU AS FINI, fournis:
     job_id: jobId,
   });
 
-  // Launch in detached systemd scope (survives service restarts)
+  // Launch directly (systemd-run breaks the echo pipe)
   Bun.spawn(
-    ["systemd-run", "--user", "--scope", "--", "bash", scriptFile],
+    ["bash", scriptFile],
     { stdout: "ignore", stderr: "ignore", stdin: "ignore" },
   );
 
@@ -169,28 +169,57 @@ QUAND TU AS FINI, fournis:
 
   const pollInterval = setInterval(async () => {
     try {
-      // Stream new output chunks to DB for live viewing
+      // Stream structured output events for live dashboard viewing
       try {
         const currentOutput = await readFile(outputFile, "utf-8");
         if (currentOutput.length > lastOutputSize) {
-          const newChunk = currentOutput.slice(lastOutputSize);
+          const newBytes = currentOutput.slice(lastOutputSize);
           lastOutputSize = currentOutput.length;
 
-          // Store in planning_output for dashboard live view
-          // Use high chunk_index so it doesn't collide with planner chunks
-          const chunkIdx = 10000 + step.wave_number * 1000 + step.step_order * 100 + Math.floor(lastOutputSize / 500);
-          await sql`
-            INSERT INTO planning_output (pipeline_id, chunk, chunk_index)
-            VALUES (${pipelineId}, ${`[${agentType}] ${newChunk}`}, ${chunkIdx})
-          `.catch(() => {});
+          // Parse stream-json NDJSON lines into structured events
+          const events: Array<Record<string, string>> = [];
+          for (const line of newBytes.split("\n")) {
+            if (!line.trim()) continue;
+            try {
+              const raw = JSON.parse(line) as Record<string, unknown>;
+              if (raw["type"] === "assistant") {
+                const msg = raw["message"] as Record<string, unknown> | undefined;
+                const blocks = msg?.["content"] as Array<Record<string, unknown>> | undefined;
+                if (!Array.isArray(blocks)) continue;
+                for (const block of blocks) {
+                  const bt = block["type"] as string;
+                  if (bt === "text" && block["text"]) {
+                    events.push({ kind: "text", agent: agentType, content: (block["text"] as string).slice(0, 500) });
+                  } else if (bt === "tool_use") {
+                    const name = block["name"] as string ?? "";
+                    const input = block["input"] as Record<string, unknown> ?? {};
+                    const detail = String(input["file_path"] ?? input["command"] ?? input["pattern"] ?? input["skill"] ?? "").slice(0, 100);
+                    events.push({ kind: "action", agent: agentType, tool: name, detail });
+                  }
+                }
+              }
+            } catch { continue; }
+          }
 
-          await publishEvent("global", "pipeline.agent.output", {
-            pipeline_id: pipelineId,
-            step_id: stepId,
-            agent_type: agentType,
-            wave_number: step.wave_number,
-            chunk: newChunk.slice(0, 1000),
-          });
+          // Store structured events for step output modal
+          for (const evt of events) {
+            const chunkIdx = 10000 + step.wave_number * 1000 + step.step_order * 100 + Math.floor(lastOutputSize / 500);
+            await sql`
+              INSERT INTO planning_output (pipeline_id, chunk, chunk_index)
+              VALUES (${pipelineId}, ${JSON.stringify(evt)}, ${chunkIdx})
+            `.catch(() => {});
+          }
+
+          // Broadcast for real-time dashboard
+          if (events.length > 0) {
+            await publishEvent("global", "pipeline.agent.output", {
+              pipeline_id: pipelineId,
+              step_id: stepId,
+              agent_type: agentType,
+              wave_number: step.wave_number,
+              events,
+            });
+          }
         }
       } catch {
         // Output file not ready yet — normal
@@ -203,8 +232,23 @@ QUAND TU AS FINI, fournis:
       clearInterval(pollInterval);
 
       const exitCode = (await readFile(doneFile, "utf-8").catch(() => "1")).trim();
-      const fullOutput = await readFile(outputFile, "utf-8").catch(() => "");
+      const rawOutput = await readFile(outputFile, "utf-8").catch(() => "");
       const stderr = await readFile(errorFile, "utf-8").catch(() => "");
+
+      // Extract final text from stream-json NDJSON
+      let fullOutput = rawOutput;
+      if (rawOutput.includes('"type":"result"')) {
+        const lines = rawOutput.split("\n");
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try {
+            const evt = JSON.parse(lines[i]?.trim() ?? "") as Record<string, unknown>;
+            if (evt["type"] === "result" && typeof evt["result"] === "string") {
+              fullOutput = evt["result"] as string;
+              break;
+            }
+          } catch { continue; }
+        }
+      }
 
       // Cleanup temp files
       for (const f of [promptFile, userFile, scriptFile, outputFile, errorFile, doneFile]) {

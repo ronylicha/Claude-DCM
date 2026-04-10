@@ -153,8 +153,23 @@ async function checkExecutorJobs(): Promise<void> {
       }
 
       const exitCode = (await readFile(doneFile, "utf-8").catch(() => "1")).trim();
-      const fullOutput = await readFile(outputFile, "utf-8").catch(() => "");
+      const rawOutput = await readFile(outputFile, "utf-8").catch(() => "");
       const stderr = await readFile(`${tmpDir}/${jobId}.error`, "utf-8").catch(() => "");
+
+      // Extract text from stream-json if applicable
+      let fullOutput = rawOutput;
+      if (rawOutput.includes('"type":"result"')) {
+        const lines = rawOutput.split("\n");
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try {
+            const evt = JSON.parse(lines[i]?.trim() ?? "") as Record<string, unknown>;
+            if (evt["type"] === "result" && typeof evt["result"] === "string") {
+              fullOutput = evt["result"] as string;
+              break;
+            }
+          } catch { continue; }
+        }
+      }
 
       log.info(`Executor job ${jobId}: done (exit=${exitCode}, ${fullOutput.length} chars)`);
       await sql`UPDATE pipeline_jobs SET status = 'completed', completed_at = NOW() WHERE job_id = ${jobId}`;
