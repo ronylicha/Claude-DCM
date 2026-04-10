@@ -66,9 +66,9 @@ export class CLIPlannerProvider implements LLMProvider {
     await writeFile(scriptFile, scriptContent, "utf-8");
     await Bun.spawn(["chmod", "+x", scriptFile]).exited;
 
-    // Launch in separate systemd scope so it survives service restarts
+    // Launch directly (systemd-run breaks the echo pipe needed for stdin)
     Bun.spawn(
-      ["systemd-run", "--user", "--scope", "--", "bash", scriptFile],
+      ["bash", scriptFile],
       { stdout: "ignore", stderr: "ignore", stdin: "ignore" },
     );
 
@@ -171,7 +171,7 @@ export class CLIPlannerProvider implements LLMProvider {
       case "claude":
         return `#!/bin/bash
 USER_MSG=$(cat "${userFile}")
-echo "" | claude -p "$USER_MSG" --system-prompt-file "${promptFile}" --model "${model}" --output-format text --max-turns 25 > "${outputFile}" 2> "${errorFile}"
+echo "" | claude -p "$USER_MSG" --system-prompt-file "${promptFile}" --model "${model}" --output-format stream-json --max-turns 25 > "${outputFile}" 2> "${errorFile}"
 echo $? > "${doneFile}"
 `;
       case "codex":
