@@ -67,7 +67,7 @@ export default function ProjectBoardPage() {
   // Derive analyzeStatus from project metadata when data is loaded
   const metadataAnalyzeStatus = data?.project?.metadata?.analyze_status as string | undefined;
   const effectiveAnalyzeStatus: 'idle' | 'running' | 'done' | 'error' =
-    analyzeStatus === 'running'
+    analyzeStatus === 'running' || metadataAnalyzeStatus === 'running'
       ? 'running'
       : metadataAnalyzeStatus === 'done'
         ? 'done'
