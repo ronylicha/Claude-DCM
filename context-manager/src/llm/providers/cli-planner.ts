@@ -223,6 +223,7 @@ async function storeChunk(
     await sql`
       INSERT INTO planning_output (pipeline_id, chunk, chunk_index)
       VALUES (${pipelineId}, ${text}, ${index})
+      ON CONFLICT (pipeline_id, chunk_index) DO NOTHING
     `;
     await publishEvent("global", "pipeline.planning.chunk", {
       pipeline_id: pipelineId,

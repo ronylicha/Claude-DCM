@@ -207,6 +207,7 @@ QUAND TU AS FINI, fournis:
             await sql`
               INSERT INTO planning_output (pipeline_id, chunk, chunk_index)
               VALUES (${pipelineId}, ${JSON.stringify(evt)}, ${chunkIdx})
+      ON CONFLICT (pipeline_id, chunk_index) DO NOTHING
             `.catch(() => {});
           }
 
