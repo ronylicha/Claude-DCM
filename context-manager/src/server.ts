@@ -104,6 +104,16 @@ import {
   postSyncEpicsFromPipeline,
   patchProject,
 } from "./api/project-pipelines";
+import {
+  startEpicSession,
+  sendMessage as sendEpicMessage,
+  endSession as endEpicSession,
+  getSession as getEpicSession,
+  getMessages as getEpicMessages,
+  approveTask,
+  rejectTask,
+  executeAllApproved,
+} from "./api/epic-sessions";
 
 // Version from package.json (single source of truth)
 import pkg from "../package.json";
@@ -638,6 +648,19 @@ app.get("/api/projects/:id/pipelines", getProjectPipelines);
 app.post("/api/projects/:id/pipelines", postProjectPipeline);
 app.post("/api/projects/:id/sync-epics", postSyncEpicsFromPipeline);
 app.patch("/api/projects/:id", patchProject);
+
+// ============================================
+// Epic Sessions - Phase 15 (DCM v5.4)
+// ============================================
+
+app.post("/api/projects/:projectId/epics/:epicId/session", startEpicSession);
+app.post("/api/epic-sessions/:sessionId/message", sendEpicMessage);
+app.post("/api/epic-sessions/:sessionId/end", endEpicSession);
+app.get("/api/epic-sessions/:sessionId", getEpicSession);
+app.get("/api/epic-sessions/:sessionId/messages", getEpicMessages);
+app.post("/api/epic-sessions/:sessionId/tasks/:taskId/approve", approveTask);
+app.post("/api/epic-sessions/:sessionId/tasks/:taskId/reject", rejectTask);
+app.post("/api/epic-sessions/:sessionId/execute-all", executeAllApproved);
 
 // ============================================
 // Server Startup

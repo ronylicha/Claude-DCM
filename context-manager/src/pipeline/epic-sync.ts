@@ -164,3 +164,137 @@ export async function syncEpicStatusFromPipeline(pipelineId: string): Promise<vo
     log.debug(`EpicSync: no transitions needed for pipeline ${pipelineId}`);
   }
 }
+
+/**
+ * Auto-create epics from a pipeline's plan sprints.
+ * Called when a pipeline finishes planning (status → 'ready').
+ * Each sprint becomes an epic linked to the pipeline with wave range.
+ */
+export async function createEpicsFromPipelinePlan(pipelineId: string): Promise<number> {
+  const sql = getDb();
+
+  const [pipeline] = await sql<Array<{ project_id: string | null; plan: Record<string, unknown> | null }>>`
+    SELECT project_id, plan FROM pipelines WHERE id = ${pipelineId}
+  `;
+
+  if (!pipeline?.project_id || !pipeline.plan) {
+    log.debug(`createEpicsFromPipelinePlan: pipeline ${pipelineId} has no project or plan, skipping`);
+    return 0;
+  }
+
+  const sprints = (pipeline.plan as Record<string, unknown>)["sprints"] as Array<Record<string, unknown>> | undefined;
+  if (!Array.isArray(sprints) || sprints.length === 0) {
+    log.debug(`createEpicsFromPipelinePlan: no sprints in plan for pipeline ${pipelineId}`);
+    return 0;
+  }
+
+  let created = 0;
+  for (const sprint of sprints) {
+    const title = String(sprint["name"] ?? `Sprint ${sprint["number"] ?? created + 1}`);
+    const objectives = Array.isArray(sprint["objectives"]) ? (sprint["objectives"] as string[]) : [];
+    const waveStart = Number(sprint["wave_start"] ?? 0);
+    const waveEnd = Number(sprint["wave_end"] ?? 0);
+
+    // Skip if epic already exists for this pipeline + wave range
+    const existing = await sql`
+      SELECT id FROM project_epics
+      WHERE pipeline_id = ${pipelineId} AND wave_start = ${waveStart} AND wave_end = ${waveEnd}
+      LIMIT 1
+    `;
+    if (existing.length > 0) continue;
+
+    await sql`
+      INSERT INTO project_epics (project_id, pipeline_id, title, description, status, wave_start, wave_end, sort_order)
+      VALUES (
+        ${pipeline.project_id},
+        ${pipelineId},
+        ${title},
+        ${objectives.join("\n")},
+        'todo',
+        ${waveStart},
+        ${waveEnd},
+        ${created}
+      )
+    `;
+    created++;
+  }
+
+  if (created > 0) {
+    log.info(`Created ${created} epics from pipeline ${pipelineId} plan (${sprints.length} sprints)`);
+    await publishEvent("global", "epics.created_from_pipeline", {
+      pipeline_id: pipelineId,
+      project_id: pipeline.project_id,
+      count: created,
+    });
+  }
+
+  return created;
+}
+
+/**
+ * Ensure an epic has a linked pipeline. If the project has no pipeline yet, create one.
+ * If the project already has a pipeline, link the epic to it and assign the next wave number.
+ * Returns { pipeline_id, wave_number } for inserting steps.
+ */
+export async function ensureEpicPipeline(
+  epicId: string,
+  projectId: string,
+): Promise<{ pipeline_id: string; wave_number: number }> {
+  const sql = getDb();
+
+  // Check if epic already has a pipeline
+  const [epic] = await sql<Array<{ pipeline_id: string | null }>>`
+    SELECT pipeline_id FROM project_epics WHERE id = ${epicId}
+  `;
+
+  if (epic?.pipeline_id) {
+    // Get next wave number for this pipeline
+    const [maxWave] = await sql<Array<{ max: number | null }>>`
+      SELECT MAX(wave_number) as max FROM pipeline_steps WHERE pipeline_id = ${epic.pipeline_id}
+    `;
+    return { pipeline_id: epic.pipeline_id, wave_number: (maxWave?.max ?? -1) + 1 };
+  }
+
+  // Check if project already has an active pipeline
+  const [existingPipeline] = await sql<Array<{ id: string }>>`
+    SELECT id FROM pipelines
+    WHERE project_id = ${projectId} AND status NOT IN ('completed', 'failed', 'cancelled')
+    ORDER BY created_at DESC LIMIT 1
+  `;
+
+  let pipelineId: string;
+
+  if (existingPipeline) {
+    pipelineId = existingPipeline.id;
+  } else {
+    // Create a minimal pipeline for the project
+    const [newPipeline] = await sql<Array<{ id: string }>>`
+      INSERT INTO pipelines (session_id, project_id, name, status, input)
+      VALUES (
+        ${'epic-auto-' + Date.now()},
+        ${projectId},
+        'Project Pipeline',
+        'running',
+        ${sql.json({ instructions: "Auto-created from epic tasks", documents: [] })}
+      )
+      RETURNING id
+    `;
+    pipelineId = newPipeline!.id;
+    log.info(`Created auto-pipeline ${pipelineId} for project ${projectId}`);
+  }
+
+  // Link the epic to the pipeline
+  const [maxWave] = await sql<Array<{ max: number | null }>>`
+    SELECT MAX(wave_number) as max FROM pipeline_steps WHERE pipeline_id = ${pipelineId}
+  `;
+  const waveNumber = (maxWave?.max ?? -1) + 1;
+
+  await sql`
+    UPDATE project_epics SET pipeline_id = ${pipelineId}, wave_start = ${waveNumber}, wave_end = ${waveNumber}
+    WHERE id = ${epicId}
+  `;
+
+  log.info(`Linked epic ${epicId} to pipeline ${pipelineId} at wave ${waveNumber}`);
+
+  return { pipeline_id: pipelineId, wave_number: waveNumber };
+}

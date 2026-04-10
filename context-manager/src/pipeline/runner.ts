@@ -243,6 +243,14 @@ async function runPlanWorker(
   });
 
   log.info(`Plan worker complete: pipeline ${pipelineId} is now ready`);
+
+  // Auto-create epics from plan sprints if pipeline is linked to a project
+  try {
+    const { createEpicsFromPipelinePlan } = await import("./epic-sync");
+    await createEpicsFromPipelinePlan(pipelineId);
+  } catch (err) {
+    log.warn(`Failed to auto-create epics for pipeline ${pipelineId}:`, err);
+  }
 }
 
 /**
