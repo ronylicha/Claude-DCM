@@ -220,7 +220,8 @@ export async function buildProjectContext(projectId: string): Promise<void> {
   }
 
   // Verify path exists
-  const pathExists = await Bun.file(project.path).exists().catch(() => false);
+  const { stat: fsStat } = await import("node:fs/promises");
+  const pathExists = await fsStat(project.path).then(s => s.isDirectory()).catch(() => false);
   if (!pathExists) {
     log.warn(`buildProjectContext: path not found project=${projectId} path=${project.path}`);
     return;
@@ -410,7 +411,8 @@ export async function watchProjectChanges(projectId: string): Promise<void> {
     return;
   }
 
-  const pathExists = await Bun.file(project.path).exists().catch(() => false);
+  const { stat: fsStat } = await import("node:fs/promises");
+  const pathExists = await fsStat(project.path).then(s => s.isDirectory()).catch(() => false);
   if (!pathExists) {
     log.warn(`watchProjectChanges: path not found project=${projectId} path=${project.path}`);
     return;

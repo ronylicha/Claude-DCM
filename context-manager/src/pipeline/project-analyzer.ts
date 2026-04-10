@@ -109,8 +109,9 @@ export async function analyzeProject(projectId: string): Promise<void> {
     return;
   }
 
-  // 2. Verify path exists
-  const pathExists = await Bun.file(project.path).exists().catch(() => false);
+  // 2. Verify path exists (it's a directory, not a file)
+  const { stat: fsStat } = await import("node:fs/promises");
+  const pathExists = await fsStat(project.path).then(s => s.isDirectory()).catch(() => false);
   if (!pathExists) {
     log.warn(`analyzeProject: path does not exist project=${projectId} path=${project.path}`);
     await sql`
