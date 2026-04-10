@@ -762,7 +762,8 @@ export async function getStepOutput(c: Context): Promise<Response> {
     const stepId = c.req.param("stepId");
     if (!id || !stepId) return c.json({ error: "Missing pipeline ID or step ID" }, 400);
 
-    const sinceIndex = parseInt(c.req.query("since_index") ?? "0", 10);
+    const parsedSinceIndex = parseInt(c.req.query("since_index") ?? "0", 10);
+    const sinceIndex = Number.isFinite(parsedSinceIndex) && parsedSinceIndex >= 0 ? parsedSinceIndex : 0;
 
     const sql = (await import("../db/client")).getDb();
 
