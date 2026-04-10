@@ -116,11 +116,12 @@ export default function ProjectBoardPage() {
       // Analysis runs in background — poll for completion
       const poll = setInterval(async () => {
         const res = await refetch();
-        const status = (res.data?.project as Record<string, unknown>)?.metadata as Record<string, unknown> | undefined;
-        if (status?.analyze_status === 'done') {
+        const meta = res.data?.project?.metadata as Record<string, unknown> | undefined;
+        const s = meta?.analyze_status as string | undefined;
+        if (s === 'done') {
           setAnalyzeStatus('done');
           clearInterval(poll);
-        } else if (status?.analyze_status === 'error') {
+        } else if (s === 'error') {
           setAnalyzeStatus('error');
           clearInterval(poll);
         }
