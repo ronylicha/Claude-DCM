@@ -132,7 +132,7 @@ async function callClaudeHeadless(prompt: string, pipelineId?: string): Promise<
       { role: "user", content: "Generate the execution plan now. Output ONLY valid JSON, no markdown fences." },
     ],
     model: model ?? undefined,
-    max_tokens: 16384,
+    max_tokens: 65536,
     temperature: 0.7,
   };
 
@@ -251,7 +251,7 @@ REPONSE : UNIQUEMENT le JSON valide, rien d'autre. Pas de markdown, pas de texte
           content: `Voici l'output brut du planificateur a reformater en JSON valide :\n\n${truncate(rawOutput, 30000)}`,
         },
       ],
-      max_tokens: 16384,
+      max_tokens: 65536,
       temperature: 0,
       _pipeline_id: pipelineId,
     } as import("../llm").ChatCompletionRequest & { _pipeline_id?: string });
@@ -411,7 +411,21 @@ Pattern type pour maximiser le parallelisme :
 ## Sprints
 
 Groupent les waves en livrables coherents (1 sprint = 1 commit potentiel).
-Autant de sprints que necessaire. Objectifs precis et mesurables.`);
+Autant de sprints que necessaire. Objectifs precis et mesurables.
+
+## EXHAUSTIVITE (CRITIQUE)
+
+Le plan doit couvrir l'INTEGRALITE du travail demande. Ne PAS simplifier, ne PAS regrouper, ne PAS raccourcir.
+- **Pas de limite** sur le nombre de waves, steps, ou sprints. 50 waves si necessaire.
+- **1 step = 1 tache atomique** : un fichier a creer, un composant a implementer, un endpoint a coder.
+  Ne jamais regrouper "creer les 10 endpoints" dans 1 step — faire 10 steps.
+- **1 wave = 1 couche logique** : pas de wave "implementer tout le backend" — decouper en
+  wave DB/migrations, wave models, wave controllers, wave services, wave routes, etc.
+- **Chaque fichier a creer/modifier = 1 step dedie** avec son prompt autonome complet.
+- **Le prompt de chaque step doit decrire precisement** : le nom du fichier, les imports, la structure,
+  les methodes/fonctions, les types, les relations avec les autres fichiers.
+- Pense "si un dev junior recoit ce step, peut-il l'implementer sans poser de question ?" — si non, detaille plus.
+- Le plan est le blueprint complet du projet. Rien ne doit etre laisse a l'interpretation.`);
 
   return sections.join("\n");
 }
