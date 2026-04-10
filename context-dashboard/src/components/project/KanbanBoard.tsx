@@ -56,13 +56,14 @@ interface KanbanBoardProps {
   };
   onTransition: (epicId: string, toStatus: string) => void;
   onEpicClick: (epicId: string) => void;
+  onStartSession?: (epicId: string) => void;
 }
 
 // ============================================
 // KanbanBoard
 // ============================================
 
-export function KanbanBoard({ board, onTransition, onEpicClick }: KanbanBoardProps) {
+export function KanbanBoard({ board, onTransition, onEpicClick, onStartSession }: KanbanBoardProps) {
   return (
     <div
       className={cn(
@@ -87,6 +88,7 @@ export function KanbanBoard({ board, onTransition, onEpicClick }: KanbanBoardPro
             color={col.color}
             onTransition={onTransition}
             onEpicClick={onEpicClick}
+            onStartSession={onStartSession}
           />
         ))}
       </div>

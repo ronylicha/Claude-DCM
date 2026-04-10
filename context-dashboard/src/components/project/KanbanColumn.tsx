@@ -15,6 +15,7 @@ interface KanbanColumnProps {
   color: string;
   onTransition: (epicId: string, toStatus: string) => void;
   onEpicClick: (epicId: string) => void;
+  onStartSession?: (epicId: string) => void;
 }
 
 // ============================================
@@ -28,6 +29,7 @@ export function KanbanColumn({
   color,
   onTransition,
   onEpicClick,
+  onStartSession,
 }: KanbanColumnProps) {
   return (
     <div
@@ -108,6 +110,7 @@ export function KanbanColumn({
                 columnColor={color}
                 onTransition={onTransition}
                 onClick={() => onEpicClick(epic.id)}
+                onStartSession={onStartSession}
               />
             </div>
           ))

@@ -10,6 +10,7 @@ import { ProjectHeader } from "@/components/project/ProjectHeader";
 import { BoardSummaryBar } from "@/components/project/BoardSummaryBar";
 import { KanbanBoard } from "@/components/project/KanbanBoard";
 import { EpicCreateDialog } from "@/components/project/EpicCreateDialog";
+import { EpicSessionPanel } from "@/components/epic-session/EpicSessionPanel";
 import { ErrorDisplay } from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -51,9 +52,15 @@ export default function ProjectBoardPage() {
   const projectId = params.id as string;
 
   const [epicDialogOpen, setEpicDialogOpen] = useState(false);
+  const [sessionEpicId, setSessionEpicId] = useState<string | null>(null);
 
   const { data, isLoading, error, refetch } = useProjectBoard(projectId);
   const { transitionEpic } = useEpicMutations(projectId);
+
+  // Find the epic being brainstormed (for the session panel)
+  const sessionEpic = sessionEpicId
+    ? Object.values(data?.board ?? {}).flat().find((e) => e.id === sessionEpicId)
+    : null;
 
   // ── Handlers ────────────────────────────────
 
@@ -61,9 +68,12 @@ export default function ProjectBoardPage() {
     setEpicDialogOpen(true);
   }, []);
 
-  // Stub — pipeline creation will be wired later
   const handleCreatePipeline = useCallback(() => {
     console.log("Create pipeline — not yet implemented");
+  }, []);
+
+  const handleStartSession = useCallback((epicId: string) => {
+    setSessionEpicId(epicId);
   }, []);
 
   const handleTransition = useCallback(
@@ -156,6 +166,7 @@ export default function ProjectBoardPage() {
             board={board}
             onTransition={handleTransition}
             onEpicClick={handleEpicClick}
+            onStartSession={handleStartSession}
           />
         </div>
       </div>
@@ -167,6 +178,17 @@ export default function ProjectBoardPage() {
         onOpenChange={setEpicDialogOpen}
         onCreated={handleEpicCreated}
       />
+
+      {/* Claude brainstorm session panel */}
+      {sessionEpicId && (
+        <EpicSessionPanel
+          epicId={sessionEpicId}
+          epicTitle={sessionEpic?.title ?? "Epic"}
+          projectId={projectId}
+          open={!!sessionEpicId}
+          onClose={() => setSessionEpicId(null)}
+        />
+      )}
     </>
   );
 }

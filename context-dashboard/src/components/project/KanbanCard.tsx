@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronRight, Tag } from 'lucide-react';
+import { ChevronRight, Tag, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { EpicCard } from '@/lib/api-client';
 
@@ -64,13 +64,14 @@ interface KanbanCardProps {
   columnColor: string;
   onTransition: (epicId: string, toStatus: string) => void;
   onClick: () => void;
+  onStartSession?: (epicId: string) => void;
 }
 
 // ============================================
 // KanbanCard
 // ============================================
 
-export function KanbanCard({ epic, columnColor, onTransition, onClick }: KanbanCardProps) {
+export function KanbanCard({ epic, columnColor, onTransition, onClick, onStartSession }: KanbanCardProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   const nextStatus = getNextStatus(epic.status);
@@ -221,6 +222,23 @@ export function KanbanCard({ epic, columnColor, onTransition, onClick }: KanbanC
         >
           {nextStatus.replace('_', ' ')}
           <ChevronRight className="h-3 w-3" aria-hidden="true" />
+        </button>
+      )}
+
+      {/* Start brainstorm session button */}
+      {onStartSession && isHovered && epic.status !== 'done' && epic.status !== 'cancelled' && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onStartSession(epic.id); }}
+          className={cn(
+            'absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-[6px]',
+            'text-[10px] font-medium cursor-pointer',
+            'bg-[var(--md-sys-color-tertiary)] text-[var(--md-sys-color-on-tertiary)]',
+            'shadow-sm hover:shadow-md transition-all',
+          )}
+        >
+          <MessageSquare className="h-3 w-3" />
+          Chat
         </button>
       )}
     </div>
