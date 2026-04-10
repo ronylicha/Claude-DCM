@@ -89,6 +89,21 @@ import {
   getPlanningOutput,
   getStepOutput,
 } from "./api/pipeline";
+import {
+  getProjectBoard,
+  getProjectEpics,
+  postProjectEpic,
+  patchProjectEpic,
+  deleteProjectEpic,
+  postReorderEpics,
+  postEpicTransition,
+} from "./api/project-board";
+import {
+  getProjectPipelines,
+  postProjectPipeline,
+  postSyncEpicsFromPipeline,
+  patchProject,
+} from "./api/project-pipelines";
 
 // Version from package.json (single source of truth)
 import pkg from "../package.json";
@@ -607,6 +622,22 @@ app.post("/api/pipelines/:id/pause", postPausePipeline);
 app.post("/api/pipelines/:id/cancel", postCancelPipeline);
 app.patch("/api/pipelines/:id/steps/:stepId", patchStepStatus);
 app.delete("/api/pipelines/:id", deletePipeline);
+
+// ============================================
+// Project Board & Epics - Phase 14 (DCM v5.3)
+// ============================================
+
+app.get("/api/projects/:id/board", getProjectBoard);
+app.get("/api/projects/:id/epics", getProjectEpics);
+app.post("/api/projects/:id/epics", postProjectEpic);
+app.post("/api/projects/:id/epics/reorder", postReorderEpics);
+app.post("/api/projects/:id/epics/:epicId/transition", postEpicTransition);
+app.patch("/api/projects/:id/epics/:epicId", patchProjectEpic);
+app.delete("/api/projects/:id/epics/:epicId", deleteProjectEpic);
+app.get("/api/projects/:id/pipelines", getProjectPipelines);
+app.post("/api/projects/:id/pipelines", postProjectPipeline);
+app.post("/api/projects/:id/sync-epics", postSyncEpicsFromPipeline);
+app.patch("/api/projects/:id", patchProject);
 
 // ============================================
 // Server Startup

@@ -901,6 +901,75 @@ export interface PipelineCreateResponse {
 }
 
 // ============================================
+// Project Board & Epic types
+// ============================================
+
+export interface EpicCard {
+  id: string;
+  project_id: string;
+  pipeline_id: string | null;
+  title: string;
+  description: string | null;
+  status: 'backlog' | 'todo' | 'in_progress' | 'review' | 'done' | 'cancelled';
+  priority: number;
+  sort_order: number;
+  wave_start: number | null;
+  wave_end: number | null;
+  color: string | null;
+  estimated_effort: 'xs' | 's' | 'm' | 'l' | 'xl' | null;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  progress?: {
+    total_steps: number;
+    completed_steps: number;
+    running_steps: number;
+    failed_steps: number;
+    progress_pct: number;
+  };
+}
+
+export interface CreateEpicInput {
+  title: string;
+  description?: string;
+  status?: string;
+  priority?: number;
+  pipeline_id?: string;
+  wave_start?: number;
+  wave_end?: number;
+  color?: string;
+  estimated_effort?: string;
+  tags?: string[];
+}
+
+export interface PipelineSummary {
+  id: string;
+  name: string | null;
+  status: string;
+  current_wave: number;
+  total_waves: number;
+  created_at: string;
+}
+
+export interface ProjectBoardResponse {
+  project: Project;
+  board: {
+    backlog: EpicCard[];
+    todo: EpicCard[];
+    in_progress: EpicCard[];
+    review: EpicCard[];
+    done: EpicCard[];
+  };
+  stats: {
+    total_epics: number;
+    linked_pipelines: number;
+    completion_pct: number;
+  };
+  pipelines: PipelineSummary[];
+}
+
+// ============================================
 // API Error
 // ============================================
 
@@ -1592,6 +1661,34 @@ export const apiClient = {
       method: 'POST',
       body: JSON.stringify({ provider_key: providerKey, model }),
     }),
+
+  // ==========================================
+  // Project Board & Epics
+  // ==========================================
+  getProjectBoard: (projectId: string) =>
+    apiFetch<ProjectBoardResponse>(`/api/projects/${projectId}/board`),
+  getProjectEpics: (projectId: string, status?: string) => {
+    const params = status ? `?status=${status}` : '';
+    return apiFetch<{ epics: EpicCard[]; count: number }>(`/api/projects/${projectId}/epics${params}`);
+  },
+  createEpic: (projectId: string, data: CreateEpicInput) =>
+    apiFetch<{ success: boolean; epic: EpicCard }>(`/api/projects/${projectId}/epics`, { method: 'POST', body: JSON.stringify(data) }),
+  updateEpic: (projectId: string, epicId: string, data: Partial<CreateEpicInput>) =>
+    apiFetch<{ success: boolean; epic: EpicCard }>(`/api/projects/${projectId}/epics/${epicId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteEpic: (projectId: string, epicId: string) =>
+    apiFetch<{ success: boolean }>(`/api/projects/${projectId}/epics/${epicId}`, { method: 'DELETE' }),
+  transitionEpic: (projectId: string, epicId: string, toStatus: string, trigger?: string) =>
+    apiFetch<{ success: boolean; epic: EpicCard }>(`/api/projects/${projectId}/epics/${epicId}/transition`, { method: 'POST', body: JSON.stringify({ to_status: toStatus, trigger }) }),
+  reorderEpics: (projectId: string, epicIds: string[], status: string) =>
+    apiFetch<{ success: boolean }>(`/api/projects/${projectId}/epics/reorder`, { method: 'POST', body: JSON.stringify({ epic_ids: epicIds, status }) }),
+  getProjectPipelines: (projectId: string) =>
+    apiFetch<{ pipelines: PipelineSummary[]; count: number }>(`/api/projects/${projectId}/pipelines`),
+  createProjectPipeline: (projectId: string, data: { name?: string; instructions: string; documents?: Array<{ name: string; type: string; content: string }>; workspace?: { path: string } }) =>
+    apiFetch<{ success: boolean; pipeline: Pipeline }>(`/api/projects/${projectId}/pipelines`, { method: 'POST', body: JSON.stringify(data) }),
+  syncEpicsFromPipeline: (projectId: string, pipelineId: string, strategy: 'replace' | 'merge') =>
+    apiFetch<{ success: boolean; created: number; epics: EpicCard[] }>(`/api/projects/${projectId}/sync-epics`, { method: 'POST', body: JSON.stringify({ pipeline_id: pipelineId, strategy }) }),
+  patchProject: (projectId: string, data: Partial<{ name: string; status: string; description: string; git_repo_url: string; git_branch: string }>) =>
+    apiFetch<{ success: boolean; project: Project }>(`/api/projects/${projectId}`, { method: 'PATCH', body: JSON.stringify(data) }),
 };
 
 export default apiClient;

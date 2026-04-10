@@ -171,7 +171,8 @@ export class CLIPlannerProvider implements LLMProvider {
       case "claude":
         return `#!/bin/bash
 USER_MSG=$(cat "${userFile}")
-claude -p "$USER_MSG" --system-prompt-file "${promptFile}" --model "${model}" --output-format stream-json --max-turns 15 --tools "Read,Bash,Grep,Glob" --strict-mcp-config --mcp-config "/tmp/dcm-planner/empty-mcp.json" < /dev/null > "${outputFile}" 2> "${errorFile}"
+SYS_PROMPT=$(cat "${promptFile}")
+claude -p "$USER_MSG" --system-prompt "$SYS_PROMPT" --model "${model}" --output-format stream-json --max-turns 15 --tools "Read,Bash,Grep,Glob" --strict-mcp-config --mcp-config "/tmp/dcm-planner/empty-mcp.json" < /dev/null > "${outputFile}" 2> "${errorFile}"
 echo $? > "${doneFile}"
 `;
       case "codex":
