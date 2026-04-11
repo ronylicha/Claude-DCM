@@ -151,12 +151,47 @@ export async function getProjectBoard(c: Context): Promise<Response> {
       }
     }
 
-    // Fetch linked pipelines
-    const pipelineRows = await sql`
-      SELECT id, status, created_at, updated_at
-      FROM pipelines
-      WHERE project_id = ${projectId}
-      ORDER BY created_at DESC
+    // Fetch linked pipelines with step aggregates so the board can show
+    // per-pipeline progress without needing a second round-trip per row.
+    const pipelineRows = await sql<Array<{
+      id: string;
+      name: string | null;
+      status: string;
+      workspace_path: string | null;
+      current_wave: number;
+      created_at: string;
+      updated_at: string;
+      completed_at: string | null;
+      total_steps: number;
+      completed_steps: number;
+      failed_steps: number;
+      running_steps: number;
+      queued_steps: number;
+      last_activity: string | null;
+    }>>`
+      SELECT
+        p.id, p.name, p.status, p.workspace_path, p.current_wave,
+        p.created_at, p.updated_at, p.completed_at,
+        COALESCE(agg.total,     0)::int AS total_steps,
+        COALESCE(agg.completed, 0)::int AS completed_steps,
+        COALESCE(agg.failed,    0)::int AS failed_steps,
+        COALESCE(agg.running,   0)::int AS running_steps,
+        COALESCE(agg.queued,    0)::int AS queued_steps,
+        agg.last_activity
+      FROM pipelines p
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*)                                           AS total,
+          COUNT(*) FILTER (WHERE ps.status = 'completed')    AS completed,
+          COUNT(*) FILTER (WHERE ps.status = 'failed')       AS failed,
+          COUNT(*) FILTER (WHERE ps.status = 'running')      AS running,
+          COUNT(*) FILTER (WHERE ps.status IN ('queued','pending')) AS queued,
+          MAX(ps.updated_at)::text                           AS last_activity
+        FROM pipeline_steps ps
+        WHERE ps.pipeline_id = p.id
+      ) agg ON true
+      WHERE p.project_id = ${projectId}
+      ORDER BY p.created_at DESC
     `;
 
     // Compute stats

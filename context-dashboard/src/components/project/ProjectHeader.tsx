@@ -20,6 +20,7 @@ interface ProjectHeaderProps {
   onCreatePipeline: () => void;
   onAnalyze?: () => void;
   analyzeStatus?: 'idle' | 'running' | 'done' | 'error';
+  onOpenPipelines?: () => void;
 }
 
 // ============================================
@@ -61,25 +62,38 @@ function StatChip({
   icon: Icon,
   value,
   label,
+  onClick,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   value: number | string;
   label: string;
+  onClick?: () => void;
 }) {
-  return (
-    <div
-      className={cn(
-        'flex items-center gap-1.5 px-3 py-1.5 rounded-[8px]',
-        'bg-[var(--md-sys-color-surface-container)]',
-        'border border-[var(--md-sys-color-outline-variant)]',
-      )}
-      aria-label={`${value} ${label}`}
-    >
+  const className = cn(
+    'flex items-center gap-1.5 px-3 py-1.5 rounded-[8px]',
+    'bg-[var(--md-sys-color-surface-container)]',
+    'border border-[var(--md-sys-color-outline-variant)]',
+    onClick && 'cursor-pointer hover:border-[var(--md-sys-color-primary)] hover:bg-[var(--md-sys-color-surface-container-high)] transition-colors',
+  );
+  const content = (
+    <>
       <Icon className="h-3.5 w-3.5 text-[var(--md-sys-color-outline)]" aria-hidden="true" />
       <span className="text-[13px] font-semibold text-[var(--md-sys-color-on-surface)]">
         {value}
       </span>
       <span className="text-[11px] text-[var(--md-sys-color-on-surface-variant)]">{label}</span>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={className} aria-label={`${value} ${label} — click to open details`}>
+        {content}
+      </button>
+    );
+  }
+  return (
+    <div className={className} aria-label={`${value} ${label}`}>
+      {content}
     </div>
   );
 }
@@ -95,6 +109,7 @@ export function ProjectHeader({
   onCreatePipeline,
   onAnalyze,
   analyzeStatus = 'idle',
+  onOpenPipelines,
 }: ProjectHeaderProps) {
   const projectStatus = resolveProjectStatus(project.metadata);
   const statusStyle = STATUS_STYLE[projectStatus];
@@ -260,7 +275,12 @@ export function ProjectHeader({
       {/* Stats row */}
       <div className="flex items-center gap-2 flex-wrap">
         <StatChip icon={Layers} value={stats.total_epics} label="epics" />
-        <StatChip icon={GitBranch} value={stats.linked_pipelines} label="pipelines" />
+        <StatChip
+          icon={GitBranch}
+          value={stats.linked_pipelines}
+          label="pipelines"
+          onClick={onOpenPipelines}
+        />
         <StatChip icon={FolderKanban} value={`${stats.completion_pct}%`} label="complete" />
       </div>
     </div>

@@ -948,8 +948,17 @@ export interface PipelineSummary {
   name: string | null;
   status: string;
   current_wave: number;
-  total_waves: number;
+  total_waves?: number;
   created_at: string;
+  updated_at?: string;
+  completed_at?: string | null;
+  workspace_path?: string | null;
+  total_steps?: number;
+  completed_steps?: number;
+  failed_steps?: number;
+  running_steps?: number;
+  queued_steps?: number;
+  last_activity?: string | null;
 }
 
 export interface ProjectBoardResponse {

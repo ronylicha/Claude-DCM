@@ -10,6 +10,8 @@ import { ProjectHeader } from "@/components/project/ProjectHeader";
 import { BoardSummaryBar } from "@/components/project/BoardSummaryBar";
 import { KanbanBoard } from "@/components/project/KanbanBoard";
 import { EpicCreateDialog } from "@/components/project/EpicCreateDialog";
+import { ProjectPipelinesSection } from "@/components/project/ProjectPipelinesSection";
+import { ProjectPipelinesDrawer } from "@/components/project/ProjectPipelinesDrawer";
 import { EpicSessionPanel } from "@/components/epic-session/EpicSessionPanel";
 import { ErrorDisplay } from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui/button";
@@ -53,6 +55,7 @@ export default function ProjectBoardPage() {
 
   const [epicDialogOpen, setEpicDialogOpen] = useState(false);
   const [sessionEpicId, setSessionEpicId] = useState<string | null>(null);
+  const [pipelinesDrawerOpen, setPipelinesDrawerOpen] = useState(false);
   const [analyzeStatus, setAnalyzeStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const analyzeAbortRef = useRef<AbortController | null>(null);
 
@@ -167,7 +170,7 @@ export default function ProjectBoardPage() {
     );
   }
 
-  const { project, board, stats } = data;
+  const { project, board, stats, pipelines = [] } = data;
 
   // ── Render ───────────────────────────────────
 
@@ -198,6 +201,7 @@ export default function ProjectBoardPage() {
           onCreatePipeline={handleCreatePipeline}
           onAnalyze={handleAnalyze}
           analyzeStatus={effectiveAnalyzeStatus}
+          onOpenPipelines={() => setPipelinesDrawerOpen(true)}
         />
 
         {/* Progress summary bar */}
@@ -212,7 +216,20 @@ export default function ProjectBoardPage() {
             onStartSession={handleStartSession}
           />
         </div>
+
+        {/* Pipelines section — linked to approved epic tasks */}
+        <ProjectPipelinesSection
+          pipelines={pipelines}
+          onExpand={() => setPipelinesDrawerOpen(true)}
+        />
       </div>
+
+      {/* Pipelines drawer — deeper detail with per-step live view */}
+      <ProjectPipelinesDrawer
+        open={pipelinesDrawerOpen}
+        onClose={() => setPipelinesDrawerOpen(false)}
+        pipelines={pipelines}
+      />
 
       {/* Epic creation dialog */}
       <EpicCreateDialog
