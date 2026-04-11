@@ -521,12 +521,17 @@ async function handleSessionCompletion(
     }
   }
 
-  // Persist the full assistant message
+  // Persist the full assistant message and capture the inserted row
+  let messageId: string | null = null;
+  let messageCreatedAt: string | null = null;
   try {
-    await sql`
+    const [inserted] = await sql<Array<{ id: string; created_at: string }>>`
       INSERT INTO epic_messages (session_id, role, content, content_type)
       VALUES (${sessionId}, 'assistant', ${fullText}, ${contentType})
+      RETURNING id, created_at::text
     `;
+    messageId = inserted?.id ?? null;
+    messageCreatedAt = inserted?.created_at ?? null;
   } catch (msgErr) {
     log.error(
       `Failed to persist assistant message for session ${sessionId.slice(0, 8)}:`,
@@ -544,11 +549,16 @@ async function handleSessionCompletion(
     WHERE id = ${sessionId}
   `;
 
-  // Broadcast final message event for WebSocket consumers
+  // Broadcast final message event with complete message payload
   await publishEvent(`epic-sessions/${sessionId}`, "epic.session.message", {
     session_id: sessionId,
-    role: "assistant",
-    content_type: contentType,
+    message: {
+      id: messageId ?? `msg-${Date.now()}`,
+      role: "assistant",
+      content: fullText,
+      content_type: contentType,
+      created_at: messageCreatedAt ?? new Date().toISOString(),
+    },
     has_tasks: hasProposals,
     task_count: tasks.length,
     token_count: estimatedTokens,

@@ -114,10 +114,23 @@ export function EpicSessionPanel({ epicId, epicTitle, projectId, open, onClose }
       case 'epic.session.message': {
         setIsStreaming(false);
         const msg = data.message as Message | undefined;
-        if (msg) {
-          setMessages((prev) => [...prev, msg]);
-          setStreamingText('');
-        }
+        // Use the full message from server, OR fall back to accumulated streamingText
+        setStreamingText((currentStream) => {
+          const finalContent = msg?.content || currentStream;
+          if (finalContent) {
+            const finalMsg: Message = msg ?? {
+              id: `msg-${Date.now()}`,
+              role: 'assistant',
+              content: finalContent,
+              content_type: 'text',
+              created_at: new Date().toISOString(),
+            };
+            // Ensure content is set even if msg came without it
+            if (!finalMsg.content) finalMsg.content = currentStream;
+            setMessages((prev) => [...prev, finalMsg]);
+          }
+          return ''; // clear streaming text
+        });
         scrollToBottom();
         break;
       }
