@@ -484,6 +484,7 @@ async function handleSessionCompletion(
 ): Promise<void> {
   // ---- Process dcm-meta blocks ----
   const metaBlocks = extractDcmMeta(fullText);
+  let titleWasSet = false;
   for (const meta of metaBlocks) {
     try {
       if (meta.action === "set_title" && meta.title) {
@@ -498,11 +499,51 @@ async function handleSessionCompletion(
           title: meta.title,
         });
         log.info(`Epic ${epicId.slice(0, 8)} title updated to: "${meta.title}"`);
+        titleWasSet = true;
       } else if (meta.action === "finalize") {
         await handleAutoFinalize(sessionId, epicId, sql, projectId);
       }
     } catch (metaErr) {
       log.error(`Failed to process dcm-meta block (action=${meta.action}):`, metaErr);
+    }
+  }
+
+  // Fallback: if Claude didn't emit set_title and epic is still "New Epic",
+  // derive a title from the first user message (first sentence, max 60 chars)
+  if (!titleWasSet) {
+    try {
+      const [currentEpic] = await sql<Array<{ title: string }>>`
+        SELECT title FROM project_epics WHERE id = ${epicId}
+      `;
+      if (currentEpic?.title === "New Epic") {
+        const [firstUserMsg] = await sql<Array<{ content: string }>>`
+          SELECT content FROM epic_messages
+          WHERE session_id = ${sessionId} AND role = 'user'
+          ORDER BY created_at ASC LIMIT 1
+        `;
+        if (firstUserMsg?.content) {
+          const derived = firstUserMsg.content
+            .replace(/[\n\r]+/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 60);
+          if (derived.length > 0) {
+            await sql`
+              UPDATE project_epics
+              SET title = ${derived}, updated_at = now()
+              WHERE id = ${epicId}
+            `;
+            log.info(`Epic ${epicId.slice(0, 8)} title derived from user message: "${derived}"`);
+            await publishEvent(`epic-sessions/${sessionId}`, "epic.meta.set_title", {
+              session_id: sessionId,
+              epic_id: epicId,
+              title: derived,
+            });
+          }
+        }
+      }
+    } catch (fallbackErr) {
+      log.warn(`Title fallback failed for epic ${epicId.slice(0, 8)}:`, fallbackErr);
     }
   }
 
