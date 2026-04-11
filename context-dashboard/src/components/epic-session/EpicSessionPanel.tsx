@@ -57,21 +57,24 @@ export function EpicSessionPanel({ epicId, epicTitle, projectId, open, onClose }
     }
   }, []);
 
+  // Guard against React 19 StrictMode double-mount creating duplicate sessions
+  const creatingRef = useRef(false);
+
   // Create session on mount
   useEffect(() => {
-    if (!open || sessionId) return;
+    if (!open || sessionId || creatingRef.current) return;
+    creatingRef.current = true;
+
     const create = async () => {
       try {
         let res: Response;
         if (epicId === 'new') {
-          // New epic — use epic-chat endpoint (creates epic + session in one call)
           res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/epic-chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model }),
           });
         } else {
-          // Existing epic — create session for it
           res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/epics/${epicId}/session`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -92,13 +95,26 @@ export function EpicSessionPanel({ epicId, epicTitle, projectId, open, onClose }
           }]);
         } else {
           setError(data.error ?? 'Failed to create session');
+          creatingRef.current = false; // allow retry on failure
         }
       } catch {
         setError('Failed to create session');
+        creatingRef.current = false;
       }
     };
     create();
   }, [open, epicId, projectId, epicTitle, model, autoExecute, sessionId]);
+
+  // Reset guard when panel closes
+  useEffect(() => {
+    if (!open) {
+      creatingRef.current = false;
+      setSessionId(null);
+      setMessages([]);
+      setLiveEvents([]);
+      setProposedTasks([]);
+    }
+  }, [open]);
 
   // WebSocket events
   const handleWSEvent = useCallback((event: WSEvent) => {
@@ -118,16 +134,20 @@ export function EpicSessionPanel({ epicId, epicTitle, projectId, open, onClose }
 
       case 'epic.session.message': {
         setIsStreaming(false);
-        const msg = data.message as Message | undefined;
-        if (msg?.content) {
-          // Avoid duplicates: skip if last message has same content
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (last?.role === 'assistant' && last.content === msg.content) return prev;
-            return [...prev, msg];
-          });
+        // Refetch full messages from server (NOTIFY payload is limited to 8KB)
+        if (sessionId) {
+          fetch(`${API_BASE_URL}/api/epic-sessions/${sessionId}/messages`)
+            .then((r) => r.json())
+            .then((d) => {
+              if (d.messages && Array.isArray(d.messages)) {
+                setMessages(d.messages);
+              }
+              if (d.proposed_tasks && Array.isArray(d.proposed_tasks)) {
+                setProposedTasks(d.proposed_tasks);
+              }
+            })
+            .catch(() => {});
         }
-        // Clear live events when message is finalized (they're now part of the message)
         setLiveEvents([]);
         scrollToBottom();
         break;
@@ -187,16 +207,31 @@ export function EpicSessionPanel({ epicId, epicTitle, projectId, open, onClose }
     scrollToBottom();
 
     try {
-      await fetch(`${API_BASE_URL}/api/epic-sessions/${sessionId}/message`, {
+      const res = await fetch(`${API_BASE_URL}/api/epic-sessions/${sessionId}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
       });
-    } catch {
-      setError('Failed to send message');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setError(err.message || err.error || `HTTP ${res.status}`);
+        setIsStreaming(false);
+      }
+    } catch (err) {
+      setError(`Failed to send message: ${(err as Error).message}`);
       setIsStreaming(false);
     }
   }, [sessionId, scrollToBottom]);
+
+  // Safety: auto-clear isStreaming if no events arrive for 60s
+  useEffect(() => {
+    if (!isStreaming) return;
+    const timeout = setTimeout(() => {
+      setIsStreaming(false);
+      setError('No response from Claude after 60s — try sending again');
+    }, 60000);
+    return () => clearTimeout(timeout);
+  }, [isStreaming, liveEvents.length, messages.length]);
 
   // Approve/reject task
   const handleApprove = useCallback(async (taskId: string) => {

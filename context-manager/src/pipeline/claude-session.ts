@@ -573,16 +573,11 @@ async function handleSessionCompletion(
     WHERE id = ${sessionId}
   `;
 
-  // Broadcast final message event with complete message payload
+  // Broadcast final message event — keep payload small (PG NOTIFY 8KB limit).
+  // Frontend refetches full messages via HTTP when it receives this event.
   await publishEvent(`epic-sessions/${sessionId}`, "epic.session.message", {
     session_id: sessionId,
-    message: {
-      id: messageId ?? `msg-${Date.now()}`,
-      role: "assistant",
-      content: fullText,
-      content_type: contentType,
-      created_at: messageCreatedAt ?? new Date().toISOString(),
-    },
+    message_id: messageId,
     has_tasks: hasProposals,
     task_count: tasks.length,
     token_count: estimatedTokens,

@@ -238,14 +238,31 @@ export async function startEpicChat(c: Context): Promise<Response> {
 
     const project = projects[0]!;
 
-    // Create a placeholder epic
-    const epics = await sql<EpicRow[]>`
-      INSERT INTO project_epics (project_id, title, status)
-      VALUES (${projectId}, 'New Epic', 'in_progress')
-      RETURNING id, project_id, pipeline_id, title, description
+    // Reuse a recent placeholder epic if one exists (prevents duplicates from
+    // React StrictMode double-mount or accidental double-clicks)
+    let epic: EpicRow | undefined;
+    const recentEpics = await sql<EpicRow[]>`
+      SELECT id, project_id, pipeline_id, title, description
+      FROM project_epics
+      WHERE project_id = ${projectId}
+        AND title = 'New Epic'
+        AND description IS NULL
+        AND created_at > NOW() - INTERVAL '30 seconds'
+      ORDER BY created_at DESC
+      LIMIT 1
     `;
 
-    const epic = epics[0]!;
+    if (recentEpics.length > 0) {
+      epic = recentEpics[0]!;
+      log.info(`Reusing recent placeholder epic ${epic.id.slice(0, 8)} for project ${projectId.slice(0, 8)}`);
+    } else {
+      const epics = await sql<EpicRow[]>`
+        INSERT INTO project_epics (project_id, title, status)
+        VALUES (${projectId}, 'New Epic', 'in_progress')
+        RETURNING id, project_id, pipeline_id, title, description
+      `;
+      epic = epics[0]!;
+    }
 
     // System prompt with dcm-meta instructions
     const systemPrompt =

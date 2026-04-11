@@ -235,18 +235,25 @@ export async function analyzeProject(projectId: string): Promise<void> {
 
     const pipelineId = pipelineRows[0]?.id ?? null;
 
-    // 7 & 8. Insert epics per feature category
+    // 7 & 8. Insert epics per feature category — skip features with empty title
     const epicInserts: Array<{ title: string; description: string; status: string; sort_order: number }> = [];
 
+    const isValidFeature = (f: { title?: string; description?: string }): boolean =>
+      typeof f?.title === "string" && f.title.trim().length > 0;
+
     let order = 0;
-    for (const f of report.completed_features) {
-      epicInserts.push({ title: f.title, description: f.description, status: "done", sort_order: order++ });
+    for (const f of (report.completed_features ?? []).filter(isValidFeature)) {
+      epicInserts.push({ title: f.title.trim(), description: (f.description ?? "").trim(), status: "done", sort_order: order++ });
     }
-    for (const f of report.in_progress_features) {
-      epicInserts.push({ title: f.title, description: f.description, status: "in_progress", sort_order: order++ });
+    for (const f of (report.in_progress_features ?? []).filter(isValidFeature)) {
+      epicInserts.push({ title: f.title.trim(), description: (f.description ?? "").trim(), status: "in_progress", sort_order: order++ });
     }
-    for (const f of report.planned_features) {
-      epicInserts.push({ title: f.title, description: f.description, status: "todo", sort_order: order++ });
+    for (const f of (report.planned_features ?? []).filter(isValidFeature)) {
+      epicInserts.push({ title: f.title.trim(), description: (f.description ?? "").trim(), status: "todo", sort_order: order++ });
+    }
+
+    if (epicInserts.length === 0) {
+      log.warn(`analyzeProject: report parsed but no valid features found project=${projectId}`);
     }
 
     let epicsCreated = 0;
