@@ -188,11 +188,9 @@ export async function spawnClaudeSession(params: SpawnClaudeSessionParams): Prom
 
     log.info(`Spawning Claude session: session=${sessionId.slice(0, 8)} model=${modelId} job=${jobId}`);
 
-    // Spawn the Claude CLI process.
-    // Bun.spawn uses execFile semantics (array args, no shell) — safe against injection.
-    // --tools ""        disables all tools (pure conversational, no filesystem access needed)
-    // --max-turns 1     one turn per HTTP request; history is injected via the user prompt
-    // --strict-mcp-config + empty mcp.json  prevents MCP servers from starting
+    // Spawn the Claude CLI process with full tool access.
+    // Claude needs to explore the codebase, read files, run commands to give
+    // accurate responses about the project state.
     const proc = Bun.spawn(
       [
         "claude",
@@ -200,14 +198,12 @@ export async function spawnClaudeSession(params: SpawnClaudeSessionParams): Prom
         "--system-prompt-file", systemPromptFile,
         "--model", modelId,
         "--output-format", "stream-json",
-        "--max-turns", "1",
-        "--tools", "",
-        "--strict-mcp-config",
-        "--mcp-config", emptyMcpFile,
+        "--max-turns", "30",
       ],
       {
         stdout: "pipe",
         stderr: "pipe",
+        stdin: "ignore",
         cwd: workspacePath,
       },
     );
