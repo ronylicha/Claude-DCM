@@ -67,8 +67,54 @@ async function workerCycle(): Promise<void> {
     if (isStartup || cycle % 6 === 0) await checkOrphanRunningSteps(); // Every 60s
     if (isStartup || cycle % 6 === 0) await checkStuckPipelines();     // Every 60s
     if (isStartup || cycle % 3 === 0) await checkQueuedSteps();        // Every 30s
+    if (isStartup || cycle % 12 === 0) await cleanupOrphanEpics();     // Every 2min
+    if (isStartup || cycle % 6 === 0) await propagateEpicPipelineProject(); // Every 60s
   } catch (error) {
     log.error("Worker cycle error:", error);
+  }
+}
+
+/**
+ * Delete orphan epic placeholders: 'New Epic' title, no description,
+ * no active session, older than 5 minutes.
+ */
+async function cleanupOrphanEpics(): Promise<void> {
+  const sql = getDb();
+  const result = await sql<Array<{ id: string }>>`
+    DELETE FROM project_epics e
+    WHERE e.title = 'New Epic'
+      AND e.description IS NULL
+      AND e.created_at < NOW() - INTERVAL '5 minutes'
+      AND NOT EXISTS (
+        SELECT 1 FROM epic_sessions s
+        WHERE s.epic_id = e.id
+          AND s.status IN ('active', 'thinking', 'waiting')
+          AND s.updated_at > NOW() - INTERVAL '5 minutes'
+      )
+    RETURNING id
+  `;
+  if (result.length > 0) {
+    log.info(`Cleanup: removed ${result.length} orphan epic placeholder(s)`);
+  }
+}
+
+/**
+ * If an epic is linked to a pipeline that has no project_id, copy the
+ * epic's project_id to the pipeline so it shows up on the project dashboard.
+ */
+async function propagateEpicPipelineProject(): Promise<void> {
+  const sql = getDb();
+  const result = await sql<Array<{ pipeline_id: string }>>`
+    UPDATE pipelines p
+    SET project_id = e.project_id
+    FROM project_epics e
+    WHERE e.pipeline_id = p.id
+      AND p.project_id IS NULL
+      AND e.project_id IS NOT NULL
+    RETURNING p.id AS pipeline_id
+  `;
+  if (result.length > 0) {
+    log.info(`Propagated project_id to ${result.length} pipeline(s) from epic links`);
   }
 }
 

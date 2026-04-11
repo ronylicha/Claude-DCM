@@ -626,36 +626,9 @@ export async function approveTask(c: Context): Promise<Response> {
 
     const epic = epics[0]!;
 
-    let pipelineId = epic.pipeline_id;
-
-    // If no pipeline exists for this epic, create a minimal one
-    if (!pipelineId) {
-      const pipelineInput = {
-        instructions: `Pipeline for epic: ${task.title}`,
-        documents: [],
-        target_files: [],
-        target_directories: [],
-        workspace: { path: "" },
-      };
-
-      const newPipelines = await sql<{ id: string }[]>`
-        INSERT INTO pipelines (session_id, name, status, input)
-        VALUES (
-          ${sessionId},
-          ${"Epic: " + task.title},
-          'ready',
-          ${sql.json(pipelineInput as unknown as import("postgres").JSONValue)}
-        )
-        RETURNING id
-      `;
-
-      pipelineId = newPipelines[0]!.id;
-
-      // Link the new pipeline to the epic
-      await sql`
-        UPDATE project_epics SET pipeline_id = ${pipelineId} WHERE id = ${task.epic_id}
-      `;
-    }
+    // Use ensureEpicPipeline to link/create pipeline with proper project_id + waves
+    const { ensureEpicPipeline } = await import("../pipeline/epic-sync");
+    const { pipeline_id: pipelineId } = await ensureEpicPipeline(task.epic_id, epic.project_id);
 
     // INSERT pipeline step from proposed task data
     const steps = await sql<{ id: string }[]>`
