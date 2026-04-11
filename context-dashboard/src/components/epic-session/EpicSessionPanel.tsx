@@ -223,15 +223,6 @@ export function EpicSessionPanel({ epicId, epicTitle, projectId, open, onClose }
     }
   }, [sessionId, scrollToBottom]);
 
-  // Safety: auto-clear isStreaming if no events arrive for 60s
-  useEffect(() => {
-    if (!isStreaming) return;
-    const timeout = setTimeout(() => {
-      setIsStreaming(false);
-      setError('No response from Claude after 60s — try sending again');
-    }, 60000);
-    return () => clearTimeout(timeout);
-  }, [isStreaming, liveEvents.length, messages.length]);
 
   // Approve/reject task
   const handleApprove = useCallback(async (taskId: string) => {

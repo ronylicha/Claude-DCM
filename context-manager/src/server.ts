@@ -700,6 +700,11 @@ async function startServer() {
     startWorker();
   });
 
+  // Cleanup orphan analyze_status flags from previous crashes
+  import("./pipeline/project-analyzer").then(({ cleanupStaleAnalyzeStatus }) => {
+    cleanupStaleAnalyzeStatus().catch((err) => log.warn("analyze_status cleanup failed:", err));
+  });
+
   // Start HTTP server with Bun
   const server = Bun.serve({
     hostname: config.server.host,

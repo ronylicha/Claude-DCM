@@ -503,3 +503,21 @@ async function setAnalyzeStatus(projectId: string, status: "error" | "done" | "r
     WHERE id = ${projectId}
   `;
 }
+
+/**
+ * Called on server startup to clear orphan 'running' analyze statuses.
+ * These occur when the analyzer process crashed or was killed without
+ * cleaning up the flag.
+ */
+export async function cleanupStaleAnalyzeStatus(): Promise<void> {
+  const sql = getDb();
+  const result = await sql`
+    UPDATE projects
+    SET metadata = metadata - 'analyze_status'
+    WHERE metadata->>'analyze_status' = 'running'
+    RETURNING id
+  `;
+  if (result.length > 0) {
+    log.info(`Cleaned ${result.length} orphan analyze_status=running flag(s) at startup`);
+  }
+}
