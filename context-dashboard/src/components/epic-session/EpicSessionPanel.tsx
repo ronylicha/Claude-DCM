@@ -9,6 +9,7 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { TaskProposalCard } from './TaskProposalCard';
 import { SessionToolbar } from './SessionToolbar';
+import { EventBlock, groupStreamEvents, type StreamEvent } from '../pipeline/EventBlocks';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3847';
 
@@ -41,7 +42,7 @@ export function EpicSessionPanel({ epicId, epicTitle, projectId, open, onClose }
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [proposedTasks, setProposedTasks] = useState<ProposedTask[]>([]);
-  const [streamingText, setStreamingText] = useState('');
+  const [liveEvents, setLiveEvents] = useState<Array<Record<string, unknown>>>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [autoExecute, setAutoExecute] = useState(false);
   const [model] = useState('claude-opus-4-6');
@@ -105,32 +106,29 @@ export function EpicSessionPanel({ epicId, epicTitle, projectId, open, onClose }
     if (!data || data.session_id !== sessionId) return;
 
     switch (event.event) {
-      case 'epic.session.stream':
+      case 'epic.session.stream': {
         setIsStreaming(true);
-        setStreamingText((prev) => prev + (data.chunk as string ?? ''));
+        // Push structured event into liveEvents for visual rendering
+        if (data.kind) {
+          setLiveEvents((prev) => [...prev, data as Record<string, unknown>]);
+        }
         scrollToBottom();
         break;
+      }
 
       case 'epic.session.message': {
         setIsStreaming(false);
         const msg = data.message as Message | undefined;
-        // Use the full message from server, OR fall back to accumulated streamingText
-        setStreamingText((currentStream) => {
-          const finalContent = msg?.content || currentStream;
-          if (finalContent) {
-            const finalMsg: Message = msg ?? {
-              id: `msg-${Date.now()}`,
-              role: 'assistant',
-              content: finalContent,
-              content_type: 'text',
-              created_at: new Date().toISOString(),
-            };
-            // Ensure content is set even if msg came without it
-            if (!finalMsg.content) finalMsg.content = currentStream;
-            setMessages((prev) => [...prev, finalMsg]);
-          }
-          return ''; // clear streaming text
-        });
+        if (msg?.content) {
+          // Avoid duplicates: skip if last message has same content
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.role === 'assistant' && last.content === msg.content) return prev;
+            return [...prev, msg];
+          });
+        }
+        // Clear live events when message is finalized (they're now part of the message)
+        setLiveEvents([]);
         scrollToBottom();
         break;
       }
@@ -185,7 +183,7 @@ export function EpicSessionPanel({ epicId, epicTitle, projectId, open, onClose }
       created_at: new Date().toISOString(),
     }]);
     setIsStreaming(true);
-    setStreamingText('');
+    setLiveEvents([]);
     scrollToBottom();
 
     try {
@@ -303,15 +301,24 @@ export function EpicSessionPanel({ epicId, epicTitle, projectId, open, onClose }
             />
           ))}
 
-          {/* Streaming assistant message */}
-          {isStreaming && streamingText && (
-            <ChatMessage
-              role="assistant"
-              content={streamingText}
-              contentType="text"
-              createdAt={new Date().toISOString()}
-              isStreaming
-            />
+          {/* Live structured events while streaming */}
+          {isStreaming && liveEvents.length > 0 && (
+            <div className="rounded-[12px] p-3 bg-[var(--md-sys-color-surface-container)] border border-[var(--md-sys-color-outline-variant)] space-y-2">
+              <div className="flex items-center gap-1.5 text-[11px] text-[var(--md-sys-color-outline)]">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Claude is working...
+              </div>
+              {(() => {
+                const grouped = groupStreamEvents(liveEvents as StreamEvent[]);
+                return grouped.map((g, i) => <EventBlock key={i} group={g} />);
+              })()}
+            </div>
+          )}
+          {isStreaming && liveEvents.length === 0 && (
+            <div className="flex items-center gap-2 px-2 py-1 text-[11px] text-[var(--md-sys-color-outline)] italic">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Claude is thinking...
+            </div>
           )}
 
           {/* Proposed tasks inline */}

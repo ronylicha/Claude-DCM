@@ -371,26 +371,54 @@ async function streamOutput(
           continue;
         }
 
-        // Extract and stream text from assistant content blocks
+        // Extract and stream structured events from assistant content blocks
         if (event["type"] === "assistant") {
           const message = event["message"] as Record<string, unknown> | undefined;
           const blocks = message?.["content"] as Array<Record<string, unknown>> | undefined;
           if (!Array.isArray(blocks)) continue;
 
           for (const block of blocks) {
-            if (block["type"] === "text" && typeof block["text"] === "string") {
+            const bt = block["type"] as string;
+
+            if (bt === "text" && typeof block["text"] === "string") {
               const text = block["text"] as string;
-              // Publish only the delta since the last known position
               if (text.length > fullText.length) {
                 const delta = text.slice(fullText.length);
                 fullText = text;
-
                 await publishEvent(
                   `epic-sessions/${sessionId}`,
                   "epic.session.stream",
-                  { chunk: delta, session_id: sessionId },
+                  { session_id: sessionId, chunk: delta, kind: "text", content: delta },
                 ).catch(err => log.warn("publishEvent stream failed:", err));
               }
+            } else if (bt === "tool_use") {
+              // Stream tool actions for live visibility
+              const name = block["name"] as string ?? "";
+              const input = block["input"] as Record<string, unknown> ?? {};
+              const detail = String(
+                input["file_path"] ?? input["command"] ?? input["pattern"] ?? input["skill"] ?? input["description"] ?? "",
+              ).slice(0, 120);
+
+              // Special-case: Skill loads use the 'skill' kind
+              if (name === "Skill") {
+                await publishEvent(
+                  `epic-sessions/${sessionId}`,
+                  "epic.session.stream",
+                  { session_id: sessionId, kind: "skill", name: input["skill"] ?? "" },
+                ).catch(() => {});
+              } else {
+                await publishEvent(
+                  `epic-sessions/${sessionId}`,
+                  "epic.session.stream",
+                  { session_id: sessionId, kind: "action", tool: name, detail, label: name },
+                ).catch(() => {});
+              }
+            } else if (bt === "thinking") {
+              await publishEvent(
+                `epic-sessions/${sessionId}`,
+                "epic.session.stream",
+                { session_id: sessionId, kind: "thinking" },
+              ).catch(() => {});
             }
           }
         }
