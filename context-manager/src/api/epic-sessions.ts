@@ -673,6 +673,16 @@ export async function approveTask(c: Context): Promise<Response> {
       epic_id: task.epic_id,
     });
 
+    // Notify the global channel so the project board refreshes its pipeline
+    // section without waiting for the 5-second polling tick.
+    await publishEvent("global", "project.pipeline.step.added", {
+      pipeline_id: pipelineId,
+      project_id: epic.project_id,
+      epic_id: task.epic_id,
+      pipeline_step_id: stepId,
+      wave_number: task.wave_number,
+    });
+
     log.info(`Task approved: ${taskId} → pipeline_step ${stepId}`);
 
     // Return updated task

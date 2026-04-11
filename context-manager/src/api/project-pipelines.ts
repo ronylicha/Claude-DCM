@@ -40,6 +40,8 @@ const CreateProjectPipelineSchema = z.object({
   workspace: z
     .object({
       path: z.string().min(1),
+      git_repo_url: z.string().optional(),
+      git_branch: z.string().optional(),
     })
     .optional(),
   target_files: z.array(z.string()).optional().default([]),
@@ -184,13 +186,34 @@ export async function postProjectPipeline(c: Context): Promise<Response> {
 
     const sql = getDb();
 
-    // Verify project exists
-    const projectCheck = await sql<{ id: string }[]>`
-      SELECT id FROM projects WHERE id = ${projectId}
+    // Verify project exists + inherit workspace info
+    const projectRows = await sql<Array<{
+      id: string;
+      path: string | null;
+      git_repo_url: string | null;
+      git_branch: string | null;
+    }>>`
+      SELECT id, path, git_repo_url, git_branch
+      FROM projects WHERE id = ${projectId}
     `;
-    if (projectCheck.length === 0) {
+    if (projectRows.length === 0) {
       return c.json({ error: "Project not found" }, 404);
     }
+    const project = projectRows[0]!;
+
+    // Resolve workspace path: explicit body > project.path. Treat empty
+    // strings as missing so an executor never inherits an invalid cwd.
+    const bodyWorkspacePath =
+      typeof body.workspace?.path === "string" && body.workspace.path.trim().length > 0
+        ? body.workspace.path.trim()
+        : null;
+    const projectPath =
+      typeof project.path === "string" && project.path.trim().length > 0
+        ? project.path.trim()
+        : null;
+    const resolvedWorkspacePath = bodyWorkspacePath ?? projectPath;
+    const resolvedGitRepoUrl = body.workspace?.git_repo_url ?? project.git_repo_url ?? null;
+    const resolvedGitBranch = body.workspace?.git_branch ?? project.git_branch ?? "main";
 
     // Build the pipeline input JSONB payload
     const input: Record<string, unknown> = {
@@ -199,17 +222,27 @@ export async function postProjectPipeline(c: Context): Promise<Response> {
       target_files: body.target_files,
       target_directories: body.target_directories,
     };
-    if (body.workspace) {
-      input["workspace"] = body.workspace;
+    if (resolvedWorkspacePath) {
+      input["workspace"] = {
+        path: resolvedWorkspacePath,
+        ...(resolvedGitRepoUrl ? { git_repo_url: resolvedGitRepoUrl } : {}),
+        git_branch: resolvedGitBranch,
+      };
     }
 
     const results = await sql<PipelineRow[]>`
-      INSERT INTO pipelines (project_id, name, status, input)
+      INSERT INTO pipelines (
+        project_id, name, status, input,
+        workspace_path, git_repo_url, git_branch
+      )
       VALUES (
         ${projectId},
         ${body.name ?? null},
         'planning',
-        ${sql.json(input as import("postgres").JSONValue)}
+        ${sql.json(input as import("postgres").JSONValue)},
+        ${resolvedWorkspacePath},
+        ${resolvedGitRepoUrl},
+        ${resolvedGitBranch}
       )
       RETURNING id, session_id, project_id, name, status, input, plan, created_at, updated_at
     `;

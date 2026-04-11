@@ -71,8 +71,13 @@ export async function createPipeline(
   const sql = getDb();
   const mergedConfig: PipelineConfig = { ...DEFAULT_CONFIG, ...config };
 
-  // Extract workspace config
-  const workspacePath = input.workspace?.path ?? null;
+  // Extract workspace config — treat empty strings as null so an invalid
+  // `workspace: { path: "" }` payload does not poison the executor cwd.
+  const rawWorkspacePath = input.workspace?.path;
+  const workspacePath =
+    typeof rawWorkspacePath === "string" && rawWorkspacePath.trim().length > 0
+      ? rawWorkspacePath.trim()
+      : null;
   const gitRepoUrl = input.workspace?.git_repo_url ?? null;
   const gitBranch = input.workspace?.git_branch ?? "main";
 

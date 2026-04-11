@@ -249,20 +249,59 @@ export async function ensureEpicPipeline(
 ): Promise<{ pipeline_id: string; wave_number: number }> {
   const sql = getDb();
 
-  // Check if epic already has a pipeline
-  const [epic] = await sql<Array<{ pipeline_id: string | null }>>`
-    SELECT pipeline_id FROM project_epics WHERE id = ${epicId}
+  // Load epic + project context in one pass so we can derive a meaningful
+  // pipeline name and inherit the project's workspace path.
+  const [epic] = await sql<Array<{
+    id: string;
+    pipeline_id: string | null;
+    title: string | null;
+  }>>`
+    SELECT id, pipeline_id, title FROM project_epics WHERE id = ${epicId}
   `;
+  if (!epic) {
+    throw new Error(`Epic ${epicId} not found`);
+  }
 
-  if (epic?.pipeline_id) {
-    // Get next wave number for this pipeline
+  const [project] = await sql<Array<{
+    id: string;
+    name: string;
+    path: string | null;
+    git_repo_url: string | null;
+    git_branch: string | null;
+  }>>`
+    SELECT id, name, path, git_repo_url, git_branch
+    FROM projects WHERE id = ${projectId}
+  `;
+  if (!project) {
+    throw new Error(`Project ${projectId} not found`);
+  }
+
+  const epicTitle = (epic.title ?? "").trim() || "Unnamed Epic";
+  const workspacePath =
+    typeof project.path === "string" && project.path.trim().length > 0
+      ? project.path.trim()
+      : null;
+
+  // Case 1 — epic already has a pipeline
+  if (epic.pipeline_id) {
+    // Backfill workspace_path if it is missing on the existing pipeline.
+    if (workspacePath) {
+      await sql`
+        UPDATE pipelines
+           SET workspace_path = COALESCE(NULLIF(workspace_path, ''), ${workspacePath}),
+               git_repo_url   = COALESCE(git_repo_url, ${project.git_repo_url}),
+               git_branch     = COALESCE(git_branch, ${project.git_branch ?? 'main'}),
+               project_id     = COALESCE(project_id, ${projectId})
+         WHERE id = ${epic.pipeline_id}
+      `;
+    }
     const [maxWave] = await sql<Array<{ max: number | null }>>`
       SELECT MAX(wave_number) as max FROM pipeline_steps WHERE pipeline_id = ${epic.pipeline_id}
     `;
     return { pipeline_id: epic.pipeline_id, wave_number: (maxWave?.max ?? -1) + 1 };
   }
 
-  // Check if project already has an active pipeline
+  // Case 2 — reuse an existing active pipeline of the project
   const [existingPipeline] = await sql<Array<{ id: string }>>`
     SELECT id FROM pipelines
     WHERE project_id = ${projectId} AND status NOT IN ('completed', 'failed', 'cancelled')
@@ -270,24 +309,51 @@ export async function ensureEpicPipeline(
   `;
 
   let pipelineId: string;
+  let createdNew = false;
 
   if (existingPipeline) {
     pipelineId = existingPipeline.id;
+    // Backfill workspace_path on the reused pipeline too.
+    if (workspacePath) {
+      await sql`
+        UPDATE pipelines
+           SET workspace_path = COALESCE(NULLIF(workspace_path, ''), ${workspacePath}),
+               git_repo_url   = COALESCE(git_repo_url, ${project.git_repo_url}),
+               git_branch     = COALESCE(git_branch, ${project.git_branch ?? 'main'})
+         WHERE id = ${pipelineId}
+      `;
+    }
   } else {
-    // Create a minimal pipeline for the project
+    // Case 3 — create a dedicated pipeline for this epic, inheriting the
+    // project workspace so spawned Claude runners have a valid cwd.
+    const pipelineName = `Epic: ${epicTitle}`.slice(0, 120);
     const [newPipeline] = await sql<Array<{ id: string }>>`
-      INSERT INTO pipelines (session_id, project_id, name, status, input)
+      INSERT INTO pipelines (
+        session_id, project_id, name, status, input,
+        workspace_path, git_repo_url, git_branch
+      )
       VALUES (
         ${'epic-auto-' + Date.now()},
         ${projectId},
-        'Project Pipeline',
+        ${pipelineName},
         'running',
-        ${sql.json({ instructions: "Auto-created from epic tasks", documents: [] })}
+        ${sql.json({
+          instructions: `Pipeline for epic: ${epicTitle}`,
+          documents: [],
+          workspace: workspacePath ? { path: workspacePath } : undefined,
+        })},
+        ${workspacePath},
+        ${project.git_repo_url},
+        ${project.git_branch ?? 'main'}
       )
       RETURNING id
     `;
     pipelineId = newPipeline!.id;
-    log.info(`Created auto-pipeline ${pipelineId} for project ${projectId}`);
+    createdNew = true;
+    log.info(
+      `Created auto-pipeline ${pipelineId} for project ${projectId} ` +
+      `(workspace=${workspacePath ?? 'null'})`,
+    );
   }
 
   // Link the epic to the pipeline
@@ -297,11 +363,35 @@ export async function ensureEpicPipeline(
   const waveNumber = (maxWave?.max ?? -1) + 1;
 
   await sql`
-    UPDATE project_epics SET pipeline_id = ${pipelineId}, wave_start = ${waveNumber}, wave_end = ${waveNumber}
-    WHERE id = ${epicId}
+    UPDATE project_epics
+       SET pipeline_id = ${pipelineId},
+           wave_start = ${waveNumber},
+           wave_end   = ${waveNumber},
+           updated_at = now()
+     WHERE id = ${epicId}
   `;
 
   log.info(`Linked epic ${epicId} to pipeline ${pipelineId} at wave ${waveNumber}`);
+
+  // Broadcast so dashboards refresh immediately — this is what the project
+  // board currently misses, which is why new pipelines did not visibly
+  // "appear" when the user approved tasks from an epic chat.
+  if (createdNew) {
+    await publishEvent("global", "pipeline.created", {
+      pipeline_id: pipelineId,
+      project_id: projectId,
+      epic_id: epicId,
+      name: `Epic: ${epicTitle}`,
+      status: "running",
+      source: "epic-task-approval",
+    });
+  }
+  await publishEvent("global", "project.pipeline.linked", {
+    pipeline_id: pipelineId,
+    project_id: projectId,
+    epic_id: epicId,
+    wave_number: waveNumber,
+  });
 
   return { pipeline_id: pipelineId, wave_number: waveNumber };
 }
